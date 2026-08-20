@@ -49,6 +49,34 @@ class ExecutionEngine:
         self._save_data()
         return {"success": True, "trade": trade}
 
+    def update_positions(self, current_price: float) -> List[Dict[str, Any]]:
+        closed_trades = []
+        for pos in self.active_positions[:]:
+            pnl = 0
+            if pos["direction"] == "BUY":
+                pnl = (current_price - pos["entry"]) * pos["quantity"]
+                hit_sl = current_price <= pos["sl"]
+                hit_tp = current_price >= pos["tp"]
+            else:
+                pnl = (pos["entry"] - current_price) * pos["quantity"]
+                hit_sl = current_price >= pos["sl"]
+                hit_tp = current_price <= pos["tp"]
+            
+            pos["pnl"] = pnl
+            
+            if hit_sl or hit_tp:
+                pos["status"] = "CLOSED"
+                pos["close_price"] = current_price
+                pos["close_time"] = datetime.now().isoformat()
+                pos["result"] = "PROFIT" if pnl > 0 else "LOSS"
+                self.history.append(pos)
+                self.active_positions.remove(pos)
+                closed_trades.append(pos)
+        
+        if closed_trades:
+            self._save_data()
+        return closed_trades
+
     def get_stats(self) -> Dict[str, Any]:
         if not self.history:
             return {

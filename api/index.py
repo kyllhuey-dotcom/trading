@@ -22,109 +22,86 @@ broker_connector = BrokerConnector()
 
 # Simulation de l'état du bot
 bot_state = {
-    "status": "ANALYZING",
+    "status": "ONLINE",
     "mode": "DEMO",
     "armed": False,
-    "balance": 20.00,
+    "balance_demo": 1000.00,
+    "balance_real": 0.00,
     "pnl_daily": 0.00,
-    "broker_connected": False
+    "broker_connected": False,
+    "deposits_history": [],
+    "equity": 1000.00,
+    "drawdown": 0.0,
+    "today_stats": {
+        "pnl": 0.00,
+        "trades": 0,
+        "wins": 0,
+        "losses": 0
+    },
+    "risk_status": "LOW RISK",
+    "scanner_data": [
+        {"asset": "BTC/USDT", "price": 59230.40, "change": 1.2, "trend": "Bullish", "structure": "HH", "volatility": "Medium", "spread": 0.1, "liquidity": "High", "ai_score": 82, "status": "Ready"},
+        {"asset": "ETH/USDT", "price": 2640.15, "change": -0.5, "trend": "Bearish", "structure": "LL", "volatility": "Low", "spread": 0.05, "liquidity": "High", "ai_score": 45, "status": "No Signal"},
+        {"asset": "SOL/USDT", "price": 145.60, "change": 4.8, "trend": "Bullish", "structure": "HH", "volatility": "High", "spread": 0.2, "liquidity": "Medium", "ai_score": 91, "status": "Best Setup"},
+        {"asset": "GOLD", "price": 2510.40, "change": 0.1, "trend": "Neutral", "structure": "Range", "volatility": "Low", "spread": 0.3, "liquidity": "High", "ai_score": 60, "status": "No Trade"}
+    ]
 }
 
 @app.get("/api/status")
 async def get_status():
     news_status = await news_engine.check_trading_allowed()
-    df = await data_engine.fetch_crypto_ohlcv("BTC/USDT")
-    current_price = float(df['Close'].iloc[-1])
     
-    # Update position check
-    bot_state["broker_connected"] = await broker_connector.connector.check_connection()
-
-    # Update active positions (Simulation)
-    closed = execution_engine.update_positions(current_price)
-    for c in closed:
-        bot_state["balance"] += c["pnl"]
-        bot_state["pnl_daily"] += c["pnl"]
-
-    analysis = analysis_engine.identify_structure(df)
-    signal = signal_engine.generate_signal(analysis, news_status, df)
-    
-    risk_data = {"allowed": False, "reason": "No signal"}
-    if signal["status"] == "SIGNAL_DETECTED":
-        risk_data = risk_engine.calculate_position_size(
-            balance=bot_state["balance"],
-            entry=signal["entry"],
-            stop_loss=signal["sl"]
-        )
+    # Simuler des variations pour le dashboard premium
+    if bot_state["status"] == "ONLINE":
+        df = await data_engine.fetch_crypto_ohlcv("BTC/USDT")
+        current_price = float(df['Close'].iloc[-1]) if not df.empty else 0
         
-        # Execution logic (Demo or Real)
-        if bot_state["armed"] and risk_data["allowed"] and not execution_engine.active_positions:
+        # Mise à jour des positions
+        closed = execution_engine.update_positions(current_price)
+        for c in closed:
             if bot_state["mode"] == "DEMO":
-                execution_engine.open_simulated_trade(signal, risk_data)
+                bot_state["balance_demo"] += c["pnl"]
             else:
-                # REAL TRADE (Lot 10 will refine this)
-                await broker_connector.execute(signal, risk_data)
-    
-    # CYCLE DE DÉCISION STRICT (Rule 26)
-    
-    # 1. DATA VALID & MARKET OPEN
-    if df.empty or (datetime.now().timestamp() * 1000 - df['Timestamp'].iloc[-1] > 300000): # Si data date de + de 5 min
-        bot_state["status"] = "MARKET CLOSED / DATA ERROR"
-        return {
-            **bot_state, 
-            "news": news_status, 
-            "analysis": {"status": "NO_DATA"},
-            "signal": {"status": "NO_TRADE", "reason": "Market seems closed or no fresh data"}
-        }
+                bot_state["balance_real"] += c["pnl"]
+            
+            bot_state["today_stats"]["pnl"] += c["pnl"]
+            bot_state["today_stats"]["trades"] += 1
+            if c["pnl"] > 0: bot_state["today_stats"]["wins"] += 1
+            else: bot_state["today_stats"]["losses"] += 1
 
-    # 2. ECONOMIC CALENDAR CLEAR & 3. ALLOWED DAY
-    if not news_status["day_ok"]:
-        bot_state["status"] = "NO TRADE (DAY)"
-    elif not news_status["news_ok"]:
-        bot_state["status"] = "NO TRADE (NEWS)"
+        analysis = analysis_engine.identify_structure(df)
+        signal = signal_engine.generate_signal(analysis, news_status, df)
+        
+        active_bal = bot_state["balance_demo"] if bot_state["mode"] == "DEMO" else bot_state["balance_real"]
+        bot_state["equity"] = active_bal + (execution_engine.active_positions[0]["pnl"] if execution_engine.active_positions else 0)
+        
+        risk_data = {"allowed": False, "reason": "No signal"}
+        if signal["status"] == "SIGNAL_DETECTED":
+            risk_data = risk_engine.calculate_position_size(balance=active_bal, entry=signal["entry"], stop_loss=signal["sl"])
+            if bot_state["armed"] and risk_data["allowed"] and not execution_engine.active_positions:
+                if bot_state["mode"] == "DEMO":
+                    execution_engine.open_simulated_trade(signal, risk_data)
+        
+        status_display = "ANALYZING"
+        if not news_status["trading_allowed"]: status_display = "TRADING PAUSED"
+        elif analysis.get("is_range"): status_display = "NO TRADE (RANGE)"
+        elif execution_engine.active_positions: status_display = "POSITION OPEN"
+        elif signal["status"] == "SIGNAL_DETECTED": status_display = "SIGNAL READY"
+        
+        return {
+            **bot_state,
+            "status_display": status_display,
+            "balance": active_bal,
+            "news": news_status,
+            "analysis": analysis,
+            "signal": signal,
+            "risk": risk_data,
+            "active_trade": execution_engine.active_positions[0] if execution_engine.active_positions else None,
+            "history": execution_engine.history[-15:],
+            "stats": execution_engine.get_stats(),
+        }
     
-    # 4. LIQUIDITY VALID (Simulé via spread/volume si dispo)
-    
-    # 5. MARKET NOT RANGE
-    elif analysis.get("is_range"):
-        bot_state["status"] = "NO TRADE (RANGE)"
-        
-    # 6. TREND CLEAR & 7. STRUCTURE VALID
-    elif analysis.get("trend") == "NEUTRAL":
-        bot_state["status"] = "ANALYZING (NO TREND)"
-        
-    # 8. SIGNAL VALID
-    elif signal["status"] != "SIGNAL_DETECTED":
-        bot_state["status"] = "WAITING (NO SIGNAL)"
-        
-    # 9. RISK VALID
-    elif not risk_data["allowed"]:
-        bot_state["status"] = "RISK LOCK"
-        
-    # 10. EXECUTION VALID -> TRADE
-    elif execution_engine.active_positions:
-        bot_state["status"] = "POSITION OPEN"
-    else:
-        bot_state["status"] = "READY TO TRADE"
-        # Auto-execution if ARMED
-        if bot_state["armed"]:
-            if bot_state["mode"] == "DEMO":
-                execution_engine.open_simulated_trade(signal, risk_data)
-                bot_state["status"] = "POSITION OPEN"
-            elif bot_state["broker_connected"]:
-                await broker_connector.execute(signal, risk_data)
-                bot_state["status"] = "POSITION OPEN"
-    
-    return {
-        **bot_state, 
-        "news": news_status, 
-        "analysis": analysis,
-        "signal": signal,
-        "risk": risk_data,
-        "active_trade": execution_engine.active_positions[0] if execution_engine.active_positions else None,
-        "history": execution_engine.history[-10:], # 10 derniers trades
-        "stats": execution_engine.get_stats(),
-        "emergency_active": broker_connector.emergency_stop_active
-    }
+    return bot_state
 
 @app.post("/api/emergency-stop")
 async def emergency_stop():
