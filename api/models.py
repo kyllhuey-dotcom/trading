@@ -96,4 +96,5 @@ class StatusResponse(BaseModel):
     stats: Dict[str, Any]
     broker_info: Dict[str, Any]
     broker_connected: bool
+    asset_info: Optional[Dict[str, Any]] = None
     best_setups: List[Dict[str, Any]] = []

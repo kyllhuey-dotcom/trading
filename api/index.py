@@ -189,7 +189,8 @@ async def get_status(market_id: str = "btc_usdt"):
             selected_market=market_id,
             stats=merged_stats,
             broker_info=broker_info,
-            broker_connected=broker_info.get("connected", False)
+            broker_connected=broker_info.get("connected", False),
+            asset_info=info
         )
 
     df_htf = await data_engine.fetch_ohlcv(market_id, timeframe='15m', limit=50)
@@ -309,8 +310,9 @@ async def get_status(market_id: str = "btc_usdt"):
         history=portfolio_engine.history[-15:],
         stats=merged_stats,
         broker_info=broker_info,
-        best_setups=sorted([r for r in bot_state["latest_scan"] if r.get("score", 0) > 0], key=lambda x: x["score"], reverse=True)[:5],
-        broker_connected=broker_info.get("connected", False) or bot_state["mode"] == "DEMO"
+        broker_connected=broker_info.get("connected", False) or bot_state["mode"] == "DEMO",
+        asset_info=info,
+        best_setups=sorted([r for r in bot_state["latest_scan"] if r.get("score", 0) > 0], key=lambda x: x["score"], reverse=True)[:5]
     )
 
 @app.post("/api/start")
@@ -361,6 +363,10 @@ async def get_markets():
             overview[item["asset_class"]].append(item)
         return overview
     return await data_engine.get_market_overview()
+
+@app.get("/api/news/latest")
+async def get_latest_news():
+    return await news_aggregator.get_latest_news()
 
 @app.post("/api/emergency-stop")
 async def emergency_stop():

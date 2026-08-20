@@ -9,3 +9,4 @@ uvicorn
 beautifulsoup4
 lxml
 feedparser
+httpx
