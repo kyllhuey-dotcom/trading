@@ -1,76 +1,116 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 class MarketCatalog:
     """
-    Market Catalog (Rule 7, 10).
-    Centralizes all instrument definitions and their metadata.
+    Global Market Catalog (Rule 7, 10, 12, 13, 14).
+    Centralizes all instrument definitions and handles cross-provider/broker mapping.
     """
     
-    # Categorized assets with their specific metadata
+    # Internal ID -> Configuration
+    # Mapping logic: Internal ID is the source of truth for the UI.
     CATALOG = {
-        "CRYPTO": {
-            "BTC/USDT": {"provider": "gate", "tick_size": 0.1, "lot_size": 0.0001, "min_order": 10.0, "leverage": 100, "currency": "USD"},
-            "ETH/USDT": {"provider": "gate", "tick_size": 0.01, "lot_size": 0.001, "min_order": 10.0, "leverage": 100, "currency": "USD"},
-            "SOL/USDT": {"provider": "gate", "tick_size": 0.001, "lot_size": 0.01, "min_order": 10.0, "leverage": 50, "currency": "USD"},
-            "XRP/USDT": {"provider": "gate", "tick_size": 0.0001, "lot_size": 1.0, "min_order": 10.0, "leverage": 20, "currency": "USD"},
-            "BNB/USDT": {"provider": "gate", "tick_size": 0.01, "lot_size": 0.01, "min_order": 10.0, "leverage": 50, "currency": "USD"},
-            "DOGE/USDT": {"provider": "gate", "tick_size": 0.00001, "lot_size": 10.0, "min_order": 10.0, "leverage": 20, "currency": "USD"},
-            "ADA/USDT": {"provider": "gate", "tick_size": 0.0001, "lot_size": 1.0, "min_order": 10.0, "leverage": 20, "currency": "USD"},
-            "LTC/USDT": {"provider": "gate", "tick_size": 0.01, "lot_size": 0.1, "min_order": 10.0, "leverage": 30, "currency": "USD"},
+        "btc_usdt": {
+            "display_symbol": "BTC/USDT",
+            "asset_class": "CRYPTO",
+            "name": "Bitcoin / Tether",
+            "providers": {
+                "gate": "BTC/USDT",
+                "binance": "BTC/USDT"
+            },
+            "broker_symbols": {
+                "primexbt": "BTC/USDT",
+                "binance": "BTC/USDT"
+            },
+            "tick_size": 0.1,
+            "lot_size": 0.0001,
+            "min_order": 10.0,
+            "leverage": 100
         },
-        "FOREX": {
-            "EURUSD=X": {"name": "EUR/USD", "provider": "yahoo", "tick_size": 0.00001, "lot_size": 1000, "min_order": 1000.0, "leverage": 30, "currency": "USD"},
-            "GBPUSD=X": {"name": "GBP/USD", "provider": "yahoo", "tick_size": 0.00001, "lot_size": 1000, "min_order": 1000.0, "leverage": 30, "currency": "USD"},
-            "USDJPY=X": {"name": "USD/JPY", "provider": "yahoo", "tick_size": 0.001, "lot_size": 1000, "min_order": 1000.0, "leverage": 30, "currency": "JPY"},
-            "USDCHF=X": {"name": "USD/CHF", "provider": "yahoo", "tick_size": 0.00001, "lot_size": 1000, "min_order": 1000.0, "leverage": 30, "currency": "CHF"},
-            "AUDUSD=X": {"name": "AUD/USD", "provider": "yahoo", "tick_size": 0.00001, "lot_size": 1000, "min_order": 1000.0, "leverage": 30, "currency": "USD"},
-            "USDCAD=X": {"name": "USD/CAD", "provider": "yahoo", "tick_size": 0.00001, "lot_size": 1000, "min_order": 1000.0, "leverage": 30, "currency": "CAD"},
-            "NZDUSD=X": {"name": "NZD/USD", "provider": "yahoo", "tick_size": 0.00001, "lot_size": 1000, "min_order": 1000.0, "leverage": 30, "currency": "USD"},
-            "EURGBP=X": {"name": "EUR/GBP", "provider": "yahoo", "tick_size": 0.00001, "lot_size": 1000, "min_order": 1000.0, "leverage": 30, "currency": "GBP"},
-            "EURJPY=X": {"name": "EUR/JPY", "provider": "yahoo", "tick_size": 0.001, "lot_size": 1000, "min_order": 1000.0, "leverage": 30, "currency": "JPY"},
+        "eth_usdt": {
+            "display_symbol": "ETH/USDT",
+            "asset_class": "CRYPTO",
+            "name": "Ethereum / Tether",
+            "providers": {
+                "gate": "ETH/USDT",
+                "binance": "ETH/USDT"
+            },
+            "broker_symbols": {
+                "primexbt": "ETH/USDT",
+                "binance": "ETH/USDT"
+            },
+            "tick_size": 0.01,
+            "lot_size": 0.001,
+            "min_order": 10.0,
+            "leverage": 100
         },
-        "INDICES": {
-            "^GSPC": {"name": "S&P 500", "provider": "yahoo", "tick_size": 0.25, "lot_size": 1, "min_order": 1.0, "leverage": 20, "currency": "USD"},
-            "^IXIC": {"name": "Nasdaq 100", "provider": "yahoo", "tick_size": 0.25, "lot_size": 1, "min_order": 1.0, "leverage": 20, "currency": "USD"},
-            "^DJI": {"name": "Dow Jones", "provider": "yahoo", "tick_size": 1.0, "lot_size": 1, "min_order": 1.0, "leverage": 20, "currency": "USD"},
-            "^GDAXI": {"name": "DAX 40", "provider": "yahoo", "tick_size": 0.5, "lot_size": 1, "min_order": 1.0, "leverage": 20, "currency": "EUR"},
-            "^FTSE": {"name": "FTSE 100", "provider": "yahoo", "tick_size": 0.5, "lot_size": 1, "min_order": 1.0, "leverage": 20, "currency": "GBP"},
-            "^FCHI": {"name": "CAC 40", "provider": "yahoo", "tick_size": 0.5, "lot_size": 1, "min_order": 1.0, "leverage": 20, "currency": "EUR"},
-            "^N225": {"name": "Nikkei 225", "provider": "yahoo", "tick_size": 1.0, "lot_size": 1, "min_order": 1.0, "leverage": 20, "currency": "JPY"},
+        "eur_usd": {
+            "display_symbol": "EUR/USD",
+            "asset_class": "FOREX",
+            "name": "Euro / US Dollar",
+            "providers": {
+                "yahoo_forex": "EURUSD=X"
+            },
+            "broker_symbols": {
+                "primexbt": "EURUSD",
+                "activtrades": "EURUSD"
+            },
+            "tick_size": 0.00001,
+            "lot_size": 1000,
+            "min_order": 1000.0,
+            "leverage": 30
         },
-        "COMMODITIES": {
-            "GC=F": {"name": "Gold", "provider": "yahoo", "tick_size": 0.1, "lot_size": 1, "min_order": 0.1, "leverage": 20, "currency": "USD"},
-            "SI=F": {"name": "Silver", "provider": "yahoo", "tick_size": 0.005, "lot_size": 1, "min_order": 1.0, "leverage": 20, "currency": "USD"},
-            "CL=F": {"name": "Crude Oil", "provider": "yahoo", "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage": 10, "currency": "USD"},
-            "BZ=F": {"name": "Brent", "provider": "yahoo", "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage": 10, "currency": "USD"},
-            "NG=F": {"name": "Natural Gas", "provider": "yahoo", "tick_size": 0.001, "lot_size": 1, "min_order": 1.0, "leverage": 10, "currency": "USD"},
-            "HG=F": {"name": "Copper", "provider": "yahoo", "tick_size": 0.0005, "lot_size": 1, "min_order": 1.0, "leverage": 10, "currency": "USD"},
+        "gold": {
+            "display_symbol": "GOLD",
+            "asset_class": "COMMODITIES",
+            "name": "Gold Spot",
+            "providers": {
+                "yahoo_commodities": "GC=F"
+            },
+            "broker_symbols": {
+                "primexbt": "XAUUSD"
+            },
+            "tick_size": 0.1,
+            "lot_size": 1,
+            "min_order": 0.1,
+            "leverage": 20
+        },
+        "spx": {
+            "display_symbol": "S&P 500",
+            "asset_class": "INDICES",
+            "name": "S&P 500 Index",
+            "providers": {
+                "yahoo_indices": "^GSPC"
+            },
+            "broker_symbols": {
+                "primexbt": "SPX"
+            },
+            "tick_size": 0.25,
+            "lot_size": 1,
+            "min_order": 1.0,
+            "leverage": 20
         }
     }
 
     @classmethod
-    def get_categories(cls) -> List[str]:
+    def get_all_ids(cls) -> List[str]:
         return list(cls.CATALOG.keys())
 
     @classmethod
-    def get_symbols_by_category(cls, category: str) -> List[str]:
-        return list(cls.CATALOG.get(category, {}).keys())
+    def get_categories(cls) -> List[str]:
+        return list(set(item["asset_class"] for item in cls.CATALOG.values()))
 
     @classmethod
-    def get_all_symbols(cls) -> List[str]:
-        all_symbols = []
-        for cat in cls.CATALOG.values():
-            all_symbols.extend(cat.keys())
-        return all_symbols
+    def get_info(cls, market_id: str) -> Optional[Dict[str, Any]]:
+        return cls.CATALOG.get(market_id)
 
     @classmethod
-    def get_info(cls, symbol: str) -> Dict[str, Any]:
-        for cat_name, assets in cls.CATALOG.items():
-            if symbol in assets:
-                info = assets[symbol].copy()
-                info["asset_class"] = cat_name
-                info["symbol"] = symbol
-                if "name" not in info:
-                    info["name"] = symbol
-                return info
-        return {}
+    def map_to_provider(cls, market_id: str, provider_id: str) -> Optional[str]:
+        """Rule 14: Internal ID -> Provider Symbol."""
+        info = cls.get_info(market_id)
+        return info.get("providers", {}).get(provider_id) if info else None
+
+    @classmethod
+    def map_to_broker(cls, market_id: str, broker_id: str) -> Optional[str]:
+        """Rule 14: Internal ID -> Broker Symbol."""
+        info = cls.get_info(market_id)
+        return info.get("broker_symbols", {}).get(broker_id) if info else None

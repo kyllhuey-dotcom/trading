@@ -78,8 +78,8 @@ class EventRiskEngine:
 class SessionFilter:
     def __init__(self, timezone: str = 'Europe/Paris'):
         self.tz = pytz.timezone(timezone)
-        # Rule 14: Trading autorisé uniquement Tuesday, Wednesday, Thursday
-        self.allowed_days = [1, 2, 3] 
+        # MISSION: Trade all days when market is open
+        self.allowed_days = [0, 1, 2, 3, 4, 5, 6] 
 
     def is_trading_allowed(self, asset_class: str = "CRYPTO") -> Dict[str, Any]:
         now = datetime.now(self.tz)
@@ -129,10 +129,11 @@ class NewsEngine:
         news_ok = True
         blocking_event = None
         next_events = []
+        status = "LIVE"
 
         if not all_events:
-            # If provider fails, we don't necessarily block everything if we have no data, 
-            # but Rule 15 says "No trade if calendar unavailable".
+            # Rule 1 & 18: No trade if calendar unavailable
+            status = "DATA_UNAVAILABLE"
             if session_status["day_ok"]:
                 return {
                     "trading_allowed": False,
@@ -141,7 +142,9 @@ class NewsEngine:
                     "session_ok": session_status["session_ok"],
                     "blocking_event": {"title": "Calendar Unavailable"},
                     "next_events": [],
-                    "reason": "Calendar unavailable"
+                    "status": "DATA_UNAVAILABLE",
+                    "source": self.provider.url,
+                    "timestamp": int(datetime.now().timestamp() * 1000)
                 }
              
         high_impact = self.filter.filter_high_impact(all_events, asset_currency)
@@ -149,13 +152,20 @@ class NewsEngine:
         
         news_ok = not risk_status["is_blocked"]
         blocking_event = risk_status["blocking_event"]
+        
+        # Rule 9: Full normalization of events
         next_events = [
             {
-                "title": e['title'],
-                "country": e['country'],
-                "time": e['time']
-            } for e in high_impact if e.get('impact') == 'High'
-        ][:3]
+                "time": e.get('time'),
+                "currency": e.get('country'), 
+                "country": e.get('country'),
+                "impact": e.get('impact'),
+                "event": e.get('title'),
+                "forecast": e.get('forecast'),
+                "previous": e.get('previous'),
+                "actual": e.get('actual')
+            } for e in high_impact
+        ][:5]
 
         trading_allowed = (
             session_status["day_ok"] and 
@@ -169,5 +179,8 @@ class NewsEngine:
             "news_ok": news_ok,
             "session_ok": session_status["session_ok"],
             "blocking_event": blocking_event,
-            "next_events": next_events
+            "next_events": next_events,
+            "status": status,
+            "source": self.provider.url,
+            "timestamp": int(datetime.now().timestamp() * 1000)
         }

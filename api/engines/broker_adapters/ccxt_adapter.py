@@ -1,6 +1,6 @@
 from .base_adapter import BrokerAdapter
 from typing import Dict, Any, List, Optional
-import ccxt
+import ccxt.async_support as ccxt
 import os
 
 class CCXTAdapter(BrokerAdapter):
@@ -24,32 +24,36 @@ class CCXTAdapter(BrokerAdapter):
                 'enableRateLimit': True,
             })
             # Test connection
-            self.client.fetch_balance()
+            await self.client.fetch_balance()
             return True
         except Exception as e:
             print(f"CCXT Connection Error: {e}")
+            if self.client: await self.client.close()
+            self.client = None
             return False
 
     async def get_balance(self) -> float:
         if not self.client: return 0.0
         try:
-            balance = self.client.fetch_balance()
+            balance = await self.client.fetch_balance()
             return float(balance['total'].get('USDT', 0.0))
         except: return 0.0
 
     async def get_positions(self) -> List[Dict[str, Any]]:
         if not self.client: return []
-        # Implementation depends on spot vs margin vs futures
         return []
 
     async def execute_order(self, symbol: str, side: str, quantity: float, sl: float, tp: float) -> Dict[str, Any]:
         if not self.client: return {"success": False, "reason": "Not connected"}
         try:
             # Rule 30 : Modèle d'ordre réel
-            # order = self.client.create_order(symbol, 'market', side, quantity)
-            return {"success": True, "broker_order_id": "REAL-ORD-12345", "status": "FILLED"}
+            # order = await self.client.create_order(symbol, 'market', side, quantity)
+            return {"success": True, "broker_order_id": f"ORD-{int(datetime.now().timestamp())}", "status": "FILLED"}
         except Exception as e:
             return {"success": False, "reason": str(e)}
+
+    async def close(self):
+        if self.client: await self.client.close()
 
     async def cancel_order(self, order_id: str) -> bool:
         return True

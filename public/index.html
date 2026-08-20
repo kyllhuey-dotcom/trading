@@ -238,6 +238,12 @@
                                     <div class="flex justify-between items-center text-sm"><span class="text-secondary">Trend Bias</span><span id="ana-trend" class="font-bold">--</span></div>
                                     <div class="flex justify-between items-center text-sm"><span class="text-secondary">Market Structure</span><span id="ana-struct" class="font-bold">--</span></div>
                                     <div class="flex justify-between items-center text-sm"><span class="text-secondary">Momentum</span><span id="ana-mom" class="font-bold">--</span></div>
+                                    <div class="flex justify-between items-center text-[10px] pt-2 opacity-50 border-t border-black/5">
+                                        <span class="text-secondary uppercase tracking-tighter">Source</span><span id="ana-source" class="font-bold uppercase">--</span>
+                                    </div>
+                                    <div class="flex justify-between items-center text-[10px] opacity-50">
+                                        <span class="text-secondary uppercase tracking-tighter">Last Tick</span><span id="ana-time" class="font-bold">--</span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="pt-8 border-t border-black/5">
@@ -312,7 +318,35 @@
 
     <script>
         lucide.createIcons();
-        let selectedSymbol = 'BTC/USDT';
+        let selectedSymbol = 'btc_usdt';
+        let ws;
+
+        function connectWS() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'HEARTBEAT') {
+                    // Update status bar or small indicator
+                    console.log("WS Heartbeat", data.status);
+                    // We can also trigger a lightweight update here
+                    if (data.status === 'RUNNING' || data.status === 'POSITION_OPEN' || data.status === 'SIGNAL_DETECTED') {
+                        update();
+                    }
+                } else if (data.type === 'SCAN_COMPLETED') {
+                    console.log("WS Scan Completed");
+                    update();
+                }
+            };
+
+            ws.onclose = () => {
+                console.log("WS Disconnected. Reconnecting...");
+                setTimeout(connectWS, 5000);
+            };
+        }
+
+        connectWS();
 
         // Navigation
         function showTab(tabId) {
@@ -325,11 +359,9 @@
             if (tabId === 'scanner') updateScanner();
         }
 
-        function selectMarket(symbol) {
-            selectedSymbol = symbol;
-            document.getElementById('active-symbol-header').innerText = symbol;
-            document.getElementById('active-symbol').innerText = symbol;
-            document.getElementById('trading-active-symbol').innerText = symbol;
+        function selectMarket(market_id) {
+            selectedSymbol = market_id; // Using as ID
+            // document.getElementById('active-symbol-header').innerText = symbol; // Set in update loop now
             showTab('trading');
             update();
         }
@@ -360,9 +392,20 @@
 
         // Core Update
         async function update() {
-            const symbol = selectedSymbol;
-            const s = await fetchAPI(`/status?symbol=${encodeURIComponent(symbol)}`);
+            const market_id = selectedSymbol;
+            const s = await fetchAPI(`/status?market_id=${encodeURIComponent(market_id)}`);
             if (!s) return;
+
+            // Update UI with Asset Info (Rule 13)
+            const info = s.asset_info || {};
+            const displaySymbol = info.display_symbol || s.selected_symbol || 'BTC/USDT';
+            document.getElementById('active-symbol-header').innerText = displaySymbol;
+            if (document.getElementById('trading-active-symbol')) {
+                document.getElementById('trading-active-symbol').innerText = displaySymbol;
+            }
+            if (document.getElementById('trading-asset-class')) {
+                document.getElementById('trading-asset-class').innerText = info.asset_class || 'CRYPTO';
+            }
 
             // Status Bar & Bot Machine State (Lot 2)
             const statusText = s.status_display || 'OFFLINE';
@@ -445,13 +488,20 @@
             document.getElementById('ai-bubble').innerText = `"${s.signal?.status === 'SIGNAL_DETECTED' ? s.signal.reason : (s.analysis?.market_state === 'RANGE' ? 'Market is in range. No trade recommended.' : 'Analyzing market data...')}"`;
 
             // Market Analysis
-            if (s.analysis && s.analysis.status === 'VALID') {
-                const a = s.analysis;
-                document.getElementById('ana-trend').innerText = a.trend;
-                document.getElementById('ana-trend').className = `font-bold ${a.trend === 'BULLISH' ? 'text-accent-green' : 'text-accent-red'}`;
-                document.getElementById('ana-struct').innerText = a.is_hh ? 'HH/HL' : (a.is_ll ? 'LH/LL' : 'Neutral');
-                document.getElementById('ana-state').innerText = a.market_state;
-                document.getElementById('ana-mom').innerText = `${a.momentum.toFixed(3)}%`;
+                if (s.analysis && s.analysis.status === 'VALID') {
+                    const a = s.analysis;
+                    document.getElementById('ana-trend').innerText = a.trend;
+                    document.getElementById('ana-trend').className = `font-bold ${a.trend === 'BULLISH' ? 'text-accent-green' : 'text-accent-red'}`;
+                    document.getElementById('ana-struct').innerText = a.is_hh ? 'HH/HL' : (a.is_ll ? 'LH/LL' : 'Neutral');
+                    document.getElementById('ana-state').innerText = a.market_state;
+                    document.getElementById('ana-mom').innerText = `${a.momentum.toFixed(3)}%`;
+                    
+                    // Added Source and Time (Rule 1)
+                    if (document.getElementById('ana-source')) document.getElementById('ana-source').innerText = s.asset_info.providers?.gate ? 'Gate.io' : 'Yahoo';
+                    if (document.getElementById('ana-time')) {
+                         const date = new Date(a.df_preview[a.df_preview.length-1].Timestamp);
+                         document.getElementById('ana-time').innerText = date.toLocaleTimeString('fr-FR');
+                    }
 
                 // Chart
                 if (a.df_preview) {
@@ -585,7 +635,7 @@
         // Init Market Data
         async function initMarkets() {
             const markets = await fetchAPI('/markets');
-            if (markets) {
+            if (markets && !markets.detail) {
                 const grid = document.getElementById('markets-full-grid');
                 const dashGrid = document.getElementById('dashboard-market-grid');
                 let dashHtml = '';
@@ -597,23 +647,23 @@
                         <div class="space-y-2">
                             <span class="text-[10px] font-black text-secondary uppercase">${cat}</span>
                             ${markets[cat].slice(0, 3).map(m => `
-                                <div class="p-2 bg-black/5 rounded-lg text-[10px] font-bold flex justify-between cursor-pointer" onclick="selectMarket('${m.symbol}')">
-                                    <span>${m.symbol.split('/')[0].split('=')[0]}</span>
-                                    <span>${m.last.toFixed(2)}</span>
+                                <div class="p-2 bg-black/5 rounded-lg text-[10px] font-bold flex justify-between cursor-pointer" onclick="selectMarket('${m.market_id}')">
+                                    <span>${m.display_symbol}</span>
+                                    <span>${m.last.toFixed(m.asset_class==='FOREX'?4:2)}</span>
                                 </div>
                             `).join('')}
                         </div>
                     `;
                     // Full grid
                     fullHtml += markets[cat].map(m => `
-                        <div class="market-card" onclick="selectMarket('${m.symbol}')">
-                            <span class="symbol text-xs font-black">${m.symbol}</span>
-                            <span class="price font-mono text-sm">${m.last.toFixed(4)}</span>
+                        <div class="market-card" onclick="selectMarket('${m.market_id}')">
+                            <span class="symbol text-xs font-black">${m.display_symbol}</span>
+                            <span class="price font-mono text-sm">${m.last.toFixed(m.asset_class==='FOREX'?4:2)}</span>
                         </div>
                     `).join('');
                 });
-                dashGrid.innerHTML = dashHtml;
-                grid.innerHTML = fullHtml;
+                if (dashGrid) dashGrid.innerHTML = dashHtml;
+                if (grid) grid.innerHTML = fullHtml;
             }
         }
 

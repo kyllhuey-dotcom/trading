@@ -76,7 +76,7 @@ class ScannerEngine:
             return {"symbol": symbol, "status": "ERROR", "tradable": False}
 
     async def scan_all(self) -> List[Dict[str, Any]]:
-        symbols = self.data.catalog.get_all_symbols()
+        symbols = self.data.catalog.get_all_ids()
         # Scan in small batches to respect rate limits (Rule 31)
         batch_size = 3
         all_results = []

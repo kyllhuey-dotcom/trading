@@ -1,39 +1,50 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 import pandas as pd
-from datetime import datetime
+from pydantic import BaseModel
 
-class MarketData:
-    def __init__(self, symbol: str, asset_class: str, last: float, timestamp: int, source: str):
-        self.symbol = symbol
-        self.asset_class = asset_class
-        self.last = last
-        self.timestamp = timestamp
-        self.source = source
-        self.bid: Optional[float] = None
-        self.ask: Optional[float] = None
-        self.open: Optional[float] = None
-        self.high: Optional[float] = None
-        self.low: Optional[float] = None
-        self.close: Optional[float] = None
-        self.volume: Optional[float] = None
-        self.spread: Optional[float] = None
-        self.status: str = "LIVE"
-        self.latency_ms: int = 0
+class TickerModel(BaseModel):
+    symbol: str
+    name: Optional[str] = None
+    asset_class: str
+    exchange: str
+    timestamp: int
+    bid: Optional[float] = None
+    ask: Optional[float] = None
+    last: float
+    spread: Optional[float] = None
+    volume: Optional[float] = None
+    source: str
+    status: str # LIVE, DELAYED, STALE, OFFLINE, ERROR
 
-    def to_dict(self):
-        d = self.__dict__.copy()
-        # Ensure JSON serializable (Rule 47)
-        for k, v in d.items():
-            if hasattr(v, 'item'): # Numpy types
-                d[k] = v.item()
-        return d
+class OHLCVModel(BaseModel):
+    symbol: str
+    timeframe: str
+    timestamp: int
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    source: str
 
-class BaseDataProvider(ABC):
+class MarketDataProvider(ABC):
     @abstractmethod
-    async def fetch_ticker(self, symbol: str) -> Optional[MarketData]:
+    async def get_symbols(self) -> List[str]:
+        """Discovery of available symbols from this provider."""
         pass
 
     @abstractmethod
-    async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
+    async def get_quote(self, symbol: str) -> Optional[TickerModel]:
+        """Get latest price/ticker for a specific symbol."""
+        pass
+
+    @abstractmethod
+    async def get_ohlcv(self, symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
+        """Get historical candles."""
+        pass
+
+    @abstractmethod
+    async def health_check(self) -> Dict[str, Any]:
+        """Return provider status, latency and last update."""
         pass
