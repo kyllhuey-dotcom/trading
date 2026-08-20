@@ -78,12 +78,11 @@ class EventRiskEngine:
 class SessionFilter:
     def __init__(self, timezone: str = 'Europe/Paris'):
         self.tz = pytz.timezone(timezone)
-        # Règle modifiée : Autorisé TOUS LES JOURS si le marché est ouvert
-        self.allowed_days = [0, 1, 2, 3, 4, 5, 6] 
+        # Rule 14: Trading autorisé uniquement Tuesday, Wednesday, Thursday
+        self.allowed_days = [1, 2, 3] 
 
     def is_trading_allowed(self, asset_class: str = "CRYPTO") -> Dict[str, Any]:
         now = datetime.now(self.tz)
-        
         day_of_week = now.weekday()
         day_ok = day_of_week in self.allowed_days
         
@@ -93,27 +92,22 @@ class SessionFilter:
         current_time_float = hour + minute / 60.0
         
         session_ok = False
-        
         if asset_class == "CRYPTO":
-            session_ok = True # 24/7
+            session_ok = True # 24/7 (Data available, but trade depends on day_ok)
         elif asset_class == "FOREX":
-            # Dimanche 23h - Vendredi 22h Paris
-            if day_of_week == 6: # Sunday
-                session_ok = hour >= 23
-            elif day_of_week == 4: # Friday
-                session_ok = hour < 22
-            elif 0 <= day_of_week <= 3: # Mon-Thu
-                session_ok = True
-        else: # Indices & Commodities (Standard sessions)
-            # Simplification : 9h00 - 22h00 pour le trading algo sécurisé
+            # Monday 00:00 to Friday 22:00
+            session_ok = (0 <= day_of_week <= 4)
+            if day_of_week == 4 and hour >= 22: session_ok = False
+        else:
             session_ok = (9.0 <= current_time_float < 22.0) and (0 <= day_of_week <= 4)
         
         return {
             "day_ok": day_ok,
             "session_ok": session_ok,
-            "current_time": now.strftime("%H:%M:%S"),
+            "current_time": now.strftime("%Y-%m-%d %H:%M:%S"),
             "day_name": now.strftime("%A"),
-            "asset_class": asset_class
+            "asset_class": asset_class,
+            "timezone": "Europe/Paris"
         }
 
 class NewsEngine:

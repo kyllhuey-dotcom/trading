@@ -360,21 +360,37 @@
 
         // Core Update
         async function update() {
-            const s = await fetchAPI(`/status?symbol=${encodeURIComponent(selectedSymbol)}`);
+            const symbol = selectedSymbol;
+            const s = await fetchAPI(`/status?symbol=${encodeURIComponent(symbol)}`);
             if (!s) return;
 
-            // Status Bar
-            document.getElementById('system-status-text').innerText = s.status_display.toUpperCase();
-            document.getElementById('status-dot').className = `w-2 h-2 rounded-full ${s.is_running ? 'bg-green-500' : 'bg-red-500'} animate-pulse`;
-            document.getElementById('broker-status-text').innerText = s.broker_info.connected ? 'CONNECTED' : 'DISCONNECTED';
-            document.getElementById('broker-status-text').className = `font-bold text-sm ${s.broker_info.connected ? 'text-green-500' : 'text-red-500'}`;
+            // Status Bar & Bot Machine State (Lot 2)
+            const statusText = s.status_display || 'OFFLINE';
+            document.getElementById('system-status-text').innerText = statusText.toUpperCase();
             
-            // Start/Stop
+            let statusDot = document.getElementById('status-dot');
+            statusDot.className = `w-2 h-2 rounded-full animate-pulse`;
+            if (s.status === 'RUNNING' || s.status === 'SIGNAL_DETECTED' || s.status === 'POSITION_OPEN') {
+                statusDot.classList.add('bg-green-500');
+            } else if (s.status === 'EMERGENCY_STOP' || s.status === 'ERROR') {
+                statusDot.classList.add('bg-red-500');
+            } else if (s.status === 'STARTING' || s.status === 'STOPPING') {
+                statusDot.classList.add('bg-yellow-500');
+            } else {
+                statusDot.classList.add('bg-slate-400');
+            }
+            
+            // Start/Stop Button Logic (Lot 2)
             const toggleBtn = document.getElementById('main-toggle-btn');
-            toggleBtn.innerText = s.is_running ? 'STOP BOT' : 'START BOT';
-            toggleBtn.className = `btn-premium ${s.is_running ? 'bg-red-500' : 'bg-black dark:bg-white'} text-white dark:text-black px-6 py-2 rounded-full font-bold text-xs active:scale-95 transition-all`;
+            if (s.is_running) {
+                toggleBtn.innerText = 'STOP BOT';
+                toggleBtn.className = 'btn-premium bg-red-500 text-white px-6 py-2 rounded-full font-bold text-xs active:scale-95 transition-all';
+            } else {
+                toggleBtn.innerText = 'START BOT';
+                toggleBtn.className = 'btn-premium bg-black dark:bg-white text-white dark:text-black px-6 py-2 rounded-full font-bold text-xs active:scale-95 transition-all';
+            }
 
-            // Dashboard Stats
+            // Stats (Lot 1)
             document.getElementById('dash-balance').innerText = `${s.balance.toFixed(2)} €`;
             document.getElementById('dash-equity').innerText = `${s.equity.toFixed(2)} €`;
             if (s.stats) {
@@ -512,6 +528,26 @@
                         <td class="py-4 pr-8 text-right font-black ${h.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">${h.pnl >= 0 ? '+' : ''}${h.pnl.toFixed(2)}</td>
                     </tr>
                 `).join('');
+            }
+
+            // Calendar (Lot 3)
+            if (s.news) {
+                const calBox = document.getElementById('calendar-content');
+                if (s.news.next_events && s.news.next_events.length > 0) {
+                    calBox.innerHTML = s.news.next_events.map(e => `
+                        <div class="flex justify-between items-center bg-white dark:bg-white/5 p-3 rounded-xl border border-black/5 mb-2">
+                            <div class="flex flex-col">
+                                <span class="text-[11px] font-bold">${e.title}</span>
+                                <span class="text-[9px] text-secondary font-mono">${e.time} • ${e.country}</span>
+                            </div>
+                            <span class="px-2 py-0.5 rounded-full text-[8px] font-black bg-red-500/10 text-red-500 uppercase tracking-widest">High</span>
+                        </div>
+                    `).join('');
+                } else if (s.news.reason === 'Calendar unavailable') {
+                    calBox.innerHTML = '<div class="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl text-accent-red text-center text-[10px] font-bold uppercase tracking-widest">Calendar Unavailable</div>';
+                } else {
+                    calBox.innerHTML = '<div class="text-secondary italic text-center py-6 text-[10px]">No high impact events detected.</div>';
+                }
             }
         }
 
