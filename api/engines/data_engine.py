@@ -11,19 +11,19 @@ class DataEngine:
     def __init__(self):
         self.crypto_provider = CryptoProvider()
         self.yahoo_forex = YahooProvider("FOREX")
-        self.yahoo_commodity = YahooProvider("COMMODITY")
-        self.yahoo_index = YahooProvider("INDEX")
+        self.yahoo_commodity = YahooProvider("COMMODITIES")
+        self.yahoo_index = YahooProvider("INDICES")
         self.catalog = MarketCatalog()
 
     def _get_provider(self, symbol: str):
         info = self.catalog.get_info(symbol)
-        if info.get("provider") == "crypto":
+        if info.get("provider") == "gate":
             return self.crypto_provider
-        elif info.get("class") == "FOREX":
+        elif info.get("asset_class") == "FOREX":
             return self.yahoo_forex
-        elif info.get("class") == "COMMODITY":
+        elif info.get("asset_class") == "COMMODITIES":
             return self.yahoo_commodity
-        elif info.get("class") == "INDEX":
+        elif info.get("asset_class") == "INDICES":
             return self.yahoo_index
         return None
 
@@ -40,7 +40,7 @@ class DataEngine:
             
             # Threshold varies by asset class
             limit = 60000 # 1 min default
-            if md.asset_class == "CRYPTO": limit = 10000 # 10s for crypto
+            if md.asset_class == "CRYPTO": limit = 15000 # 15s for crypto
             
             if md.data_age_ms > limit:
                 md.status = "DELAYED"
@@ -55,18 +55,38 @@ class DataEngine:
         return await provider.fetch_ohlcv(symbol, timeframe, limit)
 
     async def get_market_overview(self) -> Dict[str, List[Dict[str, Any]]]:
+        # Batch fetching instruments (Rule 31 concurrency control)
         symbols = self.catalog.get_all_symbols()
-        tasks = [self.fetch_ticker(s) for s in symbols]
-        results = await asyncio.gather(*tasks)
         
-        overview = {"CRYPTO": [], "FOREX": [], "COMMODITY": [], "INDEX": []}
-        for res in results:
-            if res:
-                overview[res["asset_class"]].append(res)
+        # Split into batches to avoid rate limits or heavy concurrent calls
+        batch_size = 5
+        overview = {cat: [] for cat in self.catalog.get_categories()}
+        
+        for i in range(0, len(symbols), batch_size):
+            batch = symbols[i:i+batch_size]
+            tasks = [self.fetch_ticker(s) for s in batch]
+            results = await asyncio.gather(*tasks)
+            for res in results:
+                if res:
+                    overview[res["asset_class"]].append(res)
+            # Short sleep between batches to be respectful to providers
+            await asyncio.sleep(0.1)
+            
         return overview
 
+    async def get_market_discovery(self) -> List[Dict[str, Any]]:
+        """
+        Rule 10: Dynamic discovery using catalog.
+        """
+        all_assets = []
+        for cat in self.catalog.get_categories():
+            for symbol in self.catalog.get_symbols_by_category(cat):
+                info = self.catalog.get_info(symbol)
+                all_assets.append(info)
+        return all_assets
+
     async def fetch_crypto_ohlcv(self, symbol: str, timeframe: str = '1m', limit: int = 100) -> pd.DataFrame:
-        # Legacy compatibility for api/index.py
+        # Legacy compatibility
         return await self.fetch_ohlcv(symbol, timeframe, limit)
 
     async def fetch_crypto_price(self, symbol: str) -> Dict[str, Any]:

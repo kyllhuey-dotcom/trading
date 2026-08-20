@@ -11,7 +11,10 @@ from api.engines.execution_router import ExecutionRouter
 from api.engines.state_machine import BotState, StateMachine
 from api.engines.portfolio_engine import PortfolioEngine
 from api.engines.broker_connector import BrokerConnector
+from api.engines.scanner_engine import ScannerEngine
+from typing import Optional
 import os
+import asyncio
 from datetime import datetime
 
 app = FastAPI(title="Trading Agent API")
@@ -25,6 +28,7 @@ demo_execution = ExecutionEngine(portfolio=portfolio_engine)
 broker_connector = BrokerConnector()
 execution_router = ExecutionRouter(demo_adapter=demo_execution, broker_connector=broker_connector)
 state_machine = StateMachine()
+scanner_engine = ScannerEngine(data_engine, analysis_engine, signal_engine, news_engine)
 
 # Global Bot State
 bot_state = {
@@ -32,79 +36,118 @@ bot_state = {
     "armed": False,
     "equity": 0.0,
     "drawdown": 0.0,
+    "is_running": False,
+    "latest_scan": [],
+    "engine_stats": {
+        "markets": 0,
+        "scanned": 0,
+        "analyzing": 0,
+        "signals": 0,
+        "tradable": 0
+    }
 }
 
+async def auto_scan_loop():
+    """
+    Rule 25: Continuous Auto Scan background task.
+    """
+    while True:
+        if bot_state["is_running"]:
+            try:
+                results = await scanner_engine.scan_all()
+                bot_state["latest_scan"] = results
+                
+                # Update Engine Stats (Rule 7)
+                bot_state["engine_stats"]["markets"] = len(data_engine.catalog.get_all_symbols())
+                bot_state["engine_stats"]["scanned"] = len([r for r in results if r.get("status") != "ERROR"])
+                bot_state["engine_stats"]["analyzing"] = len([r for r in results if r.get("trend") != "NEUTRAL"])
+                bot_state["engine_stats"]["signals"] = len([r for r in results if r.get("signal") == "SIGNAL_DETECTED"])
+                bot_state["engine_stats"]["tradable"] = len([r for r in results if r.get("tradable")])
+                
+            except Exception as e:
+                print(f"Auto-Scan Loop Error: {e}")
+        
+        await asyncio.sleep(30) # Wait between full cycles to respect rate limits
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(auto_scan_loop())
+
 @app.get("/api/status")
-async def get_status():
-    # 1. Check News/Calendar (Rules 14, 15, 16)
-    news_status = await news_engine.check_trading_allowed(asset_class="CRYPTO")
+async def get_status(symbol: str = "BTC/USDT"):
+    # ... (existing logic for single symbol analysis)
+    # 1. Fetch metadata
+    info = data_engine.catalog.get_info(symbol)
+    asset_class = info.get("asset_class", "CRYPTO")
     
-    # 2. Broker Connection Status (Rule 29)
+    # 2. Check News/Calendar
+    news_status = await news_engine.check_trading_allowed(asset_class=asset_class)
+    
+    # 3. Broker Connection Status
     broker_info = broker_connector.get_status()
     
-    # 3. Data Fetching & Integrity (Rules 3, 5, 23)
-    df_ltf = await data_engine.fetch_ohlcv("BTC/USDT", timeframe='1m', limit=100)
-    df_htf = await data_engine.fetch_ohlcv("BTC/USDT", timeframe='15m', limit=50)
-    ticker = await data_engine.fetch_ticker("BTC/USDT")
-
-    if not ticker or df_ltf.empty:
-        state_machine.transition_to(BotState.DATA_ERROR)
-        return {**bot_state, "status": state_machine.current_state, "status_display": "DATA ERROR", "news": news_status}
-
-    # 4. Live Position Update (Rule 27)
-    await demo_execution.update_active_positions(bot_state["mode"], {"BTC/USDT": ticker})
-    active_trade = demo_execution.active_positions[0] if demo_execution.active_positions else None
-    
-    # 5. Market Analysis (Rule 9, 10, 11, 12)
-    htf_analysis = analysis_engine.identify_structure(df_htf)
-    analysis = analysis_engine.identify_structure(df_ltf, htf_bias=htf_analysis.get("trend"))
-    analysis["df_preview"] = df_ltf.tail(30).to_dict('records')
-    
-    # 6. Signal Generation (Rule 17, 18, 19)
-    signal = signal_engine.generate_signal(analysis, news_status, df_ltf)
-    
-    # 7. Risk Calculation (Rule 24, 25, 26)
-    balance = portfolio_engine.get_balance(bot_state["mode"])
-    bot_state["equity"] = balance + (active_trade["pnl"] if active_trade else 0)
-    
-    risk_data = {"allowed": False}
-    if signal["status"] == "SIGNAL_DETECTED":
-        risk_data = risk_engine.calculate_position_size(balance=balance, entry=signal["entry"], stop_loss=signal["sl"])
-        
-        # 8. THE ORCHESTRATOR - EXECUTION (Rule 33, 55, 56)
-        # ARM Conditions (Rule 33)
-        can_trade = (
-            bot_state["armed"] and 
-            not broker_connector.emergency_stop_active and
-            risk_data["allowed"] and 
-            not active_trade and
-            news_status["trading_allowed"]
-        )
-
-        if can_trade:
-            state_machine.transition_to(BotState.EXECUTING)
-            exec_res = await execution_router.execute(bot_state["mode"], signal, risk_data, ticker)
-            if not exec_res.get("success"):
-                state_machine.transition_to(BotState.BROKER_ERROR)
-    
-    # 9. State Machine Transition Logic
+    # Check for Emergency Stop
     if broker_connector.emergency_stop_active:
         state_machine.transition_to(BotState.EMERGENCY_STOP)
-    elif active_trade:
-        state_machine.transition_to(BotState.POSITION_OPEN)
-    elif not news_status["trading_allowed"]:
-        state_machine.transition_to(BotState.NO_TRADE)
-    elif analysis.get("market_state") == "RANGE":
-        state_machine.transition_to(BotState.NO_TRADE)
-    elif signal["status"] == "SIGNAL_DETECTED":
-        state_machine.transition_to(BotState.SIGNAL_DETECTED)
+    elif not bot_state["is_running"]:
+        state_machine.transition_to(BotState.STOPPED)
     else:
-        state_machine.transition_to(BotState.ANALYZING)
+        state_machine.transition_to(BotState.RUNNING)
+
+    # Fetch Data for selected symbol
+    df_ltf = await data_engine.fetch_ohlcv(symbol, timeframe='1m', limit=100)
+    ticker = await data_engine.fetch_ticker(symbol)
+
+    if not ticker or df_ltf.empty:
+        if bot_state["is_running"]: state_machine.transition_to(BotState.ERROR)
+        return {**bot_state, "status": state_machine.current_state, "status_display": "DATA ERROR", "news": news_status, "selected_symbol": symbol}
+
+    # Market Analysis
+    df_htf = await data_engine.fetch_ohlcv(symbol, timeframe='15m', limit=50)
+    htf_analysis = analysis_engine.identify_structure(df_htf)
+    analysis = analysis_engine.identify_structure(df_ltf, htf_bias=htf_analysis.get("trend"))
+    analysis["df_preview"] = df_ltf.tail(40).to_dict('records') # More candles for the chart
+    
+    # Live Position Update
+    await demo_execution.update_active_positions(bot_state["mode"], {symbol: ticker})
+    active_trade = demo_execution.active_positions[0] if demo_execution.active_positions else None
+    
+    signal = {"status": "NO_TRADE", "reason": "System Stopped"}
+    risk_data = {"allowed": False}
+    balance = portfolio_engine.get_balance(bot_state["mode"])
+
+    # Trading Logic only if RUNNING
+    if bot_state["is_running"] and state_machine.current_state != BotState.EMERGENCY_STOP:
+        signal = signal_engine.generate_signal(analysis, news_status, df_ltf)
+        signal["symbol"] = symbol
+        
+        if signal["status"] == "SIGNAL_DETECTED":
+            risk_data = risk_engine.calculate_position_size(balance=balance, entry=signal["entry"], stop_loss=signal["sl"])
+            
+            can_trade = (
+                bot_state["armed"] and 
+                risk_data["allowed"] and 
+                not active_trade and
+                news_status["trading_allowed"]
+            )
+
+            if can_trade:
+                await execution_router.execute(bot_state["mode"], signal, risk_data, ticker)
+        
+        # Refining running sub-states
+        if active_trade:
+            state_machine.transition_to(BotState.POSITION_OPEN)
+        elif signal["status"] == "SIGNAL_DETECTED":
+            state_machine.transition_to(BotState.SIGNAL_DETECTED)
+        else:
+            state_machine.transition_to(BotState.RUNNING)
+
+    bot_state["equity"] = balance + (active_trade["pnl"] if active_trade else 0)
     
     return {
         **bot_state,
         "status": state_machine.current_state,
-        "status_display": state_machine.current_state.value.replace('_', ' '),
+        "status_display": state_machine.current_state.value,
         "balance": balance,
         "news": news_status,
         "analysis": analysis,
@@ -113,23 +156,54 @@ async def get_status():
         "active_trade": active_trade,
         "history": portfolio_engine.history[-15:],
         "stats": portfolio_engine.get_stats(),
-        "broker_info": broker_info
+        "broker_info": broker_info,
+        "selected_symbol": symbol,
+        "asset_info": info,
+        "best_setups": sorted([r for r in bot_state["latest_scan"] if r.get("score", 0) > 0], key=lambda x: x["score"], reverse=True)[:5]
     }
+
+@app.post("/api/start")
+async def start_bot():
+    bot_state["is_running"] = True
+    return {"success": True, "status": "RUNNING"}
+
+@app.post("/api/stop")
+async def stop_bot():
+    bot_state["is_running"] = False
+    return {"success": True, "status": "STOPPED"}
+
+@app.get("/api/markets/categories")
+async def get_market_categories():
+    return data_engine.catalog.get_categories()
 
 @app.get("/api/scanner")
 async def get_scanner():
-    overview = await data_engine.get_market_overview()
-    all_assets = []
-    for cat in overview:
-        for item in overview[cat]:
-            item["ai_score"] = min(99, max(10, 50 + int(item.get("change", 0) * 10)))
-            item["tradable"] = item["status"] == "LIVE"
-            all_assets.append(item)
-    return {"assets": all_assets}
+    """
+    Rule 35: Returns latest results from the background auto-scan loop.
+    """
+    return {"assets": bot_state["latest_scan"]}
+
+@app.get("/api/markets")
+async def get_markets():
+    """
+    Returns categorized market data. Uses latest scan for speed if available.
+    """
+    if bot_state["latest_scan"]:
+        overview = {cat: [] for cat in data_engine.catalog.get_categories()}
+        for item in bot_state["latest_scan"]:
+            overview[item["asset_class"]].append(item)
+        return overview
+    return await data_engine.get_market_overview()
+
+@app.get("/api/ohlcv/{symbol:path}")
+async def get_ohlcv(symbol: str, timeframe: str = '1m', limit: int = 100):
+    df = await data_engine.fetch_ohlcv(symbol, timeframe, limit)
+    return df.to_dict('records')
 
 @app.post("/api/emergency-stop")
 async def emergency_stop():
     broker_connector.trigger_emergency_stop()
+    bot_state["is_running"] = False
     bot_state["armed"] = False
     return {"status": "STOPPED"}
 
@@ -140,8 +214,6 @@ async def reset_emergency():
 
 @app.post("/api/mode")
 async def toggle_mode():
-    if broker_connector.emergency_stop_active:
-         return {"success": False, "message": "Emergency Stop is active. Reset required."}
     new_mode = "REAL" if bot_state["mode"] == "DEMO" else "DEMO"
     success, msg = await broker_connector.set_mode(new_mode)
     if success:
@@ -152,6 +224,17 @@ async def toggle_mode():
 async def arm_bot():
     bot_state["armed"] = not bot_state["armed"]
     return {"armed": bot_state["armed"]}
+
+@app.post("/api/demo/account")
+async def set_demo_balance(amount: float):
+    portfolio_engine.set_balance("DEMO", amount)
+    return {"success": True, "balance": amount}
+
+@app.post("/api/demo/reset")
+async def reset_demo_account():
+    demo_execution.clear_active_positions("DEMO")
+    portfolio_engine.reset_history()
+    return {"success": True}
 
 @app.get("/")
 async def read_index():

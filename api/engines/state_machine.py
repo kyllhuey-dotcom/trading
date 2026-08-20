@@ -2,26 +2,23 @@ from enum import Enum
 from typing import Set
 
 class BotState(str, Enum):
-    OFFLINE = "OFFLINE"
-    READY = "READY"
-    ANALYZING = "ANALYZING"
-    WAITING = "WAITING"
-    SIGNAL_DETECTED = "SIGNAL_DETECTED"
-    EXECUTING = "EXECUTING"
-    POSITION_OPEN = "POSITION_OPEN"
-    COOLDOWN = "COOLDOWN"
-    NO_TRADE = "NO_TRADE"
-    DATA_ERROR = "DATA_ERROR"
-    RISK_LOCK = "RISK_LOCK"
-    BROKER_ERROR = "BROKER_ERROR"
+    STOPPED = "STOPPED"
+    STARTING = "STARTING"
+    RUNNING = "RUNNING"
+    STOPPING = "STOPPING"
+    ERROR = "ERROR"
     EMERGENCY_STOP = "EMERGENCY_STOP"
+    # Legacy compatibility or extra detail
+    ANALYZING = "ANALYZING"
+    SIGNAL_DETECTED = "SIGNAL_DETECTED"
+    POSITION_OPEN = "POSITION_OPEN"
 
 class StateMachine:
     """
     Rule 34: Gestionnaire d'états du bot.
     """
     def __init__(self):
-        self.current_state = BotState.OFFLINE
+        self.current_state = BotState.STOPPED
 
     def transition_to(self, new_state: BotState):
         # Simplification: allow all transitions for now, 

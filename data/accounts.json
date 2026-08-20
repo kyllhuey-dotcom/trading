@@ -1,0 +1,10 @@
+{
+  "DEMO": {
+    "balance": 50.0,
+    "currency": "EUR"
+  },
+  "REAL": {
+    "balance": 0.0,
+    "currency": "EUR"
+  }
+}

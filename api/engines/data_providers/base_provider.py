@@ -22,7 +22,12 @@ class MarketData:
         self.latency_ms: int = 0
 
     def to_dict(self):
-        return self.__dict__
+        d = self.__dict__.copy()
+        # Ensure JSON serializable (Rule 47)
+        for k, v in d.items():
+            if hasattr(v, 'item'): # Numpy types
+                d[k] = v.item()
+        return d
 
 class BaseDataProvider(ABC):
     @abstractmethod

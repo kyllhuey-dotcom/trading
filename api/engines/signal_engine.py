@@ -59,7 +59,7 @@ class SignalEngine:
 
         # 3. FILTRE DE QUALITÉ MINIMALE
         if total_score < self.min_score:
-            return {"status": "NO_TRADE", "reason": f"Signal Quality: {total_score}/{self.min_score}"}
+            return {"status": "NO_TRADE", "reason": f"Signal Quality: {total_score}/{self.min_score}", "score": total_score}
 
         # 4. EXÉCUTION STRATÉGIQUE (Rule 19, 20, 21)
         direction = "BUY" if analysis["trend"] == "BULLISH" else "SELL"

@@ -40,6 +40,15 @@ class PortfolioEngine:
             self.accounts[mode]["balance"] += pnl
             self._save_json(self.accounts_file, self.accounts)
 
+    def set_balance(self, mode: str, amount: float):
+        if mode in self.accounts:
+            self.accounts[mode]["balance"] = amount
+            self._save_json(self.accounts_file, self.accounts)
+
+    def reset_history(self):
+        self.history = []
+        self._save_json(self.history_file, self.history)
+
     def add_to_history(self, trade: Dict[str, Any]):
         self.history.append(trade)
         self._save_json(self.history_file, self.history)

@@ -111,3 +111,7 @@ class ExecutionEngine:
         if closed_trades:
             self._save_positions()
         return closed_trades
+
+    def clear_active_positions(self, mode: str):
+        self.active_positions = [pos for pos in self.active_positions if pos["mode"] != mode]
+        self._save_positions()

@@ -130,34 +130,50 @@ class NewsEngine:
         session_status = self.session_filter.is_trading_allowed(asset_class=asset_class)
         
         all_events = await self.provider.fetch_events()
-        if not all_events and session_status["day_ok"]:
-             # If provider fails but it's a trading day, we must block per Rule 15
-             return {
-                "trading_allowed": False,
-                "reason": "Calendar unavailable",
-                **session_status
-             }
+        
+        # Default safety values (Rule 15 fail-safe)
+        news_ok = True
+        blocking_event = None
+        next_events = []
+
+        if not all_events:
+            # If provider fails, we don't necessarily block everything if we have no data, 
+            # but Rule 15 says "No trade if calendar unavailable".
+            if session_status["day_ok"]:
+                return {
+                    "trading_allowed": False,
+                    "day_ok": session_status["day_ok"],
+                    "news_ok": False,
+                    "session_ok": session_status["session_ok"],
+                    "blocking_event": {"title": "Calendar Unavailable"},
+                    "next_events": [],
+                    "reason": "Calendar unavailable"
+                }
              
         high_impact = self.filter.filter_high_impact(all_events, asset_currency)
         risk_status = self.risk_engine.check_risk(high_impact)
         
+        news_ok = not risk_status["is_blocked"]
+        blocking_event = risk_status["blocking_event"]
+        next_events = [
+            {
+                "title": e['title'],
+                "country": e['country'],
+                "time": e['time']
+            } for e in high_impact if e.get('impact') == 'High'
+        ][:3]
+
         trading_allowed = (
             session_status["day_ok"] and 
             session_status["session_ok"] and 
-            not risk_status["is_blocked"]
+            news_ok
         )
         
         return {
             "trading_allowed": trading_allowed,
             "day_ok": session_status["day_ok"],
-            "news_ok": not risk_status["is_blocked"],
+            "news_ok": news_ok,
             "session_ok": session_status["session_ok"],
-            "blocking_event": risk_status["blocking_event"],
-            "next_events": [
-                {
-                    "title": e['title'],
-                    "country": e['country'],
-                    "time": e['time']
-                } for e in high_impact if e.get('impact') == 'High'
-            ][:3]
+            "blocking_event": blocking_event,
+            "next_events": next_events
         }
