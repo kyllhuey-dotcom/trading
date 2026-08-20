@@ -172,6 +172,13 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="card-premium mb-10">
+                        <h4 class="text-sm font-bold text-secondary uppercase tracking-widest mb-6">Market Sectors Overview</h4>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-6" id="dashboard-market-grid">
+                            <!-- Categorized mini lists will be injected here -->
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -485,17 +492,27 @@
             document.getElementById('mode-live-btn').classList.toggle('active', s.mode === 'REAL');
 
             // AI Bubble
-            document.getElementById('ai-bubble').innerText = `"${s.signal?.status === 'SIGNAL_DETECTED' ? s.signal.reason : (s.analysis?.market_state === 'RANGE' ? 'Market is in range. No trade recommended.' : 'Analyzing market data...')}"`;
+            const bubble = document.getElementById('ai-bubble');
+            if (bubble) {
+                if (s.signal && s.signal.status === 'SIGNAL_DETECTED') {
+                    bubble.innerText = `"${s.signal.reason}"`;
+                } else if (s.analysis && s.analysis.market_state === 'RANGE') {
+                    bubble.innerText = '"Market is currently in range. No trade recommended."';
+                } else {
+                    bubble.innerText = '"Analyzing market data... System ready."';
+                }
+            }
 
             // Market Analysis
-                if (s.analysis && s.analysis.status === 'VALID') {
-                    const a = s.analysis;
-                    document.getElementById('ana-trend').innerText = a.trend;
-                    document.getElementById('ana-trend').className = `font-bold ${a.trend === 'BULLISH' ? 'text-accent-green' : 'text-accent-red'}`;
-                    document.getElementById('ana-struct').innerText = a.is_hh ? 'HH/HL' : (a.is_ll ? 'LH/LL' : 'Neutral');
-                    document.getElementById('ana-state').innerText = a.market_state;
-                    document.getElementById('ana-mom').innerText = `${a.momentum.toFixed(3)}%`;
-                    
+            const anaPanel = document.getElementById('ai-analysis-panel');
+            if (s.analysis && s.analysis.status === 'VALID') {
+                const a = s.analysis;
+                document.getElementById('ana-trend').innerText = a.trend || '--';
+                document.getElementById('ana-trend').className = `font-bold ${a.trend === 'BULLISH' ? 'text-accent-green' : (a.trend === 'BEARISH' ? 'text-accent-red' : 'text-slate-500')}`;
+                document.getElementById('ana-struct').innerText = a.is_hh ? 'HH/HL' : (a.is_ll ? 'LH/LL' : 'Neutral');
+                document.getElementById('ana-state').innerText = a.market_state || '--';
+                document.getElementById('ana-mom').innerText = (a.momentum || 0).toFixed(3) + '%';
+
                     // Added Source and Time (Rule 1)
                     if (document.getElementById('ana-source')) document.getElementById('ana-source').innerText = s.asset_info.providers?.gate ? 'Gate.io' : 'Yahoo';
                     if (document.getElementById('ana-time')) {
@@ -604,8 +621,14 @@
         // Global Actions
         document.getElementById('main-toggle-btn').onclick = async () => {
             const btn = document.getElementById('main-toggle-btn');
-            const endpoint = btn.innerText === 'START BOT' ? '/start' : '/stop';
-            await fetchAPI(endpoint, 'POST');
+            const isStarting = btn.innerText.includes('START');
+            btn.innerText = isStarting ? 'STARTING...' : 'STOPPING...';
+            btn.disabled = true;
+            
+            const endpoint = isStarting ? '/start' : '/stop';
+            const res = await fetchAPI(endpoint, 'POST');
+            
+            btn.disabled = false;
             update();
         };
 
@@ -634,36 +657,48 @@
 
         // Init Market Data
         async function initMarkets() {
+            const grid = document.getElementById('markets-full-grid');
+            const dashGrid = document.getElementById('dashboard-market-grid');
+            if (grid) grid.innerHTML = '<div class="col-span-full py-20 text-center opacity-50"><p class="animate-pulse">Loading Markets...</p></div>';
+
             const markets = await fetchAPI('/markets');
             if (markets && !markets.detail) {
-                const grid = document.getElementById('markets-full-grid');
-                const dashGrid = document.getElementById('dashboard-market-grid');
                 let dashHtml = '';
                 let fullHtml = '';
                 
                 Object.keys(markets).forEach(cat => {
+                    if (markets[cat].length === 0) return;
                     // Dashboard categories
                     dashHtml += `
                         <div class="space-y-2">
-                            <span class="text-[10px] font-black text-secondary uppercase">${cat}</span>
-                            ${markets[cat].slice(0, 3).map(m => `
-                                <div class="p-2 bg-black/5 rounded-lg text-[10px] font-bold flex justify-between cursor-pointer" onclick="selectMarket('${m.market_id}')">
+                            <span class="text-[10px] font-black text-secondary uppercase tracking-widest opacity-50">${cat}</span>
+                            ${markets[cat].slice(0, 3).map(m => {
+                                const price = m.last ? m.last.toFixed(m.asset_class==='FOREX'?4:2) : '--';
+                                return `
+                                <div class="p-2 bg-black/5 rounded-lg text-[10px] font-bold flex justify-between cursor-pointer hover:bg-black/10 transition-colors" onclick="selectMarket('${m.market_id}')">
                                     <span>${m.display_symbol}</span>
-                                    <span>${m.last.toFixed(m.asset_class==='FOREX'?4:2)}</span>
+                                    <span>${price}</span>
                                 </div>
-                            `).join('')}
+                            `}).join('')}
                         </div>
                     `;
                     // Full grid
-                    fullHtml += markets[cat].map(m => `
+                    fullHtml += markets[cat].map(m => {
+                        const price = m.last ? m.last.toFixed(m.asset_class==='FOREX'?4:2) : '--';
+                        return `
                         <div class="market-card" onclick="selectMarket('${m.market_id}')">
                             <span class="symbol text-xs font-black">${m.display_symbol}</span>
-                            <span class="price font-mono text-sm">${m.last.toFixed(m.asset_class==='FOREX'?4:2)}</span>
+                            <span class="price font-mono text-sm">${price}</span>
+                            <div class="flex justify-between items-center mt-2">
+                                <span class="text-[9px] uppercase font-bold opacity-30">${m.status}</span>
+                                <span class="text-[9px] font-bold ${m.change >= 0 ? 'text-accent-green' : 'text-accent-red'}">${m.change >= 0 ? '+' : ''}${(m.change || 0).toFixed(2)}%</span>
+                            </div>
                         </div>
-                    `).join('');
+                    `}).join('');
                 });
-                if (dashGrid) dashGrid.innerHTML = dashHtml;
-                if (grid) grid.innerHTML = fullHtml;
+                if (dashGrid) dashGrid.innerHTML = dashHtml || '<p class="text-xs text-secondary italic">No data received.</p>';
+                if (grid) grid.innerHTML = fullHtml || '<p class="text-center py-20 text-secondary">No markets available.</p>';
+                lucide.createIcons();
             }
         }
 

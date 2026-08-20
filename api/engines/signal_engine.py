@@ -10,52 +10,37 @@ class SignalEngine:
         """
         Génère un signal d'ultra-scalping déterministe (Rule 17, 18, 19).
         """
-        # 1. FAIL-SAFE : Validation des pré-requis système
-        if not news_status.get("trading_allowed"):
-            return {"status": "NO_TRADE", "reason": "System/Calendar Blocked"}
-            
-        if analysis.get("market_state") != "TRENDING":
-            return {"status": "NO_TRADE", "reason": f"Market State: {analysis.get('market_state')}"}
-        
-        if analysis.get("status") != "VALID":
-            return {"status": "NO_TRADE", "reason": "Invalid Market Analysis"}
-
-        # 2. CALCUL DU SCORE RÉEL (Rule 18)
-        # Chaque composant est calculé entre 0 et sa valeur max
-        
-        # A. Structure (max 20) : Score basé sur la clarté HH/HL ou LH/LL
+        # Base Score calculation for UI even if blocked
         struct_score = 20 if (analysis.get("is_hh") and analysis.get("is_hl")) or \
                            (analysis.get("is_lh") and analysis.get("is_ll")) else 10
         
-        # B. Trend (max 20) : Alignement avec HTF
         trend_score = 0
         if analysis.get("trend") == analysis.get("htf_bias") and analysis.get("trend") != "NEUTRAL":
             trend_score = 20
         elif analysis.get("trend") != "NEUTRAL":
             trend_score = 10
             
-        # C. Momentum (max 15) : Mesuré via ROC (Rate of Change)
         mom = abs(analysis.get("momentum", 0))
-        mom_score = min(15, int(mom * 100)) # Ex: 0.15% momentum -> 15 points
+        mom_score = min(15, int(mom * 100))
         
-        # D. Liquidity (max 15) : Volume relatif
-        avg_vol = df['Volume'].tail(20).mean()
-        curr_vol = df['Volume'].iloc[-1]
+        avg_vol = df['Volume'].tail(20).mean() if 'Volume' in df.columns else 0
+        curr_vol = df['Volume'].iloc[-1] if 'Volume' in df.columns else 0
         liq_score = min(15, int((curr_vol / avg_vol) * 7.5)) if avg_vol > 0 else 0
         
-        # E. Entry Quality (max 15) : Détection d'une cassure (BOS) ou d'un pullback
         entry_qual = 0
-        if analysis.get("bos"):
-            entry_qual = 15 # High quality on Break of Structure
-        elif abs(df['Close'].iloc[-1] - analysis.get("last_low" if analysis["trend"] == "BULLISH" else "last_high")) < \
-             abs(analysis.get("last_high") - analysis.get("last_low")) * 0.3:
-            entry_qual = 10 # Pullback quality
-            
-        # F. Risk/Reward (max 15) : Potentiel de gain
-        # Simulé pour le score, calculé précisément plus bas
-        rr_score = 15 
+        if analysis.get("bos"): entry_qual = 15
         
-        total_score = struct_score + trend_score + mom_score + liq_score + entry_qual + rr_score
+        total_score = struct_score + trend_score + mom_score + liq_score + entry_qual + 15
+        
+        # 1. FAIL-SAFE : Validation des pré-requis système
+        if not news_status.get("trading_allowed"):
+            return {"status": "NO_TRADE", "reason": "System/Calendar Blocked", "score": total_score}
+            
+        if analysis.get("market_state") != "TRENDING":
+            return {"status": "NO_TRADE", "reason": f"Market State: {analysis.get('market_state')}", "score": total_score}
+        
+        if analysis.get("status") != "VALID":
+            return {"status": "NO_TRADE", "reason": "Invalid Market Analysis", "score": total_score}
 
         # 3. FILTRE DE QUALITÉ MINIMALE
         if total_score < self.min_score:

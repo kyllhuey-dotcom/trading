@@ -72,31 +72,32 @@ bot_state = {
 async def auto_scan_loop():
     """
     Rule 25: Continuous Auto Scan background task.
+    MODIFIED: Runs even if bot is stopped for monitoring purposes.
     """
     while True:
-        if bot_state["is_running"]:
-            try:
-                results = await scanner_engine.scan_all()
-                bot_state["latest_scan"] = results
-                
-                # Update Engine Stats (Rule 7)
-                bot_state["engine_stats"]["markets"] = len(data_engine.catalog.get_all_ids())
-                bot_state["engine_stats"]["scanned"] = len([r for r in results if r.get("status") != "ERROR"])
-                bot_state["engine_stats"]["analyzing"] = len([r for r in results if r.get("trend") != "NEUTRAL"])
-                bot_state["engine_stats"]["signals"] = len([r for r in results if r.get("signal") == "SIGNAL_DETECTED"])
-                bot_state["engine_stats"]["tradable"] = len([r for r in results if r.get("tradable")])
-                
-                # Broadcast via WebSocket
-                await manager.broadcast(json.dumps({
-                    "type": "SCAN_COMPLETED",
-                    "timestamp": int(datetime.now().timestamp() * 1000),
-                    "stats": bot_state["engine_stats"]
-                }))
-                
-            except Exception as e:
-                print(f"Auto-Scan Loop Error: {e}")
+        try:
+            results = await scanner_engine.scan_all()
+            bot_state["latest_scan"] = results
+            
+            # Update Engine Stats (Rule 7)
+            bot_state["engine_stats"]["markets"] = len(data_engine.catalog.get_all_ids())
+            bot_state["engine_stats"]["scanned"] = len([r for r in results if r.get("status") != "ERROR"])
+            bot_state["engine_stats"]["analyzing"] = len([r for r in results if r.get("trend") != "NEUTRAL"])
+            bot_state["engine_stats"]["signals"] = len([r for r in results if r.get("signal") == "SIGNAL_DETECTED"])
+            bot_state["engine_stats"]["tradable"] = len([r for r in results if r.get("tradable")])
+            
+            # Broadcast via WebSocket
+            await manager.broadcast(json.dumps({
+                "type": "SCAN_COMPLETED",
+                "timestamp": int(datetime.now().timestamp() * 1000),
+                "stats": bot_state["engine_stats"]
+            }))
+            
+        except Exception as e:
+            print(f"Auto-Scan Loop Error: {e}")
         
-        await asyncio.sleep(20) # Cycle every 20s
+        # Cycle every 20s if running, 60s if stopped
+        await asyncio.sleep(20 if bot_state["is_running"] else 60)
 
 async def broadcaster_loop():
     """
