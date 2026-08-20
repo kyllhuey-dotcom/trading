@@ -35,6 +35,7 @@ class GateProvider(MarketDataProvider):
                 bid=ticker.get('bid'),
                 ask=ticker.get('ask'),
                 last=ticker['last'],
+                change_24h=ticker.get('percentage'),
                 spread=(ticker['ask'] - ticker['bid']) if ticker.get('ask') and ticker.get('bid') else None,
                 volume=ticker.get('baseVolume'),
                 source=self.source_name,

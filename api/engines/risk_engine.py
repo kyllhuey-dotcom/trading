@@ -1,59 +1,84 @@
 from typing import Dict, Any, Optional
+from datetime import datetime
 
 class RiskEngine:
     """
-    Risk Engine Professionnel (Rule 24, 25, 26).
-    Gère le dimensionnement des positions, le levier et la protection du capital.
+    Advanced Risk Engine (Rule 24, 25, 26, 36).
+    Handles position sizing, leverage, capital protection, and drawdown management.
     """
-    def __init__(self, max_risk_pct: float = 1.0, max_leverage: int = 20, min_account_balance: float = 10.0):
+    def __init__(self, 
+                 max_risk_pct: float = 1.0, 
+                 max_leverage: int = 20, 
+                 min_account_balance: float = 10.0,
+                 max_daily_loss_pct: float = 3.0,
+                 max_drawdown_pct: float = 5.0):
         self.max_risk_pct = max_risk_pct
         self.max_leverage = max_leverage
         self.min_account_balance = min_account_balance
+        self.max_daily_loss_pct = max_daily_loss_pct
+        self.max_drawdown_pct = max_drawdown_pct
+        
+        # State tracking (persisted via DatabaseManager in Lot 5 context if needed)
+        self.daily_pnl = 0.0
+        self.peak_balance = 0.0
+        self.last_loss_time: Optional[datetime] = None
+        self.cool_down_mins = 30
 
     def calculate_position_size(self, balance: float, entry: float, stop_loss: float, fee_pct: float = 0.05) -> Dict[str, Any]:
         """
-        Calcule la taille de position et le levier (Rule 24, 25, 26).
+        Calculates position size and leverage with advanced safety checks.
         """
-        # 1. FAIL-SAFE: Solde insuffisant (Rule 25)
+        # Update peak balance for drawdown calculation
+        if balance > self.peak_balance:
+            self.peak_balance = balance
+
+        # 0. COOL DOWN PROTECTION
+        if self.last_loss_time:
+            diff = (datetime.now() - self.last_loss_time).total_seconds() / 60
+            if diff < self.cool_down_mins:
+                return {"allowed": False, "reason": f"Cool down active ({int(self.cool_down_mins - diff)}m left)"}
+
+        # 1. FAIL-SAFE: Account Balance (Rule 25)
         if balance < self.min_account_balance:
             return {"allowed": False, "reason": f"Account balance too low: {balance:.2f} < {self.min_account_balance}"}
 
-        # 2. CALCUL DU RISQUE CASH
+        # 2. DRAWDOWN PROTECTION (Rule 36)
+        current_drawdown = ((self.peak_balance - balance) / self.peak_balance * 100) if self.peak_balance > 0 else 0
+        if current_drawdown > self.max_drawdown_pct:
+            return {"allowed": False, "reason": f"Max Drawdown reached: {current_drawdown:.2f}% > {self.max_drawdown_pct}%"}
+
+        # 3. DAILY LOSS PROTECTION (Rule 36)
+        if self.daily_pnl < -(balance * (self.max_daily_loss_pct / 100)):
+            return {"allowed": False, "reason": f"Max Daily Loss reached: {self.daily_pnl:.2f}€"}
+
+        # 4. CALCULATE CASH RISK
         risk_amount = balance * (self.max_risk_pct / 100)
         
-        # 3. DISTANCE AU STOP LOSS
+        # 5. STOP LOSS DISTANCE
         price_risk_per_unit = abs(entry - stop_loss)
         if price_risk_per_unit == 0:
             return {"allowed": False, "reason": "Invalid Stop Loss distance (Zero)"}
 
-        # 4. QUANTITÉ THÉORIQUE (Notional Risk)
-        # Quantity = Risk Amount / Price Risk
+        # 6. QUANTITY & NOTIONAL VALUE
         quantity = risk_amount / price_risk_per_unit
-        
-        # 5. VALEUR NOMINALE (Notional Value)
         notional_value = quantity * entry
         
-        # 6. CALCUL DU LEVIER NÉCESSAIRE (Rule 26)
-        # Leverage = Notional Value / Balance
+        # 7. LEVERAGE SAFETY (Rule 26)
         required_leverage = notional_value / balance
         
-        # 7. SÉCURITÉ LEVIER (Rule 26)
         if required_leverage > self.max_leverage:
-            # Si le levier requis est trop haut, on réduit la taille de position 
-            # pour ne pas dépasser le levier max, même si on risque moins de 1%
+            # Scale down position to fit max leverage
             safe_leverage = self.max_leverage
             notional_value = balance * safe_leverage
             quantity = notional_value / entry
             required_leverage = safe_leverage
-            # Recalcul du risque réel
             actual_risk_amount = quantity * price_risk_per_unit
             actual_risk_pct = (actual_risk_amount / balance) * 100
         else:
             actual_risk_pct = self.max_risk_pct
             actual_risk_amount = risk_amount
 
-        # 8. VÉRIFICATION MINIMUM ORDER SIZE (Rule 25)
-        # Simulation d'un minimum de 10 USDT pour les petites positions (Rule 12/25)
+        # 8. MINIMUM ORDER SIZE (Rule 25)
         if notional_value < 10.0:
              return {
                 "allowed": False, 
@@ -62,7 +87,7 @@ class RiskEngine:
              }
 
         # 9. ESTIMATION DES FRAIS (Rule 21)
-        estimated_fees = notional_value * (fee_pct / 100) * 2 # In + Out
+        estimated_fees = notional_value * (fee_pct / 100) * 2
 
         return {
             "allowed": True,
@@ -73,15 +98,13 @@ class RiskEngine:
             "notional_value": float(notional_value),
             "leverage": float(required_leverage),
             "estimated_fees": float(estimated_fees),
-            "max_allowed_leverage": self.max_leverage
+            "max_allowed_leverage": self.max_leverage,
+            "current_drawdown": float(current_drawdown)
         }
 
-    def check_daily_loss(self, current_pnl: float, balance: float, limit_pct: float = 2.0) -> Dict[str, Any]:
-        limit = -(balance * (limit_pct / 100))
-        is_locked = current_pnl <= limit
-        return {
-            "is_locked": is_locked,
-            "daily_pnl": current_pnl,
-            "loss_limit": limit,
-            "status": "LOCKED" if is_locked else "SAFE"
-        }
+    def update_peak(self, balance: float):
+        if balance > self.peak_balance:
+            self.peak_balance = balance
+
+    def reset_daily(self):
+        self.daily_pnl = 0.0

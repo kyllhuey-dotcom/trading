@@ -3,15 +3,15 @@ from typing import Dict, Any, List, Optional
 
 class PrimeXBTAdapter(BrokerAdapter):
     """
-    Adaptateur PrimeXBT (Rule 29, 60).
-    Note technique : PrimeXBT ne propose pas d'API publique pour le trading automatisé retail en 2026.
+    PrimeXBT Adapter (Rule 29, 48, 60).
+    Rule 48: PrimeXBT currently does not provide a public API for retail bots.
+    Marked as UNSUPPORTED until official integration mechanisms are released.
     """
     def __init__(self):
         self.connected = False
 
     async def connect(self) -> bool:
         # PrimeXBT doesn't have a public REST API for individual bot access.
-        # This adapter serves as a placeholder for official integration.
         return False
 
     async def get_balance(self) -> float:
@@ -23,8 +23,8 @@ class PrimeXBTAdapter(BrokerAdapter):
     async def execute_order(self, symbol: str, side: str, quantity: float, sl: float, tp: float) -> Dict[str, Any]:
         return {
             "success": False, 
-            "reason": "OFFICIAL_API_UNAVAILABLE",
-            "details": "PrimeXBT currently does not provide a public API for retail automated trading."
+            "reason": "OFFICIAL_API_UNSUPPORTED",
+            "details": "Rule 48: PrimeXBT manual trading only."
         }
 
     async def cancel_order(self, order_id: str) -> bool:
@@ -34,6 +34,6 @@ class PrimeXBTAdapter(BrokerAdapter):
         return {
             "broker": "PRIMEXBT",
             "connected": False,
-            "api_status": "OFFICIAL_API_NOT_SUPPORTED",
-            "message": "Manual trading only / No public API"
+            "api_status": "UNSUPPORTED",
+            "message": "Manual trading only / Official API Unavailable"
         }

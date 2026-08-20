@@ -1,46 +1,33 @@
-import json
-import os
+from .db_manager import DatabaseManager
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 class ExecutionEngine:
     """
-    Simule l'exécution en mode DEMO en utilisant les prix réels (Rule 27).
-    Prépare l'interface pour le mode REAL (Lot 8).
+    Simulates DEMO execution using real prices (Rule 27).
+    Prepares interface for REAL mode (Lot 8).
     """
-    def __init__(self, portfolio: Any, data_dir: str = "data"):
+    def __init__(self, portfolio: Any, db_manager: DatabaseManager, risk_engine: Any):
         self.portfolio = portfolio
-        self.data_dir = data_dir
-        self.active_positions_file = os.path.join(data_dir, "active_positions.json")
-        self.active_positions = self._load_positions()
+        self.db = db_manager
+        self.risk = risk_engine
 
-    def _load_positions(self):
-        if os.path.exists(self.active_positions_file):
-            with open(self.active_positions_file, 'r') as f:
-                try: return json.load(f)
-                except: return []
-        return []
-
-    def _save_positions(self):
-        with open(self.active_positions_file, 'w') as f:
-            json.dump(self.active_positions, f, indent=2)
+    @property
+    def active_positions(self):
+        return self.db.get_active_positions()
 
     async def execute_order(self, mode: str, signal: Dict[str, Any], risk: Dict[str, Any], ticker: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Exécute un ordre en utilisant le prix réel (Bid/Ask).
+        Executes order using real Bid/Ask prices.
         """
         if self.active_positions:
             return {"success": False, "reason": "Already have an open position"}
 
-        # Rule 27 : Fill simulé basé sur bid/ask réel
-        # Si BUY -> on achète au ASK. Si SELL -> on vend au BID.
+        # Rule 27 : Simulated fill based on real bid/ask
         entry_price = ticker.get('ask') if signal["direction"] == "BUY" else ticker.get('bid')
-        
-        # Fallback si bid/ask non dispos
-        if not entry_price:
-            entry_price = ticker.get('last')
+        if not entry_price: entry_price = ticker.get('last')
 
-        # Ajout du slippage (0.01% par défaut pour simulation réaliste)
+        # Realistic slippage (0.01%)
         slippage = 0.0001 
         if signal["direction"] == "BUY":
             entry_price *= (1 + slippage)
@@ -50,39 +37,39 @@ class ExecutionEngine:
         position = {
             "id": f"SIM-{int(datetime.now().timestamp())}",
             "mode": mode,
-            "symbol": signal["symbol"],
+            "symbol": signal.get("market_id"),
+            "display_symbol": signal.get("display_symbol"),
             "direction": signal["direction"],
             "entry_price": float(entry_price),
             "quantity": risk["quantity"],
             "sl": signal["sl"],
             "tp": signal["tp"],
             "leverage": risk["leverage"],
-            "fees": risk["estimated_fees"] / 2, # Frais d'ouverture
+            "fees": risk["estimated_fees"] / 2,
             "open_time": datetime.now().isoformat(),
             "status": "OPEN",
-            "pnl": - (risk["estimated_fees"] / 2) # On commence avec les frais payés
+            "pnl": - (risk["estimated_fees"] / 2)
         }
 
-        self.active_positions.append(position)
-        self._save_positions()
+        self.db.save_trade(position)
         return {"success": True, "position": position}
 
     async def update_active_positions(self, mode: str, tickers: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Met à jour le P&L latent et vérifie les sorties (SL/TP) avec prix réels.
+        Update unrealized P&L and check exits (SL/TP) with real prices.
         """
         closed_trades = []
-        for pos in self.active_positions[:]:
-            if pos["mode"] != mode: continue
-            
-            ticker = tickers.get(pos["symbol"])
+        active = self.db.get_active_positions(mode)
+        
+        for pos in active:
+            ticker = tickers.get(pos["display_symbol"]) or tickers.get(pos["symbol"])
             if not ticker: continue
             
-            # Prix pour fermer : Si on est LONG -> on vend au BID. Si SHORT -> on achète au ASK.
+            # Exit price: BUY -> sell at BID. SELL -> buy at ASK.
             current_exit_price = ticker.get('bid') if pos["direction"] == "BUY" else ticker.get('ask')
             if not current_exit_price: current_exit_price = ticker.get('last')
             
-            # Calcul PnL
+            # PnL Calculation
             if pos["direction"] == "BUY":
                 pnl = (current_exit_price - pos["entry_price"]) * pos["quantity"]
             else:
@@ -90,7 +77,7 @@ class ExecutionEngine:
             
             pos["pnl"] = float(pnl)
 
-            # Vérification SL / TP
+            # SL / TP check
             hit_sl = (pos["direction"] == "BUY" and current_exit_price <= pos["sl"]) or \
                      (pos["direction"] == "SELL" and current_exit_price >= pos["sl"])
             hit_tp = (pos["direction"] == "BUY" and current_exit_price >= pos["tp"]) or \
@@ -100,18 +87,23 @@ class ExecutionEngine:
                 pos["status"] = "CLOSED"
                 pos["exit_price"] = float(current_exit_price)
                 pos["close_time"] = datetime.now().isoformat()
-                # On retire les frais de sortie
                 pos["pnl"] -= (pos["fees"]) 
                 
                 self.portfolio.update_balance(mode, pos["pnl"])
-                self.portfolio.add_to_history(pos)
-                self.active_positions.remove(pos)
+                if pos["pnl"] < 0:
+                    self.risk.last_loss_time = datetime.now()
+                self.db.save_trade(pos)
                 closed_trades.append(pos)
+            else:
+                # Update latent PnL in DB? Optional, but good for persistence
+                self.db.save_trade(pos)
         
-        if closed_trades:
-            self._save_positions()
         return closed_trades
 
     def clear_active_positions(self, mode: str):
-        self.active_positions = [pos for pos in self.active_positions if pos["mode"] != mode]
-        self._save_positions()
+        # Mark all active as CLOSED or just delete? Better to mark as CLOSED/CANCELLED
+        active = self.db.get_active_positions(mode)
+        for pos in active:
+            pos["status"] = "CLOSED"
+            pos["close_time"] = datetime.now().isoformat()
+            self.db.save_trade(pos)

@@ -31,6 +31,9 @@ class YahooProvider(MarketDataProvider):
             last_price = float(last_row['Close'])
             
             # Normalization (Rule 3)
+            open_price = float(last_row['Open'])
+            change_pct = ((last_price - open_price) / open_price * 100) if open_price else 0
+            
             return TickerModel(
                 symbol=symbol,
                 name=symbol,
@@ -38,6 +41,7 @@ class YahooProvider(MarketDataProvider):
                 exchange="Global Market",
                 timestamp=int(data.index[-1].timestamp() * 1000),
                 last=last_price,
+                change_24h=change_pct,
                 open=float(last_row['Open']),
                 high=float(last_row['High']),
                 low=float(last_row['Low']),

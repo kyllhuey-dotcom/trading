@@ -1,23 +1,26 @@
 from .data_layer import DataLayer
-from .market_catalog import MarketCatalog
+from .market_universe import MarketUniverse
 from .data_providers.binance_provider import BinanceProvider
 from .data_providers.gate_provider import GateProvider
 from .data_providers.yahoo_provider import YahooProvider
+from .data_health import DataHealthMonitor
 from typing import Dict, Any, List, Optional
 import asyncio
+import pandas as pd
+import json
 from datetime import datetime
 
 class DataEngine:
     """
-    Market Data Orchestrator.
-    Handles discovery, normalization and freshness validation (Rule 4, 15, 17, 18).
+    Market Data Orchestrator (Rule 4, 15, 17, 18).
+    Manages multiple providers via DataLayer and handles normalization.
     """
     def __init__(self):
         self.layer = DataLayer()
-        self.catalog = MarketCatalog()
+        self.universe = MarketUniverse()
         
-        # Initialize Providers
-        self.crypto_provider = GateProvider() # Gate.io as primary crypto
+        # Initialize Providers (Rule 10)
+        self.crypto_provider = GateProvider() 
         self.forex_provider = YahooProvider("FOREX")
         self.index_provider = YahooProvider("INDICES")
         self.commodity_provider = YahooProvider("COMMODITIES")
@@ -28,64 +31,78 @@ class DataEngine:
         self.layer.register_provider("yahoo_indices", self.index_provider)
         self.layer.register_provider("yahoo_commodities", self.commodity_provider)
         
-        # Initialize Symbol Mapping
+        # Initialize Health Monitor (Rule 39)
+        self.health_monitor = DataHealthMonitor(self.layer.providers)
+        
+        # Initialize Symbol Mapping (Rule 14)
         self._init_symbol_map()
 
+    def set_ws_manager(self, manager: Any):
+        """Connect DataLayer to WebSocket for real-time broadcast."""
+        self.layer.subscribers.append(manager)
+
+    async def broadcast_market_update(self, market_id: str):
+        """Rule 20, 22: Broadcast a specific market update to the bus."""
+        info = self.universe.get_info(market_id)
+        if not info: return
+        
+        # Simple polling-to-broadcast for demonstration (WS native Lot 12)
+        ticker = await self.fetch_ticker(market_id)
+        if ticker:
+            update = {
+                "type": "MARKET_UPDATE",
+                "market_id": market_id,
+                "display_symbol": info["display_symbol"],
+                "price": ticker["last"],
+                "status": ticker["status"],
+                "timestamp": ticker["timestamp"]
+            }
+            await self.layer.broadcast_update(update)
+
     def _init_symbol_map(self):
-        for symbol in self.catalog.get_all_ids():
-            info = self.catalog.get_info(symbol)
-            asset_class = info.get("asset_class")
-            
-            if asset_class == "CRYPTO":
-                self.layer.symbol_map[symbol] = "gate"
-            elif asset_class == "FOREX":
-                self.layer.symbol_map[symbol] = "yahoo_forex"
-            elif asset_class == "INDICES":
-                self.layer.symbol_map[symbol] = "yahoo_indices"
-            elif asset_class == "COMMODITIES":
-                self.layer.symbol_map[symbol] = "yahoo_commodities"
+        for market_id in self.universe.get_all_ids():
+            info = self.universe.get_info(market_id)
+            # Register first available provider for each market in DataLayer mapping
+            for pid in info.get("providers", {}).keys():
+                if pid in self.layer.providers:
+                    self.layer.symbol_map[market_id] = pid
+                    break
 
     async def get_market_overview(self) -> Dict[str, List[Dict[str, Any]]]:
         """Unified market overview (Rule 12, 13)."""
-        ids = self.catalog.get_all_ids()
-        # Batch fetching to respect rate limits (Rule 43)
-        batch_size = 5
-        quotes = []
-        for i in range(0, len(ids), batch_size):
-            batch = ids[i:i+batch_size]
-            batch_quotes = await self.layer.get_all_quotes(batch, self.catalog)
-            quotes.extend(batch_quotes)
-            await asyncio.sleep(0.1) 
+        ids = self.universe.get_all_ids()
+        # Batch fetching quotes via DataLayer
+        quotes = await self.layer.get_all_quotes(ids, self.universe)
         
-        overview = {cat: [] for cat in self.catalog.get_categories()}
+        overview = {cat: [] for cat in self.universe.ASSET_CLASSES}
         for q in quotes:
-            # We need to find the market_id back from the provider symbol
-            # Simplification: we'll attach market_id to q in DataLayer soon.
-            # For now, let's search in catalog.
+            # Reverse mapping to find market_id
             market_id = "unknown"
             for mid in ids:
-                info = self.catalog.get_info(mid)
+                info = self.universe.get_info(mid)
                 if q.symbol in info.get("providers", {}).values():
                     market_id = mid
                     break
 
-            info = self.catalog.get_info(market_id)
+            info = self.universe.get_info(market_id)
             asset_class = info.get("asset_class")
             if asset_class in overview:
                 q_dict = q.dict()
+                # Operational status (Rule 11)
                 q_dict.update({
                     "market_id": market_id,
                     "display_symbol": info.get("display_symbol"),
                     "name": info.get("name", q.symbol),
                     "tick_size": info.get("tick_size"),
-                    "leverage": info.get("leverage")
+                    "leverage_max": info.get("leverage_max"),
+                    "market_status": self.universe.get_market_status(market_id)
                 })
                 overview[asset_class].append(q_dict)
         return overview
 
     async def fetch_ohlcv(self, market_id: str, timeframe: str = '1m', limit: int = 100):
-        # Map market_id to first available provider symbol
-        info = self.catalog.get_info(market_id)
+        # Map market_id to its provider and fetch (Rule 25)
+        info = self.universe.get_info(market_id)
         if not info: return pd.DataFrame()
         
         for pid, psymbol in info.get("providers", {}).items():
@@ -94,7 +111,7 @@ class DataEngine:
         return pd.DataFrame()
 
     async def fetch_ticker(self, market_id: str):
-        quotes = await self.layer.get_all_quotes([market_id], self.catalog)
+        quotes = await self.layer.get_all_quotes([market_id], self.universe)
         return quotes[0].dict() if quotes else None
 
     # Legacy method compatibility

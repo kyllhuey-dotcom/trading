@@ -7,6 +7,9 @@
 | Yahoo Fin| INDICES     | REST              | No        | No        | No      | Analysis/Demo |
 | Yahoo Fin| COMMODITIES | REST              | No        | No        | No      | Analysis/Demo |
 | ForexFact| CALENDAR    | REST (JSON)       | Yes       | No        | No      | Risk Filtering |
+| ING Think | MACRO       | RSS               | Yes       | No        | No      | Analysis/Context|
+| National  | GENERAL     | RSS (Configurable)| Yes       | No        | No      | Market Context  |
+| PrimeXBT  | BROKER      | Manual/Display    | Yes       | No        | No      | Execution(Manual)|
 
 ## Documentation
 - **Binance API**: [Official Documentation](https://binance-docs.github.io/apidocs/spot/en/)

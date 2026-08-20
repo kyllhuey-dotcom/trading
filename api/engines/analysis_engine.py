@@ -20,9 +20,17 @@ class AnalysisEngine:
                 df.at[df.index[i], 'is_low'] = True
         return df
 
+    def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> float:
+        high_low = df['High'] - df['Low']
+        high_close = (df['High'] - df['Close'].shift()).abs()
+        low_close = (df['Low'] - df['Close'].shift()).abs()
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = ranges.max(axis=1)
+        return float(true_range.tail(period).mean())
+
     def identify_structure(self, df: pd.DataFrame, htf_bias: str = "NEUTRAL") -> Dict[str, Any]:
         """
-        Analyse la structure du marché professionnelle (Rule 9).
+        Professional market structure analysis (Rule 9).
         Detect HH, HL, LH, LL, BOS, CHoCH, Range.
         """
         if len(df) < self.window * 4:
@@ -38,10 +46,10 @@ class AnalysisEngine:
             return {"status": "WEAK_STRUCTURE", "market_state": "TRANSITION", "trend": "NEUTRAL"}
 
         # 1. Structure Points Classification
-        last_h = highs['price'].iloc[-1]
-        prev_h = highs['price'].iloc[-2]
-        last_l = lows['price'].iloc[-1]
-        prev_l = lows['price'].iloc[-2]
+        last_h = float(highs['price'].iloc[-1])
+        prev_h = float(highs['price'].iloc[-2])
+        last_l = float(lows['price'].iloc[-1])
+        prev_l = float(lows['price'].iloc[-2])
 
         is_hh = last_h > prev_h
         is_hl = last_l > prev_l
@@ -56,7 +64,7 @@ class AnalysisEngine:
             current_trend = "BEARISH"
 
         # 3. BOS & CHoCH Detection (Rule 9)
-        current_price = df['Close'].iloc[-1]
+        current_price = float(df['Close'].iloc[-1])
         bos = False
         choch = False
         
@@ -73,18 +81,18 @@ class AnalysisEngine:
             choch = True
 
         # 4. Range Engine (Rule 12)
-        # Combine Pivot Structure + Volatility Compression
-        price_std = df['Close'].tail(20).std()
-        atr = (df['High'] - df['Low']).tail(20).mean()
+        atr = self._calculate_atr(df)
+        price_std = float(df['Close'].tail(20).std())
         
-        # Compression filter
-        is_compressed = price_std < (atr * 1.5)
+        # Compression filter: ATR shrinking and price within tight band
+        is_compressed = price_std < (atr * 0.8)
         
-        # Structural range: price bouncing between same highs/lows
-        is_structural_range = (abs(last_h - prev_h) / last_h < 0.001) and (abs(last_l - prev_l) / last_l < 0.001)
+        # Structural range: price bouncing between same highs/lows (within 0.1% for Forex, more for Crypto)
+        # Using a relative threshold based on ATR
+        is_structural_range = (abs(last_h - prev_h) < atr * 0.5) and (abs(last_l - prev_l) < atr * 0.5)
 
         market_state = "TRENDING"
-        if current_trend == "NEUTRAL" or is_structural_range or is_compressed:
+        if is_structural_range or is_compressed or current_trend == "NEUTRAL":
             market_state = "RANGE"
         elif choch:
             market_state = "TRANSITION"
@@ -104,7 +112,8 @@ class AnalysisEngine:
             "bos": bos,
             "choch": choch,
             "momentum": momentum,
-            "last_high": float(last_h),
-            "last_low": float(last_l),
-            "volatility": "High" if price_std > atr else ("Medium" if price_std > atr * 0.5 else "Low")
+            "last_high": last_h,
+            "last_low": last_l,
+            "atr": atr,
+            "volatility": "HIGH" if price_std > atr * 1.5 else ("MEDIUM" if price_std > atr * 0.5 else "LOW")
         }

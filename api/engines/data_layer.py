@@ -13,10 +13,17 @@ class DataLayer:
     """
     def __init__(self):
         self.providers: Dict[str, MarketDataProvider] = {}
-        self.symbol_map: Dict[str, str] = {} # market_id -> provider_id
+        self.symbol_map: Dict[str, str] = {} 
+        self.subscribers: List[Any] = [] # WebSocket managers or other engines
 
     def register_provider(self, provider_id: str, provider: MarketDataProvider):
         self.providers[provider_id] = provider
+
+    async def broadcast_update(self, update_data: Dict[str, Any]):
+        """Rule 20: MarketDataBus implementation."""
+        for sub in self.subscribers:
+            if hasattr(sub, "broadcast"):
+                await sub.broadcast(json.dumps(update_data))
 
     async def get_all_quotes(self, market_ids: List[str], catalog: Any) -> List[TickerModel]:
         tasks = []

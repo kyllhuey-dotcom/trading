@@ -1,67 +1,52 @@
-import json
-import os
-from datetime import datetime
+from .db_manager import DatabaseManager
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 
 class PortfolioEngine:
     """
-    Gère les soldes et la performance des comptes (Rule 27, 36, 38).
+    Manages balances and account performance using SQLite (Rule 27, 36, 38).
     """
-    def __init__(self, data_dir: str = "data"):
-        self.data_dir = data_dir
-        self.accounts_file = os.path.join(data_dir, "accounts.json")
-        self.history_file = os.path.join(data_dir, "history.json")
-        
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir)
-            
-        self.accounts = self._load_json(self.accounts_file, {
-            "DEMO": {"balance": 1000.0, "currency": "EUR"},
-            "REAL": {"balance": 0.0, "currency": "EUR"}
-        })
-        self.history = self._load_json(self.history_file, [])
-
-    def _load_json(self, path: str, default: Any):
-        if os.path.exists(path):
-            with open(path, 'r') as f:
-                try: return json.load(f)
-                except: return default
-        return default
-
-    def _save_json(self, path: str, data: Any):
-        with open(path, 'w') as f:
-            json.dump(data, f, indent=2)
+    def __init__(self, db_manager: DatabaseManager):
+        self.db = db_manager
 
     def get_balance(self, mode: str) -> float:
-        return self.accounts.get(mode, {}).get("balance", 0.0)
+        return self.db.get_balance(mode)
 
     def update_balance(self, mode: str, pnl: float):
-        if mode in self.accounts:
-            self.accounts[mode]["balance"] += pnl
-            self._save_json(self.accounts_file, self.accounts)
+        self.db.update_balance(mode, pnl)
 
     def set_balance(self, mode: str, amount: float):
-        if mode in self.accounts:
-            self.accounts[mode]["balance"] = amount
-            self._save_json(self.accounts_file, self.accounts)
+        self.db.set_balance(mode, amount)
 
     def reset_history(self):
-        self.history = []
-        self._save_json(self.history_file, self.history)
+        # We might want to keep history by default, but if asked to reset:
+        self.db.delete_history("DEMO")
+
+    @property
+    def history(self):
+        return self.db.get_history()
 
     def add_to_history(self, trade: Dict[str, Any]):
-        self.history.append(trade)
-        self._save_json(self.history_file, self.history)
+        # The DatabaseManager.save_trade handles both active and closed trades
+        trade["status"] = "CLOSED"
+        self.db.save_trade(trade)
+
+    def get_daily_pnl(self, mode: str) -> float:
+        history = self.db.get_history(mode=mode, limit=100)
+        today = datetime.now().strftime("%Y-%m-%d")
+        daily_trades = [t for t in history if t.get("close_time", "").startswith(today)]
+        return sum(t.get("pnl", 0.0) for t in daily_trades)
 
     def get_stats(self) -> Dict[str, Any]:
         """
         Calcule les statistiques réelles (Rule 38).
         """
-        if not self.history:
+        history = self.history
+        if not history:
             return {"total_trades": 0, "win_rate": 0, "profit_factor": 0, "total_pnl": 0}
             
-        wins = [t["pnl"] for t in self.history if t["pnl"] > 0]
-        losses = [t["pnl"] for t in self.history if t["pnl"] <= 0]
+        wins = [t["pnl"] for t in history if t["pnl"] > 0]
+        losses = [t["pnl"] for t in history if t["pnl"] <= 0]
         
         total_trades = len(self.history)
         win_rate = (len(wins) / total_trades) * 100

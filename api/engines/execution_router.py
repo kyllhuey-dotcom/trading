@@ -14,15 +14,18 @@ class ExecutionRouter:
 
     async def execute(self, mode: str, signal: Dict[str, Any], risk: Dict[str, Any], ticker: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Exécute l'ordre avec protection contre les duplications (Rule 31).
+        Executes order with protection against duplicates (Rule 31).
+        Routes to simulation or real broker.
         """
         # Protection Rule 31: Idempotence (Min 5s between orders)
         now = datetime.now()
         if self.last_order_timestamp and (now - self.last_order_timestamp).total_seconds() < 5:
             return {"success": False, "reason": "Execution throttled (anti-duplication)"}
 
-        # Client Order ID unique
-        client_order_id = f"ORD-{int(now.timestamp())}-{signal['symbol'].replace('/','')}"
+        # Unique Client Order ID
+        # Use display_symbol or market_id for ID string
+        sym_id = signal.get('display_symbol', signal.get('market_id', 'UNK')).replace('/','')
+        client_order_id = f"ORD-{int(now.timestamp())}-{sym_id}"
         
         if mode == "DEMO":
             res = await self.demo.execute_order(mode, signal, risk, ticker)

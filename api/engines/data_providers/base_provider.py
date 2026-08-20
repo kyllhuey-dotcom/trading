@@ -12,6 +12,10 @@ class TickerModel(BaseModel):
     bid: Optional[float] = None
     ask: Optional[float] = None
     last: float
+    open: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    change_24h: Optional[float] = None
     spread: Optional[float] = None
     volume: Optional[float] = None
     source: str

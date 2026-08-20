@@ -3,109 +3,276 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum Trade | Professional AI Trading</title>
+    <title>Quantum Trade Pro | Professional Trading</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
-            --bg-color: #fbfbfd;
-            --surface-color: rgba(255, 255, 255, 0.72);
+            --bg-color: #f5f5f7;
+            --surface-color: rgba(255, 255, 255, 0.8);
             --text-primary: #1d1d1f;
             --text-secondary: #86868b;
             --accent-blue: #0071e3;
-            --accent-green: #34c759;
+            --accent-green: #28cd41;
             --accent-red: #ff3b30;
-            --sidebar-width: 240px;
+            --accent-orange: #ff9f0a;
+            --sidebar-width: 260px;
+            --glass-border: 1px solid rgba(255, 255, 255, 0.3);
+            --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.04);
         }
 
         body.dark {
             --bg-color: #000000;
-            --surface-color: rgba(28, 28, 30, 0.72);
+            --surface-color: rgba(28, 28, 30, 0.8);
             --text-primary: #f5f5f7;
             --text-secondary: #86868b;
+            --glass-border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        * { font-family: 'Inter', -apple-system, sans-serif; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-        body { background-color: var(--bg-color); color: var(--text-primary); overflow: hidden; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
 
-        .glass { background: var(--surface-color); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
-        .sidebar-item { border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 10px 14px; font-size: 14px; font-weight: 500; color: var(--text-secondary); }
-        .sidebar-item:hover { background: rgba(0,0,0,0.05); color: var(--text-primary); }
-        .sidebar-item.active { background: var(--accent-blue); color: white; }
-        
-        .card-premium { background: var(--surface-color); backdrop-filter: blur(20px); border-radius: 18px; border: 1px solid rgba(0,0,0,0.05); padding: 24px; box-shadow: 0 4px 24px rgba(0,0,0,0.02); }
-        
-        .btn-premium { border-radius: 980px; padding: 8px 18px; font-size: 14px; font-weight: 500; transition: transform 0.2s; }
-        .btn-premium:active { transform: scale(0.96); }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            overflow: hidden;
+            transition: background-color 0.5s ease;
+        }
 
-        .tab-content { display: none; height: calc(100vh - 80px); overflow-y: auto; padding: 32px; animation: fadeIn 0.3s ease-out; }
-        .tab-content.active { display: block; }
+        .glass {
+            background: var(--surface-color);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: var(--glass-border);
+        }
 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .sidebar-item {
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            transition: all 0.2s ease;
+        }
 
-        /* Custom Chart Bars */
-        .chart-grid { display: flex; align-items: end; gap: 2px; height: 100%; width: 100%; }
-        .bar { background: var(--accent-blue); opacity: 0.3; border-radius: 2px 2px 0 0; flex: 1; }
-        .bar.up { background: var(--accent-green); opacity: 0.6; }
-        .bar.down { background: var(--accent-red); opacity: 0.6; }
-        
-        ::-webkit-scrollbar { width: 4px; background: transparent; }
+        .sidebar-item:hover {
+            background: rgba(0, 0, 0, 0.05);
+            color: var(--text-primary);
+        }
+
+        body.dark .sidebar-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .sidebar-item.active {
+            background: var(--accent-blue);
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 113, 227, 0.3);
+        }
+
+        .card-premium {
+            background: var(--surface-color);
+            backdrop-filter: blur(20px) saturate(180%);
+            border-radius: 24px;
+            border: var(--glass-border);
+            padding: 24px;
+            box-shadow: var(--card-shadow);
+        }
+
+        .btn-premium {
+            border-radius: 980px;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-premium:active {
+            transform: scale(0.96);
+        }
+
+        .tab-content {
+            display: none;
+            height: calc(100vh - 80px);
+            overflow-y: auto;
+            padding: 40px;
+            animation: slideUp 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .status-badge {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            padding: 4px 10px;
+            border-radius: 6px;
+            text-transform: uppercase;
+        }
+
+        .chart-grid {
+            display: flex;
+            align-items: end;
+            gap: 2px;
+            height: 100%;
+            width: 100%;
+        }
+
+        .bar {
+            border-radius: 2px 2px 0 0;
+            flex: 1;
+            transition: height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .bar.up { background: var(--accent-green); opacity: 0.8; }
+        .bar.down { background: var(--accent-red); opacity: 0.8; }
+
+        .switch-container {
+            background: rgba(120, 120, 128, 0.12);
+            border-radius: 20px;
+            padding: 2px;
+            display: flex;
+            gap: 2px;
+        }
+
+        .switch-option {
+            padding: 6px 16px;
+            border-radius: 18px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .switch-option.active {
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            color: var(--accent-blue);
+        }
+
+        body.dark .switch-option.active {
+            background: #636366;
+            color: white;
+        }
+
+        .market-card {
+            padding: 16px;
+            border-radius: 20px;
+            background: var(--surface-color);
+            border: var(--glass-border);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .market-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.06);
+            border-color: var(--accent-blue);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 10px; }
+        body.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
 
-        .switch-container { background: #f2f2f7; border-radius: 20px; padding: 4px; display: flex; gap: 4px; }
-        .switch-option { padding: 4px 16px; border-radius: 16px; font-size: 12px; font-weight: 600; cursor: pointer; }
-        .switch-option.active { background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1); color: var(--accent-blue); }
+        .metric-value {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
 
-        body.dark .switch-container { background: #1c1c1e; }
-        body.dark .switch-option.active { background: #3a3a3c; color: white; }
+        .metric-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
 
-        .market-card { width: 100%; padding: 12px; border-radius: 14px; background: var(--surface-color); border: 1px solid rgba(0,0,0,0.03); cursor: pointer; }
-        .market-card:hover { transform: translateY(-2px); border-color: var(--accent-blue); }
+        .skeleton {
+            background: linear-gradient(90deg, transparent, rgba(0,0,0,0.05), transparent);
+            background-size: 200% 100%;
+            animation: skeleton-loading 1.5s infinite;
+        }
+
+        @keyframes skeleton-loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
     </style>
 </head>
 <body class="light">
     <div class="flex h-screen w-screen">
         <!-- SIDEBAR -->
-        <aside class="w-[240px] h-full border-r border-black/5 flex flex-col p-6 glass z-50">
+        <aside class="w-[260px] h-full border-r border-black/5 flex flex-col p-6 glass z-50">
             <div class="flex items-center gap-3 mb-10 px-2">
-                <div class="w-8 h-8 bg-black dark:bg-white rounded-lg flex items-center justify-center">
-                    <i data-lucide="zap" class="text-white dark:text-black w-5 h-5"></i>
+                <div class="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center">
+                    <i data-lucide="orbit" class="text-white dark:text-black w-6 h-6"></i>
                 </div>
-                <span class="font-bold text-xl tracking-tight">Quantum</span>
+                <div>
+                    <h1 class="font-black text-lg leading-none tracking-tight">Quantum</h1>
+                    <p class="text-[10px] font-bold text-accent-blue uppercase tracking-widest mt-1">Trade Pro</p>
+                </div>
             </div>
 
             <nav class="space-y-1 flex-1">
                 <div class="sidebar-item active" onclick="showTab('dashboard')"><i data-lucide="layout-grid" class="w-5 h-5"></i> Dashboard</div>
-                <div class="sidebar-item" onclick="showTab('markets')"><i data-lucide="bar-chart-2" class="w-5 h-5"></i> Markets</div>
-                <div class="sidebar-item" onclick="showTab('scanner')"><i data-lucide="search" class="w-5 h-5"></i> Scanner</div>
-                <div class="sidebar-item" onclick="showTab('trading')"><i data-lucide="cpu" class="w-5 h-5"></i> AI Terminal</div>
-                <div class="sidebar-item" onclick="showTab('positions')"><i data-lucide="briefcase" class="w-5 h-5"></i> Positions</div>
-                <div class="sidebar-item" onclick="showTab('history')"><i data-lucide="history" class="w-5 h-5"></i> History</div>
-                <div class="sidebar-item" onclick="showTab('settings')"><i data-lucide="settings" class="w-5 h-5"></i> Settings</div>
+                <div class="sidebar-item" onclick="showTab('markets')"><i data-lucide="layers" class="w-5 h-5"></i> Market Hub</div>
+                <div class="sidebar-item" onclick="showTab('scanner')"><i data-lucide="radar" class="w-5 h-5"></i> Global Scanner</div>
+                <div class="sidebar-item" onclick="showTab('trading')"><i data-lucide="terminal" class="w-5 h-5"></i> Trade Terminal</div>
+                <div class="sidebar-item" onclick="showTab('positions')"><i data-lucide="briefcase" class="w-5 h-5"></i> Open Positions</div>
+                <div class="sidebar-item" onclick="showTab('history')"><i data-lucide="clock-rewind" class="w-5 h-5"></i> Trade Journal</div>
             </nav>
 
-            <div class="mt-auto pt-6 border-t border-black/5">
-                <button id="emergency-stop-btn" class="sidebar-item text-red-500 w-full hover:bg-red-500/10"><i data-lucide="power" class="w-5 h-5"></i> Emergency Stop</button>
+            <div class="mt-auto space-y-4 pt-6 border-t border-black/5 dark:border-white/5">
+                <div class="sidebar-item" onclick="showTab('settings')"><i data-lucide="settings" class="w-5 h-5"></i> Settings</div>
+                <button id="emergency-stop-btn" class="sidebar-item text-red-500 w-full hover:bg-red-500/10 active:bg-red-500/20">
+                    <i data-lucide="shield-alert" class="w-5 h-5"></i> Emergency Stop
+                </button>
             </div>
         </aside>
 
         <!-- MAIN CONTENT -->
         <main class="flex-1 h-full flex flex-col relative overflow-hidden">
             <!-- TOP BAR -->
-            <header class="h-[80px] w-full border-b border-black/5 flex items-center justify-between px-8 glass z-40">
-                <div class="flex items-center gap-6">
-                    <div class="flex flex-col">
-                        <span class="text-[10px] uppercase font-bold text-secondary tracking-widest">Bot Status</span>
-                        <div class="flex items-center gap-2">
-                            <div id="status-dot" class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                            <span class="font-bold text-sm" id="system-status-text">STOPPED</span>
+            <header class="h-[80px] w-full border-b border-black/5 dark:border-white/5 flex items-center justify-between px-10 glass z-40">
+                <div class="flex items-center gap-10">
+                    <div class="flex items-center gap-3">
+                        <div id="status-dot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
+                        <div class="flex flex-col">
+                            <span id="system-status-text" class="text-xs font-black uppercase tracking-widest">Disconnected</span>
+                            <span class="text-[9px] font-bold text-secondary uppercase tracking-tighter" id="bot-mode-display">DEMO MODE ACTIVE</span>
                         </div>
                     </div>
-                    <div class="h-8 w-[1px] bg-black/5 mx-2"></div>
+                    
+                    <div class="h-8 w-[1px] bg-black/5 dark:bg-white/5"></div>
+                    
                     <div class="flex flex-col">
-                         <span class="text-[10px] uppercase font-bold text-secondary tracking-widest">Active Asset</span>
-                         <span class="font-bold text-sm" id="active-symbol-header">BTC/USDT</span>
+                         <span class="text-[9px] uppercase font-extrabold text-secondary tracking-widest">Active Instrument</span>
+                         <span class="font-black text-sm" id="active-symbol-header">---</span>
                     </div>
                 </div>
 
@@ -114,69 +281,89 @@
                         <div class="switch-option active" id="mode-demo-btn">DEMO</div>
                         <div class="switch-option" id="mode-live-btn">LIVE</div>
                     </div>
-                    <button id="main-toggle-btn" class="btn-premium bg-black text-white dark:bg-white dark:text-black px-6 py-2 rounded-full font-bold text-xs active:scale-95 transition-all">START BOT</button>
-                    <button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-black/5" id="theme-toggle"><i data-lucide="moon" class="w-5 h-5"></i></button>
+                    
+                    <button id="main-toggle-btn" class="btn-premium bg-black text-white dark:bg-white dark:text-black">
+                        <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+                        <span>START SYSTEM</span>
+                    </button>
+                    
+                    <button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors" id="theme-toggle">
+                        <i data-lucide="moon" class="w-5 h-5"></i>
+                    </button>
                 </div>
             </header>
 
             <!-- DASHBOARD TAB -->
             <section id="tab-dashboard" class="tab-content active">
-                <div class="max-w-6xl mx-auto">
-                    <h2 class="text-3xl font-extrabold tracking-tight mb-8">Performance Overview</h2>
+                <div class="max-w-7xl mx-auto">
+                    <header class="mb-10">
+                        <h2 class="text-4xl font-black tracking-tight mb-2">Command Center</h2>
+                        <p class="text-secondary font-medium">Real-time performance and system diagnostic.</p>
+                    </header>
                     
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
                         <div class="card-premium">
-                            <span class="text-[10px] font-bold text-secondary uppercase tracking-widest block mb-2">Portfolio Value</span>
-                            <h3 class="text-3xl font-black tracking-tighter" id="dash-balance">-- €</h3>
+                            <span class="metric-label">Account Balance</span>
+                            <h3 class="metric-value mt-1" id="dash-balance">0.00 €</h3>
                         </div>
                         <div class="card-premium">
-                            <span class="text-[10px] font-bold text-secondary uppercase tracking-widest block mb-2">Current Equity</span>
-                            <h3 class="text-3xl font-black tracking-tighter" id="dash-equity">-- €</h3>
+                            <span class="metric-label">Current Equity</span>
+                            <h3 class="metric-value mt-1" id="dash-equity">0.00 €</h3>
                         </div>
                         <div class="card-premium">
-                            <span class="text-[10px] font-bold text-secondary uppercase tracking-widest block mb-2">Win Rate</span>
-                            <h3 class="text-3xl font-black tracking-tighter" id="dash-winrate">--%</h3>
+                            <span class="metric-label">Daily P&L</span>
+                            <h3 class="metric-value mt-1" id="dash-daily-pnl">0.00 €</h3>
                         </div>
                         <div class="card-premium">
-                            <span class="text-[10px] font-bold text-secondary uppercase tracking-widest block mb-2">Profit Factor</span>
-                            <h3 class="text-3xl font-black tracking-tighter" id="dash-pf">--</h3>
+                            <span class="metric-label">Max Drawdown</span>
+                            <h3 class="metric-value mt-1 text-accent-red" id="dash-drawdown">0.00%</h3>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
-                        <div class="card-premium">
-                            <h4 class="text-sm font-bold text-secondary uppercase tracking-widest mb-6">Trading Engine</h4>
-                            <div class="grid grid-cols-2 gap-4 text-[10px] font-black uppercase tracking-tight">
-                                <div class="flex justify-between border-b border-black/5 pb-2"><span>Status</span><span id="eng-status" class="text-red-500">STOPPED</span></div>
-                                <div class="flex justify-between border-b border-black/5 pb-2"><span>Markets</span><span id="eng-markets">--</span></div>
-                                <div class="flex justify-between border-b border-black/5 pb-2"><span>Scanned</span><span id="eng-scanned">--</span></div>
-                                <div class="flex justify-between border-b border-black/5 pb-2"><span>Analyzing</span><span id="eng-analyzing">--</span></div>
-                                <div class="flex justify-between border-b border-black/5 pb-2"><span>Signals</span><span id="eng-signals">--</span></div>
-                                <div class="flex justify-between border-b border-black/5 pb-2"><span>Tradable</span><span id="eng-tradable" class="text-accent-green">--</span></div>
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10">
+                        <div class="lg:col-span-4 card-premium flex flex-col">
+                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Engine Health</h4>
+                            <div class="space-y-4 flex-1">
+                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Scanner Status</span><span id="eng-status" class="status-badge bg-red-500/10 text-red-500">OFFLINE</span></div>
+                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Markets Tracked</span><span id="eng-markets" class="font-black text-sm">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Assets Scanned</span><span id="eng-scanned" class="font-black text-sm">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Trend Analysis</span><span id="eng-analyzing" class="font-black text-sm">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Signals Detected</span><span id="eng-signals" class="font-black text-sm">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Tradable Setups</span><span id="eng-tradable" class="status-badge bg-green-500/10 text-green-500">--</span></div>
+                                <div class="flex justify-between items-center border-t border-black/5 dark:border-white/5 pt-2 mt-2"><span class="text-[9px] font-black text-secondary uppercase">Last Scan Time</span><span id="eng-duration" class="font-mono text-[10px]">--s</span></div>
                             </div>
                         </div>
-                        <div class="card-premium">
-                            <h4 class="text-sm font-bold text-secondary uppercase tracking-widest mb-6">AI Copilot</h4>
-                            <div class="p-4 bg-black/5 rounded-2xl border border-black/5 italic text-[11px] text-primary mb-3" id="ai-bubble">
-                                "Ready to analyze market opportunities."
-                            </div>
-                            <div id="ai-scan-progress" class="opacity-0 transition-opacity">
-                                <div class="flex justify-between text-[8px] font-black mb-1 uppercase tracking-widest text-secondary"><span>Scanning...</span><span id="scan-pct">0%</span></div>
-                                <div class="w-full bg-black/5 h-0.5 rounded-full overflow-hidden"><div id="scan-bar" class="bg-accent-blue h-full transition-all duration-1000" style="width: 0%"></div></div>
-                            </div>
-                        </div>
-                        <div class="card-premium">
-                            <h4 class="text-sm font-bold text-secondary uppercase tracking-widest mb-6">Best Setups</h4>
-                            <div id="best-setups-list" class="space-y-1.5">
-                                <p class="text-secondary italic text-[10px]">Scanning markets...</p>
-                            </div>
-                        </div>
-                    </div>
 
-                    <div class="card-premium mb-10">
-                        <h4 class="text-sm font-bold text-secondary uppercase tracking-widest mb-6">Market Sectors Overview</h4>
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-6" id="dashboard-market-grid">
-                            <!-- Categorized mini lists will be injected here -->
+                        <div class="lg:col-span-5 card-premium">
+                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4 text-accent-red">Decision Diagnostic</h4>
+                            <div id="diagnosis-panel" class="space-y-6">
+                                <div class="flex items-start gap-4">
+                                    <div id="diag-icon" class="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-white/5 flex items-center justify-center shrink-0">
+                                        <i data-lucide="activity" class="w-6 h-6 text-slate-500"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-[10px] font-black text-secondary uppercase tracking-widest mb-1">Critical Blocker</p>
+                                        <p id="diag-main-blocker" class="text-lg font-black leading-tight mb-2">INITIALIZING...</p>
+                                        <p id="diag-reason" class="text-sm text-secondary font-medium leading-relaxed italic">
+                                            "System is warming up data streams..."
+                                        </p>
+                                    </div>
+                                </div>
+                                
+                                <div class="pt-4 mt-4 border-t border-black/5 dark:border-white/5">
+                                    <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-3">Checklist Status (15/15)</p>
+                                    <div id="diag-checklist" class="grid grid-cols-3 gap-2">
+                                        <!-- Mini indicators for all 15 checks -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="lg:col-span-3 card-premium">
+                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Top Opportunities</h4>
+                            <div id="best-setups-list" class="space-y-3">
+                                <p class="text-secondary font-medium text-xs italic">Awaiting scanner data...</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -184,34 +371,43 @@
 
             <!-- MARKETS TAB -->
             <section id="tab-markets" class="tab-content">
-                <div class="max-w-6xl mx-auto">
-                    <div class="flex justify-between items-center mb-8">
-                        <h2 class="text-3xl font-extrabold tracking-tight">Market Explorer</h2>
-                        <div class="flex gap-2" id="market-filters">
-                            <button onclick="setMarketFilter('ALL')" class="px-4 py-2 rounded-xl text-xs font-bold bg-black text-white">All</button>
+                <div class="max-w-7xl mx-auto">
+                    <header class="flex justify-between items-center mb-10">
+                        <div>
+                            <h2 class="text-4xl font-black tracking-tight mb-2">Market Hub</h2>
+                            <p class="text-secondary font-medium">Global assets across 4 classes.</p>
                         </div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-4" id="markets-full-grid"></div>
+                        <div class="switch-container p-1" id="market-filters">
+                            <div onclick="setMarketFilter('ALL')" class="switch-option active">ALL</div>
+                            <div onclick="setMarketFilter('CRYPTO')" class="switch-option">CRYPTO</div>
+                            <div onclick="setMarketFilter('FOREX')" class="switch-option">FOREX</div>
+                            <div onclick="setMarketFilter('INDICES')" class="switch-option">INDICES</div>
+                        </div>
+                    </header>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6" id="markets-full-grid"></div>
                 </div>
             </section>
 
             <!-- SCANNER TAB -->
             <section id="tab-scanner" class="tab-content">
-                <div class="max-w-6xl mx-auto">
-                    <h2 class="text-3xl font-extrabold tracking-tight mb-8">Market Scanner Pro</h2>
-                    <div class="card-premium overflow-hidden !p-0">
-                        <table class="w-full text-sm">
-                            <thead class="bg-black/5 text-[10px] text-secondary font-bold uppercase tracking-widest">
+                <div class="max-w-7xl mx-auto">
+                    <header class="mb-10">
+                        <h2 class="text-4xl font-black tracking-tight mb-2">Global Radar</h2>
+                        <p class="text-secondary font-medium">Unified scanning of all tracked instruments.</p>
+                    </header>
+                    <div class="card-premium !p-0 overflow-hidden border border-black/5 dark:border-white/5">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-black/[0.02] dark:bg-white/[0.02] text-[10px] text-secondary font-black uppercase tracking-widest">
                                 <tr>
-                                    <th class="py-4 pl-8 text-left">Instrument</th>
-                                    <th class="py-4 text-right">Price</th>
-                                    <th class="py-4 text-right">24h Change</th>
-                                    <th class="py-4 text-center">Trend</th>
-                                    <th class="py-4 text-center">Status</th>
-                                    <th class="py-4 pr-8 text-right">AI Score</th>
+                                    <th class="py-5 px-8">Instrument</th>
+                                    <th class="py-5 text-right">Last Price</th>
+                                    <th class="py-5 text-right">24h Chg</th>
+                                    <th class="py-5 text-center">Trend Bias</th>
+                                    <th class="py-5 text-center">Data Type</th>
+                                    <th class="py-5 pr-8 text-right">AI Score</th>
                                 </tr>
                             </thead>
-                            <tbody id="scanner-table-body"></tbody>
+                            <tbody id="scanner-table-body" class="divide-y divide-black/5 dark:divide-white/5"></tbody>
                         </table>
                     </div>
                 </div>
@@ -219,52 +415,91 @@
 
             <!-- TRADING TERMINAL -->
             <section id="tab-trading" class="tab-content">
-                <div class="grid grid-cols-12 gap-6 h-full">
-                    <div class="col-span-8 flex flex-col h-full">
-                        <div class="card-premium flex-1 flex flex-col">
-                            <div class="flex justify-between items-center mb-6">
+                <div class="grid grid-cols-12 gap-8 h-full max-w-[1600px] mx-auto">
+                    <div class="col-span-12 lg:col-span-8 flex flex-col h-full gap-8">
+                        <!-- Chart Area -->
+                        <div class="card-premium flex-1 flex flex-col relative">
+                            <div class="flex justify-between items-start mb-8">
                                 <div>
-                                    <h3 class="text-2xl font-black" id="trading-active-symbol">BTC/USDT</h3>
-                                    <p class="text-xs text-secondary font-bold uppercase" id="trading-asset-class">Crypto Portfolio</p>
+                                    <div class="flex items-center gap-3 mb-1">
+                                        <h3 class="text-3xl font-black tracking-tighter" id="trading-active-symbol">---</h3>
+                                        <span id="market-status-tag" class="text-[9px] font-black uppercase tracking-widest bg-green-500/10 text-green-500 px-2 py-0.5 rounded">OPEN</span>
+                                    </div>
+                                    <p class="text-xs font-bold text-secondary uppercase tracking-widest" id="trading-asset-class">---</p>
                                 </div>
                                 <div class="text-right">
-                                    <p class="text-xl font-mono font-bold" id="trading-live-price">--</p>
-                                    <p class="text-[10px] text-secondary font-bold uppercase">Real-Time Data</p>
+                                    <p class="text-3xl font-black tracking-tighter tabular-nums" id="trading-live-price">0.00</p>
+                                    <div class="flex items-center justify-end gap-2 mt-1">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                                        <span class="text-[10px] text-secondary font-black uppercase tracking-widest">Live Execution Feed</span>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="flex-1 bg-black/5 rounded-3xl p-10 relative overflow-hidden">
+                            
+                            <div class="flex-1 bg-black/[0.03] dark:bg-white/[0.03] rounded-[32px] p-8 relative overflow-hidden group">
                                 <div class="chart-grid" id="main-chart-bars"></div>
+                                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                    <span class="bg-black/10 dark:bg-white/10 backdrop-blur-md px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest">Interactive Chart Coming Soon</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- News Ticker -->
+                        <div class="card-premium h-[200px] flex flex-col">
+                            <div class="flex justify-between items-center mb-6">
+                                <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest">Global Data Stream</h4>
+                                <div class="flex items-center gap-4">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-1 h-1 rounded-full bg-red-500"></div>
+                                        <span class="text-[8px] font-bold text-secondary uppercase">High Impact News</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="terminal-news-list" class="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                                <p class="text-secondary font-medium text-xs italic text-center py-4">Connecting to decentralized data feeds...</p>
                             </div>
                         </div>
                     </div>
-                    <div class="col-span-4 h-full">
-                        <div class="card-premium h-full flex flex-col space-y-8">
-                            <div>
-                                <h4 class="text-xs font-bold text-secondary uppercase tracking-widest mb-4">Neural Analysis</h4>
+                    
+                    <div class="col-span-12 lg:col-span-4 h-full flex flex-col gap-8">
+                        <div class="card-premium flex-1 flex flex-col">
+                            <h4 class="text-sm font-black uppercase tracking-widest mb-8 border-b border-black/5 dark:border-white/5 pb-4">Neural Intelligence</h4>
+                            
+                            <div class="space-y-6 flex-1">
                                 <div class="space-y-4" id="ai-analysis-panel">
-                                    <div class="flex justify-between items-center text-sm"><span class="text-secondary">Trend Bias</span><span id="ana-trend" class="font-bold">--</span></div>
-                                    <div class="flex justify-between items-center text-sm"><span class="text-secondary">Market Structure</span><span id="ana-struct" class="font-bold">--</span></div>
-                                    <div class="flex justify-between items-center text-sm"><span class="text-secondary">Momentum</span><span id="ana-mom" class="font-bold">--</span></div>
-                                    <div class="flex justify-between items-center text-[10px] pt-2 opacity-50 border-t border-black/5">
-                                        <span class="text-secondary uppercase tracking-tighter">Source</span><span id="ana-source" class="font-bold uppercase">--</span>
-                                    </div>
-                                    <div class="flex justify-between items-center text-[10px] opacity-50">
-                                        <span class="text-secondary uppercase tracking-tighter">Last Tick</span><span id="ana-time" class="font-bold">--</span>
+                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Trend Alignment</span><span id="ana-trend" class="font-black text-sm">--</span></div>
+                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Structure Points</span><span id="ana-struct" class="font-black text-sm">--</span></div>
+                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Rel. Momentum</span><span id="ana-mom" class="font-black text-sm">--</span></div>
+                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Local Volatility</span><span id="ana-vol" class="font-black text-sm">--</span></div>
+                                </div>
+
+                                <div class="pt-8 border-t border-black/5 dark:border-white/5">
+                                    <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4">Signal Logic</h4>
+                                    <div id="trading-signal-box" class="min-h-[140px] flex items-center justify-center text-center">
+                                        <p class="text-secondary font-medium text-xs italic">Awaiting market trigger...</p>
                                     </div>
                                 </div>
                             </div>
-                            <div class="pt-8 border-t border-black/5">
-                                <h4 class="text-xs font-bold text-secondary uppercase tracking-widest mb-4">Trading Signal</h4>
-                                <div id="trading-signal-box">
-                                    <p class="text-secondary italic text-xs">Awaiting neural confirmation...</p>
-                                </div>
-                            </div>
-                            <div class="mt-auto">
+
+                            <div class="mt-auto pt-8">
                                 <div class="flex justify-between items-center mb-4">
-                                    <span class="text-[10px] font-bold text-secondary uppercase tracking-widest">AI Status</span>
-                                    <span id="arm-label" class="text-[10px] font-bold text-red-500">DISARMED</span>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-[10px] font-black text-secondary uppercase tracking-widest">Engine Status</span>
+                                        <div id="arm-status-indicator" class="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+                                    </div>
+                                    <span id="arm-label" class="text-[10px] font-black text-red-500 uppercase tracking-widest">DISARMED</span>
                                 </div>
-                                <button id="arm-toggle-btn" class="w-full py-4 bg-black text-white dark:bg-white dark:text-black rounded-2xl font-black text-sm active:scale-95 transition-all">ARM EXECUTION ENGINE</button>
+                                <button id="arm-toggle-btn" class="w-full py-5 bg-black text-white dark:bg-white dark:text-black rounded-2xl font-black text-sm active:scale-95 transition-all shadow-xl">
+                                    ARM EXECUTION ENGINE
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Safety Blockers -->
+                        <div class="card-premium h-[180px] border-2 border-transparent" id="blocker-card">
+                            <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-6">Security Layer</h4>
+                            <div id="terminal-blockers" class="space-y-3">
+                                <!-- Blockers injected here -->
                             </div>
                         </div>
                     </div>
@@ -274,29 +509,27 @@
             <!-- POSITIONS TAB -->
             <section id="tab-positions" class="tab-content">
                 <div class="max-w-4xl mx-auto">
-                    <h2 class="text-3xl font-extrabold tracking-tight mb-8">Open Exposure</h2>
-                    <div id="active-pos-list" class="space-y-4">
-                        <p class="text-secondary italic">No active positions detected.</p>
-                    </div>
+                    <h2 class="text-4xl font-black tracking-tight mb-8">Active Exposure</h2>
+                    <div id="active-pos-list" class="space-y-6"></div>
                 </div>
             </section>
 
             <!-- HISTORY TAB -->
             <section id="tab-history" class="tab-content">
-                <div class="max-w-4xl mx-auto">
-                    <h2 class="text-3xl font-extrabold tracking-tight mb-8">Trade Journal</h2>
-                    <div class="card-premium !p-0 overflow-hidden">
-                         <table class="w-full text-sm">
-                            <thead class="bg-black/5 text-[10px] text-secondary font-bold uppercase tracking-widest">
+                <div class="max-w-5xl mx-auto">
+                    <h2 class="text-4xl font-black tracking-tight mb-8">Trade Journal</h2>
+                    <div class="card-premium !p-0 overflow-hidden border border-black/5 dark:border-white/5">
+                         <table class="w-full text-sm text-left">
+                            <thead class="bg-black/[0.02] dark:bg-white/[0.02] text-[10px] text-secondary font-black uppercase tracking-widest">
                                 <tr>
-                                    <th class="py-4 pl-8 text-left">Asset</th>
-                                    <th class="py-4 text-center">Dir</th>
-                                    <th class="py-4 text-right">Entry</th>
-                                    <th class="py-4 text-right">Exit</th>
-                                    <th class="py-4 pr-8 text-right">Net P&L</th>
+                                    <th class="py-5 px-8">Instrument</th>
+                                    <th class="py-5 text-center">Direction</th>
+                                    <th class="py-5 text-right">Entry</th>
+                                    <th class="py-5 text-right">Exit</th>
+                                    <th class="py-5 pr-8 text-right">Realized P&L</th>
                                 </tr>
                             </thead>
-                            <tbody id="history-table-body"></tbody>
+                            <tbody id="history-table-body" class="divide-y divide-black/5 dark:divide-white/5"></tbody>
                         </table>
                     </div>
                 </div>
@@ -305,18 +538,30 @@
             <!-- SETTINGS TAB -->
             <section id="tab-settings" class="tab-content">
                 <div class="max-w-3xl mx-auto">
-                    <h2 class="text-3xl font-extrabold tracking-tight mb-8">System Settings</h2>
-                    <div class="card-premium mb-6">
-                        <h4 class="text-sm font-bold uppercase tracking-widest text-secondary mb-6">Demo Capital</h4>
-                        <div class="flex gap-3 mb-6">
-                            <input type="number" id="demo-bal-input" placeholder="1000.00" class="flex-1 bg-black/5 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-accent-blue/20 font-mono">
-                            <button onclick="setBalance()" class="btn-premium bg-accent-blue text-white px-8 font-bold">Update</button>
+                    <h2 class="text-4xl font-black tracking-tight mb-10">Intelligence Config</h2>
+                    
+                    <div class="space-y-8">
+                        <div class="card-premium">
+                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Capital Provisioning</h4>
+                            <div class="flex flex-col gap-4">
+                                <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Initial Demo Balance (€)</label>
+                                <div class="flex gap-4">
+                                    <input type="number" id="demo-bal-input" placeholder="10,000.00" class="flex-1 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-accent-blue/40 font-black text-lg">
+                                    <button onclick="setBalance()" class="btn-premium bg-accent-blue text-white shadow-lg shadow-accent-blue/30">Set Capital</button>
+                                </div>
+                            </div>
                         </div>
-                        <button onclick="resetAccount()" class="w-full py-4 border-2 border-accent-red text-accent-red rounded-2xl font-bold hover:bg-accent-red/5">RESET ACCOUNT & HISTORY</button>
-                    </div>
-                    <div class="card-premium border-2 border-red-500/20 bg-red-500/5">
-                        <h4 class="text-xs font-bold text-accent-red uppercase tracking-widest mb-4">Emergency Reset</h4>
-                        <button onclick="resetEmergency()" class="w-full py-4 bg-black text-white rounded-2xl font-black text-sm">RE-INITIALIZE SECURITY PROTOCOLS</button>
+
+                        <div class="card-premium border-red-500/20 bg-red-500/[0.02]">
+                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 text-red-500">System Reset</h4>
+                            <p class="text-xs text-secondary font-medium mb-8 leading-relaxed">
+                                Warning: Resetting the account will permanently erase your trade history and re-initialize the demo balance to default levels.
+                            </p>
+                            <div class="flex gap-4">
+                                <button onclick="resetAccount()" class="flex-1 py-4 border-2 border-red-500/20 text-red-500 rounded-2xl font-black text-xs hover:bg-red-500/5 transition-colors uppercase tracking-widest">Wipe Trade Journal</button>
+                                <button onclick="resetEmergency()" class="flex-1 py-4 bg-black text-white dark:bg-white dark:text-black rounded-2xl font-black text-xs uppercase tracking-widest">Reset Protocols</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -327,6 +572,7 @@
         lucide.createIcons();
         let selectedSymbol = 'btc_usdt';
         let ws;
+        let currentFilter = 'ALL';
 
         function connectWS() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -335,22 +581,42 @@
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 if (data.type === 'HEARTBEAT') {
-                    // Update status bar or small indicator
-                    console.log("WS Heartbeat", data.status);
-                    // We can also trigger a lightweight update here
-                    if (data.status === 'RUNNING' || data.status === 'POSITION_OPEN' || data.status === 'SIGNAL_DETECTED') {
-                        update();
-                    }
+                    updateStatus(data);
+                } else if (data.type === 'MARKET_UPDATE') {
+                    handleMarketUpdate(data);
                 } else if (data.type === 'SCAN_COMPLETED') {
-                    console.log("WS Scan Completed");
-                    update();
+                    update(); 
                 }
             };
 
-            ws.onclose = () => {
-                console.log("WS Disconnected. Reconnecting...");
-                setTimeout(connectWS, 5000);
-            };
+            ws.onclose = () => setTimeout(connectWS, 3000);
+        }
+
+        function updateStatus(data) {
+            const stText = document.getElementById('system-status-text');
+            if (stText) stText.innerText = data.status.replace(/_/g, ' ');
+            
+            const dot = document.getElementById('status-dot');
+            if (dot) {
+                dot.className = 'w-2.5 h-2.5 rounded-full shadow-lg transition-all duration-500';
+                if (data.is_running) {
+                    dot.classList.add('bg-green-500', 'animate-pulse', 'shadow-green-500/50');
+                } else {
+                    dot.classList.add('bg-slate-400');
+                }
+            }
+        }
+
+        function handleMarketUpdate(data) {
+            if (data.market_id === selectedSymbol) {
+                const priceEl = document.getElementById('trading-live-price');
+                if (priceEl) {
+                    const currentPrice = parseFloat(priceEl.innerText.replace(/,/g, ''));
+                    priceEl.innerText = data.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4});
+                    priceEl.style.color = data.price >= currentPrice ? 'var(--accent-green)' : 'var(--accent-red)';
+                    setTimeout(() => priceEl.style.color = '', 500);
+                }
+            }
         }
 
         connectWS();
@@ -359,282 +625,380 @@
         function showTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
-            const content = document.getElementById(`tab-${tabId}`);
-            if (content) content.classList.add('active');
-            const navItem = document.querySelector(`.sidebar-item[onclick*="${tabId}"]`);
-            if (navItem) navItem.classList.add('active');
-            if (tabId === 'scanner') updateScanner();
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+            document.querySelector(`.sidebar-item[onclick*="${tabId}"]`).classList.add('active');
+            if (tabId === 'scanner') update();
         }
 
         function selectMarket(market_id) {
-            selectedSymbol = market_id; // Using as ID
-            // document.getElementById('active-symbol-header').innerText = symbol; // Set in update loop now
+            selectedSymbol = market_id;
             showTab('trading');
             update();
+        }
+
+        function setMarketFilter(filter) {
+            currentFilter = filter;
+            document.querySelectorAll('#market-filters .switch-option').forEach(opt => {
+                opt.classList.toggle('active', opt.innerText === filter);
+            });
+            initMarkets();
         }
 
         // Theme Toggle
         document.getElementById('theme-toggle').onclick = () => {
             document.body.classList.toggle('dark');
-            const icon = document.querySelector('#theme-toggle i');
-            icon.setAttribute('data-lucide', document.body.classList.contains('dark') ? 'sun' : 'moon');
+            const isDark = document.body.classList.contains('dark');
+            document.querySelector('#theme-toggle i').setAttribute('data-lucide', isDark ? 'sun' : 'moon');
             lucide.createIcons();
         };
 
-        // API Interaction
+        // API
         async function fetchAPI(endpoint, method = 'GET', body = null) {
             try {
+                const url = `/api${endpoint}`;
                 const options = { method };
                 if (body) {
                     options.headers = { 'Content-Type': 'application/json' };
                     options.body = JSON.stringify(body);
                 }
-                const res = await fetch(`/api${endpoint}`, options);
+                const res = await fetch(url, options);
                 return await res.json();
-            } catch (e) {
-                console.error("API Error:", e);
-                return null;
-            }
+            } catch (e) { return null; }
         }
 
-        // Core Update
+        // Checklist Rendering (15 Rules)
+        const RULES_ORDER = [
+            "SYSTEM_ARMED", "DATA_VALID", "BROKER_VALID", "MARKET_OPEN",
+            "DAY_ALLOWED", "SESSION_ALLOWED", "NEWS_CLEAR", "RISK_VALID",
+            "LEVERAGE_VALID", "NOT_RANGE", "TREND_VALID", "STRUCTURE_VALID",
+            "SPREAD_VALID", "LIQUIDITY_VALID", "SIGNAL_VALID"
+        ];
+
+        function renderChecklist(checks) {
+            const container = document.getElementById('diag-checklist');
+            if (!container) return;
+            
+            container.innerHTML = RULES_ORDER.map(rule => {
+                const status = checks[rule] || 'WAIT';
+                let colorClass = 'bg-slate-200 text-slate-400';
+                if (status === 'PASS') colorClass = 'bg-green-500 text-white';
+                if (status === 'FAIL') colorClass = 'bg-red-500 text-white';
+                
+                return `
+                    <div class="flex flex-col items-center gap-1 group">
+                        <div class="w-full h-1.5 rounded-full ${colorClass} transition-colors duration-500"></div>
+                        <span class="text-[7px] font-black uppercase opacity-40 group-hover:opacity-100 transition-opacity">${rule.split('_')[0]}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Core Update Loop
         async function update() {
-            const market_id = selectedSymbol;
-            const s = await fetchAPI(`/status?market_id=${encodeURIComponent(market_id)}`);
+            const s = await fetchAPI(`/status?market_id=${selectedSymbol}`);
             if (!s) return;
 
-            // Update UI with Asset Info (Rule 13)
-            const info = s.asset_info || {};
-            const displaySymbol = info.display_symbol || s.selected_symbol || 'BTC/USDT';
-            document.getElementById('active-symbol-header').innerText = displaySymbol;
-            if (document.getElementById('trading-active-symbol')) {
-                document.getElementById('trading-active-symbol').innerText = displaySymbol;
-            }
-            if (document.getElementById('trading-asset-class')) {
-                document.getElementById('trading-asset-class').innerText = info.asset_class || 'CRYPTO';
-            }
-
-            // Status Bar & Bot Machine State (Lot 2)
-            const statusText = s.status_display || 'OFFLINE';
-            document.getElementById('system-status-text').innerText = statusText.toUpperCase();
+            // Global State
+            document.getElementById('active-symbol-header').innerText = s.selected_market.toUpperCase().replace('_', '/');
+            document.getElementById('bot-mode-display').innerText = `${s.mode} MODE ACTIVE`;
             
-            let statusDot = document.getElementById('status-dot');
-            statusDot.className = `w-2 h-2 rounded-full animate-pulse`;
-            if (s.status === 'RUNNING' || s.status === 'SIGNAL_DETECTED' || s.status === 'POSITION_OPEN') {
-                statusDot.classList.add('bg-green-500');
-            } else if (s.status === 'EMERGENCY_STOP' || s.status === 'ERROR') {
-                statusDot.classList.add('bg-red-500');
-            } else if (s.status === 'STARTING' || s.status === 'STOPPING') {
-                statusDot.classList.add('bg-yellow-500');
-            } else {
-                statusDot.classList.add('bg-slate-400');
-            }
-            
-            // Start/Stop Button Logic (Lot 2)
             const toggleBtn = document.getElementById('main-toggle-btn');
             if (s.is_running) {
-                toggleBtn.innerText = 'STOP BOT';
-                toggleBtn.className = 'btn-premium bg-red-500 text-white px-6 py-2 rounded-full font-bold text-xs active:scale-95 transition-all';
+                toggleBtn.innerHTML = '<i data-lucide="square" class="w-4 h-4 fill-current"></i><span>STOP SYSTEM</span>';
+                toggleBtn.className = 'btn-premium bg-red-500 text-white shadow-lg shadow-red-500/20';
             } else {
-                toggleBtn.innerText = 'START BOT';
-                toggleBtn.className = 'btn-premium bg-black dark:bg-white text-white dark:text-black px-6 py-2 rounded-full font-bold text-xs active:scale-95 transition-all';
+                toggleBtn.innerHTML = '<i data-lucide="play" class="w-4 h-4 fill-current"></i><span>START SYSTEM</span>';
+                toggleBtn.className = 'btn-premium bg-black text-white dark:bg-white dark:text-black shadow-lg';
+            }
+            lucide.createIcons();
+
+            // Portfolio
+            document.getElementById('dash-balance').innerText = `${s.balance.toLocaleString()} €`;
+            document.getElementById('dash-equity').innerText = `${s.equity.toLocaleString()} €`;
+            document.getElementById('dash-daily-pnl').innerText = `${s.daily_pnl >= 0 ? '+' : ''}${s.daily_pnl.toLocaleString()} €`;
+            document.getElementById('dash-daily-pnl').className = `metric-value mt-1 ${s.daily_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`;
+            document.getElementById('dash-drawdown').innerText = `${s.drawdown.toFixed(2)}%`;
+
+            // Engine Stats
+            document.getElementById('eng-status').innerText = s.is_running ? 'ACTIVE' : 'OFFLINE';
+            document.getElementById('eng-status').className = `status-badge ${s.is_running ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`;
+            document.getElementById('eng-markets').innerText = s.stats.markets || '--';
+            document.getElementById('eng-scanned').innerText = s.stats.scanned || '--';
+            document.getElementById('eng-analyzing').innerText = s.stats.analyzing || '--';
+            document.getElementById('eng-signals').innerText = s.stats.signals || '--';
+            document.getElementById('eng-tradable').innerText = s.stats.tradable || '0';
+            if (document.getElementById('eng-duration')) {
+                document.getElementById('eng-duration').innerText = `${(s.stats.scan_duration || 0).toFixed(2)}s`;
             }
 
-            // Stats (Lot 1)
-            document.getElementById('dash-balance').innerText = `${s.balance.toFixed(2)} €`;
-            document.getElementById('dash-equity').innerText = `${s.equity.toFixed(2)} €`;
-            if (s.stats) {
-                document.getElementById('dash-winrate').innerText = `${s.stats.win_rate}%`;
-                document.getElementById('dash-pf').innerText = s.stats.profit_factor.toFixed(2);
-            }
-
-            // Engine Stats (Rule 7)
-            const eng = s.engine_stats || {};
-            const engStatus = document.getElementById('eng-status');
-            if (engStatus) {
-                engStatus.innerText = s.is_running ? 'RUNNING' : 'STOPPED';
-                engStatus.className = s.is_running ? 'text-green-500' : 'text-red-500';
-                document.getElementById('eng-markets').innerText = eng.markets || 0;
-                document.getElementById('eng-scanned').innerText = eng.scanned || 0;
-                document.getElementById('eng-analyzing').innerText = eng.analyzing || 0;
-                document.getElementById('eng-signals').innerText = eng.signals || 0;
-                document.getElementById('eng-tradable').innerText = eng.tradable || 0;
-            }
-
-            // Best Setups (Lot 8)
-            const setupsList = document.getElementById('best-setups-list');
-            if (setupsList && s.best_setups && s.best_setups.length > 0) {
-                setupsList.innerHTML = s.best_setups.map(setup => `
-                    <div class="flex justify-between items-center p-2 bg-black/5 rounded-lg border border-black/5 cursor-pointer hover:border-accent-blue/30" onclick="selectMarket('${setup.symbol}')">
-                        <span class="text-[10px] font-black">${setup.symbol}</span>
-                        <div class="flex items-center gap-2">
-                            <span class="text-[10px] font-bold ${setup.trend === 'BULLISH' ? 'text-accent-green' : 'text-accent-red'}">${setup.score}/100</span>
+            // Diagnostic
+            if (s.diagnosis) {
+                const d = s.diagnosis;
+                renderChecklist(d.checks);
+                
+                const card = document.getElementById('blocker-card');
+                if (d.main_blocker === 'NONE') {
+                    document.getElementById('diag-main-blocker').innerText = 'READY FOR ENTRY';
+                    document.getElementById('diag-main-blocker').className = 'text-lg font-black leading-tight mb-2 text-green-500';
+                    document.getElementById('diag-reason').innerText = '"All proprietary algorithms aligned. Monitoring for execution trigger."';
+                    document.getElementById('diag-icon').className = 'w-12 h-12 rounded-2xl bg-green-500/10 flex items-center justify-center shrink-0';
+                    document.getElementById('diag-icon').innerHTML = '<i data-lucide="shield-check" class="w-6 h-6 text-green-500"></i>';
+                    if (card) card.style.borderColor = 'var(--accent-green)';
+                } else {
+                    document.getElementById('diag-main-blocker').innerText = d.main_blocker.replace(/_/g, ' ');
+                    document.getElementById('diag-main-blocker').className = 'text-lg font-black leading-tight mb-2 text-accent-red';
+                    document.getElementById('diag-reason').innerText = `"${d.main_reason}"`;
+                    document.getElementById('diag-icon').className = 'w-12 h-12 rounded-2xl bg-red-500/10 flex items-center justify-center shrink-0';
+                    document.getElementById('diag-icon').innerHTML = '<i data-lucide="shield-x" class="w-6 h-6 text-accent-red"></i>';
+                    if (card) card.style.borderColor = 'transparent';
+                }
+                
+                // Detailed Blockers in terminal
+                const blockersList = document.getElementById('terminal-blockers');
+                const fails = Object.entries(d.checks).filter(([k,v]) => v === 'FAIL');
+                if (fails.length > 0) {
+                    blockersList.innerHTML = fails.map(([k,v]) => `
+                        <div class="flex items-center gap-3">
+                            <div class="w-1.5 h-1.5 rounded-full bg-red-500 shadow-sm shadow-red-500/50"></div>
+                            <span class="text-[10px] font-black text-secondary uppercase tracking-widest">${k.replace(/_/g, ' ')}</span>
                         </div>
-                    </div>
-                `).join('');
-            }
-
-            // AI Progress
-            const scanProg = document.getElementById('ai-scan-progress');
-            if (scanProg) {
-                if (s.is_running) {
-                    scanProg.classList.remove('opacity-0');
-                    const pct = Math.floor((Date.now() % 30000) / 300);
-                    document.getElementById('scan-pct').innerText = `${pct}%`;
-                    document.getElementById('scan-bar').style.width = `${pct}%`;
+                    `).join('');
                 } else {
-                    scanProg.classList.add('opacity-0');
+                    blockersList.innerHTML = '<div class="flex items-center gap-3"><div class="w-1.5 h-1.5 rounded-full bg-green-500"></div><span class="text-[10px] font-black text-green-500 uppercase tracking-widest">SECURITY CLEARED</span></div>';
                 }
             }
 
-            // Mode Switch
-            document.getElementById('mode-demo-btn').classList.toggle('active', s.mode === 'DEMO');
-            document.getElementById('mode-live-btn').classList.toggle('active', s.mode === 'REAL');
-
-            // AI Bubble
-            const bubble = document.getElementById('ai-bubble');
-            if (bubble) {
-                if (s.signal && s.signal.status === 'SIGNAL_DETECTED') {
-                    bubble.innerText = `"${s.signal.reason}"`;
-                } else if (s.analysis && s.analysis.market_state === 'RANGE') {
-                    bubble.innerText = '"Market is currently in range. No trade recommended."';
-                } else {
-                    bubble.innerText = '"Analyzing market data... System ready."';
-                }
-            }
-
-            // Market Analysis
-            const anaPanel = document.getElementById('ai-analysis-panel');
-            if (s.analysis && s.analysis.status === 'VALID') {
+            // Analysis
+            if (s.analysis) {
                 const a = s.analysis;
-                document.getElementById('ana-trend').innerText = a.trend || '--';
-                document.getElementById('ana-trend').className = `font-bold ${a.trend === 'BULLISH' ? 'text-accent-green' : (a.trend === 'BEARISH' ? 'text-accent-red' : 'text-slate-500')}`;
-                document.getElementById('ana-struct').innerText = a.is_hh ? 'HH/HL' : (a.is_ll ? 'LH/LL' : 'Neutral');
-                document.getElementById('ana-state').innerText = a.market_state || '--';
-                document.getElementById('ana-mom').innerText = (a.momentum || 0).toFixed(3) + '%';
-
-                    // Added Source and Time (Rule 1)
-                    if (document.getElementById('ana-source')) document.getElementById('ana-source').innerText = s.asset_info.providers?.gate ? 'Gate.io' : 'Yahoo';
-                    if (document.getElementById('ana-time')) {
-                         const date = new Date(a.df_preview[a.df_preview.length-1].Timestamp);
-                         document.getElementById('ana-time').innerText = date.toLocaleTimeString('fr-FR');
-                    }
-
-                // Chart
+                const trendEl = document.getElementById('ana-trend');
+                trendEl.innerText = a.trend || 'NEUTRAL';
+                trendEl.className = `font-black text-sm ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}`;
+                
+                document.getElementById('ana-struct').innerText = (a.is_hh ? 'HH/HL' : (a.is_ll ? 'LH/LL' : 'CONSOLIDATION'));
+                document.getElementById('ana-mom').innerText = `${(a.momentum || 0).toFixed(4)}%`;
+                document.getElementById('ana-vol').innerText = a.volatility || 'LOW';
+                
                 if (a.df_preview) {
                     const chart = document.getElementById('main-chart-bars');
                     const prices = a.df_preview.map(p => p.Close);
                     const min = Math.min(...prices);
                     const max = Math.max(...prices);
-                    const range = max - min;
+                    const range = (max - min) || 1;
                     chart.innerHTML = a.df_preview.map(p => {
-                        const h = range === 0 ? 50 : ((p.Close - min) / range) * 80 + 10;
+                        const h = ((p.Close - min) / range) * 70 + 15;
                         return `<div class="bar ${p.Close >= p.Open ? 'up' : 'down'}" style="height: ${h}%"></div>`;
                     }).join('');
-                    document.getElementById('trading-live-price').innerText = prices[prices.length-1].toLocaleString();
                 }
             }
 
-            // Trading Panel
+            // Signal
             const sigBox = document.getElementById('trading-signal-box');
-            if (s.signal?.status === 'SIGNAL_DETECTED') {
+            if (s.signal && s.signal.status === 'SIGNAL_DETECTED') {
                 const sig = s.signal;
                 sigBox.innerHTML = `
-                    <div class="p-4 bg-accent-blue/5 rounded-2xl border border-accent-blue/20">
-                        <div class="flex justify-between items-center mb-3">
-                            <span class="text-xl font-black ${sig.direction === 'BUY' ? 'text-accent-green' : 'text-accent-red'}">${sig.direction}</span>
-                            <span class="text-xs font-bold px-2 py-0.5 rounded bg-black/5">${sig.score}/100</span>
-                        </div>
-                        <div class="grid grid-cols-2 gap-y-2 text-[10px] font-bold">
-                            <span class="text-secondary">ENTRY</span><span class="text-right font-mono">${sig.entry.toFixed(2)}</span>
-                            <span class="text-secondary text-red-500">STOP</span><span class="text-right font-mono text-red-500">${sig.sl.toFixed(2)}</span>
-                            <span class="text-secondary text-green-500">TARGET</span><span class="text-right font-mono text-green-500">${sig.tp.toFixed(2)}</span>
-                        </div>
-                    </div>
-                `;
-            } else {
-                sigBox.innerHTML = `<p class="text-secondary italic text-xs">${s.signal?.reason || 'Scanning...'}</p>`;
-            }
-
-            // Arm Engine
-            const armBtn = document.getElementById('arm-toggle-btn');
-            const armLbl = document.getElementById('arm-label');
-            armBtn.innerText = s.armed ? 'DISARM ENGINE' : 'ARM ENGINE';
-            armBtn.className = `w-full py-4 ${s.armed ? 'bg-red-500 text-white' : 'bg-black dark:bg-white text-white dark:text-black'} rounded-2xl font-black text-sm active:scale-95 transition-all`;
-            armLbl.innerText = s.armed ? 'ACTIVE' : 'DISARMED';
-            armLbl.className = `text-[10px] font-bold ${s.armed ? 'text-green-500' : 'text-red-500'}`;
-
-            // Positions
-            const posCont = document.getElementById('active-pos-list');
-            if (s.active_trade) {
-                const p = s.active_trade;
-                posCont.innerHTML = `
-                    <div class="card-premium border-2 border-accent-blue">
+                    <div class="w-full p-6 bg-accent-blue/5 border border-accent-blue/10 rounded-3xl animate-pulse">
                         <div class="flex justify-between items-center mb-4">
-                            <span class="font-black text-xl">${p.symbol}</span>
-                            <span class="text-2xl font-black ${p.pnl >= 0 ? 'text-accent-green' : 'text-accent-red'}">${p.pnl >= 0 ? '+' : ''}${p.pnl.toFixed(2)} €</span>
+                            <span class="text-2xl font-black ${sig.direction === 'BUY' ? 'text-green-500' : 'text-accent-red'}">${sig.direction}</span>
+                            <span class="bg-black text-white px-3 py-1 rounded-full text-[10px] font-black">${sig.score}/100</span>
                         </div>
-                        <div class="flex justify-between text-xs font-bold text-secondary">
-                            <span>${p.direction} • ${p.quantity.toFixed(4)} Units</span>
-                            <span>Lev: ${p.leverage}x</span>
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-[10px] font-black"><span class="text-secondary">TARGET</span><span class="text-green-500">${sig.tp.toFixed(4)}</span></div>
+                            <div class="flex justify-between text-[10px] font-black"><span class="text-secondary">STOP</span><span class="text-red-500">${sig.sl.toFixed(4)}</span></div>
                         </div>
                     </div>
                 `;
             } else {
-                posCont.innerHTML = '<p class="text-secondary italic text-center py-10">No active positions.</p>';
+                sigBox.innerHTML = `<p class="text-secondary font-medium text-xs italic">${s.signal?.reason || 'Monitoring neural pathways...'}</p>`;
             }
 
-            // History
-            if (s.history) {
-                document.getElementById('history-table-body').innerHTML = s.history.slice().reverse().map(h => `
-                    <tr class="border-b border-black/5">
-                        <td class="py-4 pl-8 font-bold">${h.symbol}</td>
-                        <td class="py-4 text-center font-black ${h.direction === 'BUY' ? 'text-green-500' : 'text-red-500'}">${h.direction[0]}</td>
-                        <td class="py-4 text-right font-mono">${h.entry_price.toFixed(2)}</td>
-                        <td class="py-4 text-right font-mono">${h.exit_price ? h.exit_price.toFixed(2) : '--'}</td>
-                        <td class="py-4 pr-8 text-right font-black ${h.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">${h.pnl >= 0 ? '+' : ''}${h.pnl.toFixed(2)}</td>
+            // Arm Button
+            const armBtn = document.getElementById('arm-toggle-btn');
+            armBtn.innerText = s.armed ? 'DISARM EXECUTION ENGINE' : 'ARM EXECUTION ENGINE';
+            armBtn.className = `w-full py-5 ${s.armed ? 'bg-red-500' : 'bg-black dark:bg-white'} text-white dark:text-black rounded-2xl font-black text-sm active:scale-95 transition-all shadow-xl`;
+            document.getElementById('arm-label').innerText = s.armed ? 'ARMED' : 'DISARMED';
+            document.getElementById('arm-label').className = `text-[10px] font-black ${s.armed ? 'text-green-500' : 'text-red-500'} uppercase tracking-widest`;
+            document.getElementById('arm-status-indicator').className = `w-1.5 h-1.5 rounded-full ${s.armed ? 'bg-green-500 shadow-sm shadow-green-500/50' : 'bg-red-500'}`;
+
+            // Terminal News (Calendar)
+            const newsList = document.getElementById('terminal-news-list');
+            if (s.news && s.news.next_events) {
+                newsList.innerHTML = s.news.next_events.map(e => `
+                    <div class="flex items-center justify-between p-3 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl border border-black/5 dark:border-white/5">
+                        <div class="flex items-center gap-4">
+                            <div class="flex flex-col items-center min-w-[40px]">
+                                <span class="text-[8px] font-black text-secondary opacity-50 uppercase">${e.currency}</span>
+                                <div class="w-2 h-2 rounded-full ${e.impact === 'High' ? 'bg-red-500' : (e.impact === 'Medium' ? 'bg-yellow-500' : 'bg-blue-500')}"></div>
+                            </div>
+                            <div>
+                                <p class="text-[11px] font-black leading-tight">${e.event}</p>
+                                <p class="text-[9px] text-secondary font-bold mt-1 uppercase tracking-tighter">${e.time || 'All Day'} • PROJECTION: ${e.forecast || '--'}</p>
+                            </div>
+                        </div>
+                        <i data-lucide="bell" class="w-3 h-3 text-secondary opacity-30"></i>
+                    </div>
+                `).join('');
+                lucide.createIcons();
+            }
+
+            // Scanner Table
+            if (s.best_setups) {
+                const setupsList = document.getElementById('best-setups-list');
+                setupsList.innerHTML = s.best_setups.map(setup => `
+                    <div onclick="selectMarket('${setup.symbol}')" class="flex justify-between items-center p-3 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl border border-black/5 dark:border-white/5 cursor-pointer hover:border-accent-blue/40 transition-all group">
+                        <div class="flex flex-col">
+                            <span class="text-[10px] font-black uppercase tracking-widest group-hover:text-accent-blue transition-colors">${setup.symbol.replace('_', '/')}</span>
+                            <span class="text-[8px] font-bold text-secondary uppercase">${setup.trend || 'NEUTRAL'}</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                             <span class="text-xs font-black">${setup.score}</span>
+                             <div class="w-8 h-1 rounded-full bg-black/5 dark:bg-white/5 overflow-hidden">
+                                <div class="h-full bg-accent-blue" style="width: ${setup.score}%"></div>
+                             </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Scanner Tab Table
+            const scannerBody = document.getElementById('scanner-table-body');
+            const scannerData = await fetchAPI('/scanner');
+            if (scannerBody && scannerData && scannerData.assets) {
+                scannerBody.innerHTML = scannerData.assets.map(a => `
+                    <tr class="group hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer" onclick="selectMarket('${a.symbol}')">
+                        <td class="py-5 px-8">
+                            <div class="flex flex-col">
+                                <span class="font-black text-sm">${a.symbol.toUpperCase().replace('_', '/')}</span>
+                                <span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${a.name || '---'}</span>
+                            </div>
+                        </td>
+                        <td class="py-5 text-right font-black tabular-nums">${a.price ? a.price.toLocaleString(undefined, {minimumFractionDigits: 2}) : '--'}</td>
+                        <td class="py-5 text-right font-bold ${a.change >= 0 ? 'text-green-500' : 'text-red-500'} tabular-nums">
+                            ${a.change >= 0 ? '+' : ''}${(a.change || 0).toFixed(2)}%
+                        </td>
+                        <td class="py-5 text-center">
+                            <span class="text-[10px] font-black uppercase tracking-widest ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}">
+                                ${a.trend || '---'}
+                            </span>
+                        </td>
+                        <td class="py-5 text-center">
+                            <span class="status-badge bg-black/5 dark:bg-white/5 text-secondary text-[8px]">${a.status || 'DELAYED'}</span>
+                        </td>
+                        <td class="py-5 pr-8 text-right">
+                            <div class="flex items-center justify-end gap-3">
+                                <span class="font-black text-sm">${a.score || 0}</span>
+                                <div class="w-12 h-1 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
+                                    <div class="h-full bg-accent-blue" style="width: ${a.score || 0}%"></div>
+                                </div>
+                            </div>
+                        </td>
                     </tr>
                 `).join('');
             }
 
-            // Calendar (Lot 3)
-            if (s.news) {
-                const calBox = document.getElementById('calendar-content');
-                if (s.news.next_events && s.news.next_events.length > 0) {
-                    calBox.innerHTML = s.news.next_events.map(e => `
-                        <div class="flex justify-between items-center bg-white dark:bg-white/5 p-3 rounded-xl border border-black/5 mb-2">
-                            <div class="flex flex-col">
-                                <span class="text-[11px] font-bold">${e.title}</span>
-                                <span class="text-[9px] text-secondary font-mono">${e.time} • ${e.country}</span>
+            // History
+            const histBody = document.getElementById('history-table-body');
+            if (histBody && s.history) {
+                histBody.innerHTML = s.history.slice().reverse().map(h => `
+                    <tr class="hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors">
+                        <td class="py-5 px-8 flex flex-col">
+                            <span class="font-black text-sm">${h.symbol}</span>
+                            <span class="text-[9px] text-secondary font-bold uppercase">${h.timestamp ? new Date(h.timestamp).toLocaleString() : '--'}</span>
+                        </td>
+                        <td class="py-5 text-center">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-black ${h.direction === 'BUY' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">
+                                ${h.direction}
+                            </span>
+                        </td>
+                        <td class="py-5 text-right font-black tabular-nums">${h.entry_price ? h.entry_price.toLocaleString() : '--'}</td>
+                        <td class="py-5 text-right font-black tabular-nums">${h.exit_price ? h.exit_price.toLocaleString() : '--'}</td>
+                        <td class="py-5 pr-8 text-right font-black tabular-nums ${h.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">
+                            ${h.pnl >= 0 ? '+' : ''}${h.pnl.toLocaleString()} €
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            // Active Position
+            const activePos = document.getElementById('active-pos-list');
+            if (s.active_trade) {
+                const p = s.active_trade;
+                activePos.innerHTML = `
+                    <div class="card-premium border-2 border-accent-blue/30 shadow-2xl shadow-accent-blue/10">
+                        <div class="flex justify-between items-start mb-8">
+                            <div>
+                                <h3 class="text-3xl font-black tracking-tighter mb-1">${p.symbol}</h3>
+                                <p class="text-xs font-bold text-secondary uppercase tracking-widest">${p.direction} • ${p.quantity.toFixed(4)} UNITS • ${p.leverage}X LEVERAGE</p>
                             </div>
-                            <span class="px-2 py-0.5 rounded-full text-[8px] font-black bg-red-500/10 text-red-500 uppercase tracking-widest">High</span>
+                            <div class="text-right">
+                                <p class="text-4xl font-black tracking-tighter ${p.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">${p.pnl >= 0 ? '+' : ''}${p.pnl.toFixed(2)} €</p>
+                                <p class="text-[10px] font-black text-secondary uppercase tracking-widest mt-1">Unrealized P&L</p>
+                            </div>
                         </div>
-                    `).join('');
-                } else if (s.news.reason === 'Calendar unavailable') {
-                    calBox.innerHTML = '<div class="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl text-accent-red text-center text-[10px] font-bold uppercase tracking-widest">Calendar Unavailable</div>';
-                } else {
-                    calBox.innerHTML = '<div class="text-secondary italic text-center py-6 text-[10px]">No high impact events detected.</div>';
-                }
+                        <div class="grid grid-cols-3 gap-8 pt-8 border-t border-black/5 dark:border-white/5">
+                            <div>
+                                <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-1">Entry Price</p>
+                                <p class="font-black text-lg">${p.entry_price.toLocaleString()}</p>
+                            </div>
+                            <div>
+                                <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-1">Take Profit</p>
+                                <p class="font-black text-lg text-green-500">${p.tp ? p.tp.toLocaleString() : '--'}</p>
+                            </div>
+                            <div>
+                                <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-1">Stop Loss</p>
+                                <p class="font-black text-lg text-red-500">${p.sl ? p.sl.toLocaleString() : '--'}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                activePos.innerHTML = '<div class="py-20 text-center opacity-30 flex flex-col items-center gap-4"><i data-lucide="box" class="w-10 h-10"></i><p class="font-black text-xs uppercase tracking-widest">No Active Market Exposure</p></div>';
+                lucide.createIcons();
             }
         }
 
-        // Global Actions
+        async function initMarkets() {
+            const grid = document.getElementById('markets-full-grid');
+            if (!grid) return;
+
+            const res = await fetchAPI('/markets');
+            if (res && !res.detail) {
+                let html = '';
+                Object.keys(res).forEach(cat => {
+                    if (currentFilter !== 'ALL' && cat !== currentFilter) return;
+                    html += res[cat].map(m => `
+                        <div class="market-card" onclick="selectMarket('${m.market_id}')">
+                            <div class="flex justify-between items-start mb-4">
+                                <span class="text-[9px] font-black text-secondary uppercase tracking-widest opacity-60">${m.asset_class}</span>
+                                <span class="status-badge bg-black/5 dark:bg-white/5 text-[7px]">${m.market_status}</span>
+                            </div>
+                            <h4 class="font-black text-lg tracking-tighter mb-1">${m.display_symbol}</h4>
+                            <p class="font-black text-sm tabular-nums mb-4">${m.price ? m.price.toLocaleString() : '--'}</p>
+                            <div class="flex justify-between items-center pt-4 border-t border-black/5 dark:border-white/5">
+                                <span class="text-[10px] font-bold text-secondary uppercase">24h Chg</span>
+                                <span class="text-[10px] font-black ${m.change >= 0 ? 'text-green-500' : 'text-red-500'}">${m.change >= 0 ? '+' : ''}${(m.change || 0).toFixed(2)}%</span>
+                            </div>
+                        </div>
+                    `).join('');
+                });
+                grid.innerHTML = html || '<div class="col-span-full py-20 text-center text-secondary font-medium">No assets matching filter.</div>';
+            }
+        }
+
+        // Actions
         document.getElementById('main-toggle-btn').onclick = async () => {
             const btn = document.getElementById('main-toggle-btn');
             const isStarting = btn.innerText.includes('START');
-            btn.innerText = isStarting ? 'STARTING...' : 'STOPPING...';
             btn.disabled = true;
-            
-            const endpoint = isStarting ? '/start' : '/stop';
-            const res = await fetchAPI(endpoint, 'POST');
-            
+            await fetchAPI(isStarting ? '/start' : '/stop', 'POST');
             btn.disabled = false;
             update();
         };
 
         document.getElementById('arm-toggle-btn').onclick = () => fetchAPI('/arm', 'POST').then(update);
         document.getElementById('mode-demo-btn').onclick = () => fetchAPI('/mode', 'POST').then(update);
-        document.getElementById('mode-live-btn').onclick = () => { if(confirm("REAL FUNDS AT RISK?")) fetchAPI('/mode', 'POST').then(update); };
+        document.getElementById('mode-live-btn').onclick = () => { if(confirm("DANGER: Switching to REAL mode will use actual broker API keys. Proceed with caution?")) fetchAPI('/mode', 'POST').then(update); };
+        document.getElementById('emergency-stop-btn').onclick = () => { if(confirm("EMERGENCY STOP: Halt all systems immediately?")) fetchAPI('/emergency-stop', 'POST').then(update); };
 
         async function setBalance() {
             const val = document.getElementById('demo-bal-input').value;
@@ -644,7 +1008,7 @@
         }
 
         async function resetAccount() {
-            if(confirm("Wipe all history and reset balance?")) {
+            if(confirm("Confirm Journal Wipe?")) {
                 await fetchAPI('/demo/reset', 'POST');
                 update();
             }
@@ -655,56 +1019,9 @@
             update();
         }
 
-        // Init Market Data
-        async function initMarkets() {
-            const grid = document.getElementById('markets-full-grid');
-            const dashGrid = document.getElementById('dashboard-market-grid');
-            if (grid) grid.innerHTML = '<div class="col-span-full py-20 text-center opacity-50"><p class="animate-pulse">Loading Markets...</p></div>';
-
-            const markets = await fetchAPI('/markets');
-            if (markets && !markets.detail) {
-                let dashHtml = '';
-                let fullHtml = '';
-                
-                Object.keys(markets).forEach(cat => {
-                    if (markets[cat].length === 0) return;
-                    // Dashboard categories
-                    dashHtml += `
-                        <div class="space-y-2">
-                            <span class="text-[10px] font-black text-secondary uppercase tracking-widest opacity-50">${cat}</span>
-                            ${markets[cat].slice(0, 3).map(m => {
-                                const price = m.last ? m.last.toFixed(m.asset_class==='FOREX'?4:2) : '--';
-                                return `
-                                <div class="p-2 bg-black/5 rounded-lg text-[10px] font-bold flex justify-between cursor-pointer hover:bg-black/10 transition-colors" onclick="selectMarket('${m.market_id}')">
-                                    <span>${m.display_symbol}</span>
-                                    <span>${price}</span>
-                                </div>
-                            `}).join('')}
-                        </div>
-                    `;
-                    // Full grid
-                    fullHtml += markets[cat].map(m => {
-                        const price = m.last ? m.last.toFixed(m.asset_class==='FOREX'?4:2) : '--';
-                        return `
-                        <div class="market-card" onclick="selectMarket('${m.market_id}')">
-                            <span class="symbol text-xs font-black">${m.display_symbol}</span>
-                            <span class="price font-mono text-sm">${price}</span>
-                            <div class="flex justify-between items-center mt-2">
-                                <span class="text-[9px] uppercase font-bold opacity-30">${m.status}</span>
-                                <span class="text-[9px] font-bold ${m.change >= 0 ? 'text-accent-green' : 'text-accent-red'}">${m.change >= 0 ? '+' : ''}${(m.change || 0).toFixed(2)}%</span>
-                            </div>
-                        </div>
-                    `}).join('');
-                });
-                if (dashGrid) dashGrid.innerHTML = dashHtml || '<p class="text-xs text-secondary italic">No data received.</p>';
-                if (grid) grid.innerHTML = fullHtml || '<p class="text-center py-20 text-secondary">No markets available.</p>';
-                lucide.createIcons();
-            }
-        }
-
         initMarkets();
-        setInterval(update, 2000);
         update();
+        setInterval(update, 2000);
     </script>
 </body>
 </html>
