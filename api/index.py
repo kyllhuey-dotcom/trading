@@ -72,32 +72,31 @@ bot_state = {
 async def auto_scan_loop():
     """
     Rule 25: Continuous Auto Scan background task.
-    MODIFIED: Runs even if bot is stopped for monitoring purposes.
     """
     while True:
-        try:
-            results = await scanner_engine.scan_all()
-            bot_state["latest_scan"] = results
-            
-            # Update Engine Stats (Rule 7)
-            bot_state["engine_stats"]["markets"] = len(data_engine.catalog.get_all_ids())
-            bot_state["engine_stats"]["scanned"] = len([r for r in results if r.get("status") != "ERROR"])
-            bot_state["engine_stats"]["analyzing"] = len([r for r in results if r.get("trend") != "NEUTRAL"])
-            bot_state["engine_stats"]["signals"] = len([r for r in results if r.get("signal") == "SIGNAL_DETECTED"])
-            bot_state["engine_stats"]["tradable"] = len([r for r in results if r.get("tradable")])
-            
-            # Broadcast scan results
-            await manager.broadcast(json.dumps({
-                "type": "SCAN_COMPLETED",
-                "timestamp": int(datetime.now().timestamp() * 1000),
-                "stats": bot_state["engine_stats"]
-            }))
-            
-        except Exception as e:
-            print(f"Auto-Scan Loop Error: {e}")
+        if bot_state["is_running"]:
+            try:
+                results = await scanner_engine.scan_all()
+                bot_state["latest_scan"] = results
+                
+                # Update Engine Stats (Rule 7)
+                bot_state["engine_stats"]["markets"] = len(data_engine.catalog.get_all_ids())
+                bot_state["engine_stats"]["scanned"] = len([r for r in results if r.get("status") != "ERROR"])
+                bot_state["engine_stats"]["analyzing"] = len([r for r in results if r.get("trend") != "NEUTRAL"])
+                bot_state["engine_stats"]["signals"] = len([r for r in results if r.get("signal") == "SIGNAL_DETECTED"])
+                bot_state["engine_stats"]["tradable"] = len([r for r in results if r.get("tradable")])
+                
+                # Broadcast via WebSocket
+                await manager.broadcast(json.dumps({
+                    "type": "SCAN_COMPLETED",
+                    "timestamp": int(datetime.now().timestamp() * 1000),
+                    "stats": bot_state["engine_stats"]
+                }))
+                
+            except Exception as e:
+                print(f"Auto-Scan Loop Error: {e}")
         
-        # Scan frequency adjusted for higher responsiveness
-        await asyncio.sleep(15 if bot_state["is_running"] else 45)
+        await asyncio.sleep(20) # Cycle every 20s
 
 async def broadcaster_loop():
     """
@@ -193,7 +192,7 @@ async def get_status(market_id: str = "btc_usdt"):
     if bot_state["is_running"] and state_machine.current_state != BotState.EMERGENCY_STOP:
         signal = signal_engine.generate_signal(analysis, news_status, df_ltf)
         signal["market_id"] = market_id
-        signal["display_symbol"] = info["display_symbol"]
+        signal["symbol"] = info["display_symbol"] # Use display symbol for positions
         
         if signal["status"] == "SIGNAL_DETECTED":
             risk_data = risk_engine.calculate_position_size(balance=balance, entry=signal["entry"], stop_loss=signal["sl"])
@@ -233,6 +232,7 @@ async def get_status(market_id: str = "btc_usdt"):
         "stats": portfolio_engine.get_stats(),
         "broker_info": broker_info,
         "market_id": market_id,
+        "selected_symbol": info.get("display_symbol", market_id),
         "asset_info": info,
         "best_setups": sorted([r for r in bot_state["latest_scan"] if r.get("score", 0) > 0], key=lambda x: x["score"], reverse=True)[:5]
     }

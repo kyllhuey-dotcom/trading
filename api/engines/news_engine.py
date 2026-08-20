@@ -4,28 +4,86 @@ from datetime import datetime, timedelta
 import pytz
 from typing import List, Dict, Any, Optional
 
+from bs4 import BeautifulSoup
+
 class EconomicCalendarProvider:
     def __init__(self):
-        self.url = "https://nfs.forexfactory.com/ff_calendar_thisweek.json"
+        # Rule 15: Using reliable public source (Scraping the official HTML)
+        self.url = "https://www.forexfactory.com/calendar.php?week=this"
         self.cache: List[Dict[str, Any]] = []
         self.last_update: Optional[datetime] = None
 
     async def fetch_events(self) -> List[Dict[str, Any]]:
-        # Cache for 1 hour
-        if self.last_update and (datetime.now() - self.last_update).total_seconds() < 3600:
+        # Cache for 2 hours
+        if self.last_update and (datetime.now() - self.last_update).total_seconds() < 7200:
             return self.cache
         
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(self.url, timeout=10.0)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+            }
+            async with httpx.AsyncClient(follow_redirects=True) as client:
+                response = await client.get(self.url, headers=headers, timeout=15.0)
                 if response.status_code == 200:
-                    self.cache = response.json()
-                    self.last_update = datetime.now()
-                    return self.cache
+                    events = self._parse_html(response.text)
+                    if events:
+                        self.cache = events
+                        self.last_update = datetime.now()
+                        return self.cache
         except Exception as e:
-            print(f"Calendar Provider Error: {e}")
+            print(f"Calendar Scraper Error: {e}")
         
-        return self.cache # Return old cache if failure
+        return self.cache
+
+    def _parse_html(self, html_content: str) -> List[Dict[str, Any]]:
+        soup = BeautifulSoup(html_content, 'lxml')
+        table = soup.find('table', class_='calendar__table')
+        if not table:
+            return []
+
+        events = []
+        current_date = ""
+        
+        rows = table.find_all('tr', class_='calendar__row')
+        for row in rows:
+            # Handle Date (Rule: carry over if empty)
+            date_cell = row.find('td', class_='calendar__date')
+            if date_cell:
+                date_text = date_cell.text.strip()
+                if date_text:
+                    current_date = date_text.replace("\n", " ") # "Thu Aug 20"
+
+            # Handle Event
+            title_cell = row.find('td', class_='calendar__event')
+            if not title_cell: continue
+            
+            currency = row.find('td', class_='calendar__currency')
+            impact_div = row.find('td', class_='calendar__impact').find('span')
+            time_cell = row.find('td', class_='calendar__time')
+            forecast = row.find('td', class_='calendar__forecast')
+            previous = row.find('td', class_='calendar__previous')
+            actual = row.find('td', class_='calendar__actual')
+
+            impact = "Low"
+            if impact_div:
+                classes = impact_div.get('class', [])
+                if any('high' in c.lower() for c in classes): impact = "High"
+                elif any('medium' in c.lower() for c in classes): impact = "Medium"
+
+            events.append({
+                "title": title_cell.text.strip(),
+                "country": currency.text.strip() if currency else "",
+                "date": current_date, 
+                "time": time_cell.text.strip() if time_cell else "",
+                "impact": impact,
+                "forecast": forecast.text.strip() if forecast else "",
+                "previous": previous.text.strip() if previous else "",
+                "actual": actual.text.strip() if actual else ""
+            })
+            
+        return events
 
 class NewsFilter:
     def __init__(self, safety_before_mins: int = 30, safety_after_mins: int = 60):
@@ -50,14 +108,21 @@ class EventRiskEngine:
     def check_risk(self, high_impact_events: List[Dict[str, Any]]) -> Dict[str, Any]:
         now = datetime.now(pytz.UTC)
         blocking_event = None
+        current_year = now.year
         
         for event in high_impact_events:
             try:
-                # Parsing Forexfactory date/time
-                event_time_str = f"{event['date']} {event['time']}"
-                # FF time is usually EST/EDT
+                # Parsing Scraped date/time
+                # Example: "Thu Aug 20" + "8:30am"
+                # Need to handle events without time (All Day)
+                if not event['time'] or 'All Day' in event['time']:
+                    continue
+
+                event_time_str = f"{event['date']} {current_year} {event['time']}"
+                # Format: "Thu Aug 20 2026 8:30am"
+                # Note: FF time is US Eastern
                 ny_tz = pytz.timezone('America/New_York')
-                event_time = datetime.strptime(event_time_str, "%b %d, %Y %I:%M%p")
+                event_time = datetime.strptime(event_time_str, "%a %b %d %Y %I:%M%p")
                 event_time = ny_tz.localize(event_time).astimezone(pytz.UTC)
                 
                 diff_mins = (event_time - now).total_seconds() / 60
@@ -66,13 +131,14 @@ class EventRiskEngine:
                     blocking_event = event
                     blocking_event['time_utc'] = event_time
                     break
-            except Exception:
+            except Exception as e:
+                # print(f"Risk parsing error: {e}")
                 continue
                 
         return {
             "is_blocked": blocking_event is not None,
             "blocking_event": blocking_event,
-            "next_events": high_impact_events[:5] # Simplified for return
+            "next_events": high_impact_events[:5] 
         }
 
 class SessionFilter:
