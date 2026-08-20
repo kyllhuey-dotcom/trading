@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-pandas
-numpy
-httpx
-pydantic
-python-dotenv
-ccxt
-yfinance
