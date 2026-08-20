@@ -7,6 +7,9 @@ from api.engines.news_engine import NewsEngine
 from api.engines.signal_engine import SignalEngine
 from api.engines.risk_engine import RiskEngine
 from api.engines.execution_engine import ExecutionEngine
+from api.engines.execution_router import ExecutionRouter
+from api.engines.state_machine import BotState, StateMachine
+from api.engines.portfolio_engine import PortfolioEngine
 from api.engines.broker_connector import BrokerConnector
 import os
 from datetime import datetime
@@ -17,104 +20,128 @@ analysis_engine = AnalysisEngine()
 news_engine = NewsEngine()
 signal_engine = SignalEngine()
 risk_engine = RiskEngine(max_risk_pct=1.0)
-execution_engine = ExecutionEngine()
+portfolio_engine = PortfolioEngine()
+demo_execution = ExecutionEngine(portfolio=portfolio_engine)
 broker_connector = BrokerConnector()
+execution_router = ExecutionRouter(demo_adapter=demo_execution, broker_connector=broker_connector)
+state_machine = StateMachine()
 
-# Simulation de l'état du bot
+# Global Bot State
 bot_state = {
-    "status": "ONLINE",
     "mode": "DEMO",
     "armed": False,
-    "balance_demo": 1000.00,
-    "balance_real": 0.00,
-    "pnl_daily": 0.00,
-    "broker_connected": False,
-    "deposits_history": [],
-    "equity": 1000.00,
+    "equity": 0.0,
     "drawdown": 0.0,
-    "today_stats": {
-        "pnl": 0.00,
-        "trades": 0,
-        "wins": 0,
-        "losses": 0
-    },
-    "risk_status": "LOW RISK",
-    "scanner_data": [
-        {"asset": "BTC/USDT", "price": 59230.40, "change": 1.2, "trend": "Bullish", "structure": "HH", "volatility": "Medium", "spread": 0.1, "liquidity": "High", "ai_score": 82, "status": "Ready"},
-        {"asset": "ETH/USDT", "price": 2640.15, "change": -0.5, "trend": "Bearish", "structure": "LL", "volatility": "Low", "spread": 0.05, "liquidity": "High", "ai_score": 45, "status": "No Signal"},
-        {"asset": "SOL/USDT", "price": 145.60, "change": 4.8, "trend": "Bullish", "structure": "HH", "volatility": "High", "spread": 0.2, "liquidity": "Medium", "ai_score": 91, "status": "Best Setup"},
-        {"asset": "GOLD", "price": 2510.40, "change": 0.1, "trend": "Neutral", "structure": "Range", "volatility": "Low", "spread": 0.3, "liquidity": "High", "ai_score": 60, "status": "No Trade"}
-    ]
 }
 
 @app.get("/api/status")
 async def get_status():
-    news_status = await news_engine.check_trading_allowed()
+    # 1. Check News/Calendar (Rules 14, 15, 16)
+    news_status = await news_engine.check_trading_allowed(asset_class="CRYPTO")
     
-    # Simuler des variations pour le dashboard premium
-    if bot_state["status"] == "ONLINE":
-        df = await data_engine.fetch_crypto_ohlcv("BTC/USDT")
-        current_price = float(df['Close'].iloc[-1]) if not df.empty else 0
-        
-        # Mise à jour des positions
-        closed = execution_engine.update_positions(current_price)
-        for c in closed:
-            if bot_state["mode"] == "DEMO":
-                bot_state["balance_demo"] += c["pnl"]
-            else:
-                bot_state["balance_real"] += c["pnl"]
-            
-            bot_state["today_stats"]["pnl"] += c["pnl"]
-            bot_state["today_stats"]["trades"] += 1
-            if c["pnl"] > 0: bot_state["today_stats"]["wins"] += 1
-            else: bot_state["today_stats"]["losses"] += 1
+    # 2. Broker Connection Status (Rule 29)
+    broker_info = broker_connector.get_status()
+    
+    # 3. Data Fetching & Integrity (Rules 3, 5, 23)
+    df_ltf = await data_engine.fetch_ohlcv("BTC/USDT", timeframe='1m', limit=100)
+    df_htf = await data_engine.fetch_ohlcv("BTC/USDT", timeframe='15m', limit=50)
+    ticker = await data_engine.fetch_ticker("BTC/USDT")
 
-        analysis = analysis_engine.identify_structure(df)
-        signal = signal_engine.generate_signal(analysis, news_status, df)
-        
-        active_bal = bot_state["balance_demo"] if bot_state["mode"] == "DEMO" else bot_state["balance_real"]
-        bot_state["equity"] = active_bal + (execution_engine.active_positions[0]["pnl"] if execution_engine.active_positions else 0)
-        
-        risk_data = {"allowed": False, "reason": "No signal"}
-        if signal["status"] == "SIGNAL_DETECTED":
-            risk_data = risk_engine.calculate_position_size(balance=active_bal, entry=signal["entry"], stop_loss=signal["sl"])
-            if bot_state["armed"] and risk_data["allowed"] and not execution_engine.active_positions:
-                if bot_state["mode"] == "DEMO":
-                    execution_engine.open_simulated_trade(signal, risk_data)
-        
-        status_display = "ANALYZING"
-        if not news_status["trading_allowed"]: status_display = "TRADING PAUSED"
-        elif analysis.get("is_range"): status_display = "NO TRADE (RANGE)"
-        elif execution_engine.active_positions: status_display = "POSITION OPEN"
-        elif signal["status"] == "SIGNAL_DETECTED": status_display = "SIGNAL READY"
-        
-        return {
-            **bot_state,
-            "status_display": status_display,
-            "balance": active_bal,
-            "news": news_status,
-            "analysis": analysis,
-            "signal": signal,
-            "risk": risk_data,
-            "active_trade": execution_engine.active_positions[0] if execution_engine.active_positions else None,
-            "history": execution_engine.history[-15:],
-            "stats": execution_engine.get_stats(),
-        }
+    if not ticker or df_ltf.empty:
+        state_machine.transition_to(BotState.DATA_ERROR)
+        return {**bot_state, "status": state_machine.current_state, "status_display": "DATA ERROR", "news": news_status}
+
+    # 4. Live Position Update (Rule 27)
+    await demo_execution.update_active_positions(bot_state["mode"], {"BTC/USDT": ticker})
+    active_trade = demo_execution.active_positions[0] if demo_execution.active_positions else None
     
-    return bot_state
+    # 5. Market Analysis (Rule 9, 10, 11, 12)
+    htf_analysis = analysis_engine.identify_structure(df_htf)
+    analysis = analysis_engine.identify_structure(df_ltf, htf_bias=htf_analysis.get("trend"))
+    analysis["df_preview"] = df_ltf.tail(30).to_dict('records')
+    
+    # 6. Signal Generation (Rule 17, 18, 19)
+    signal = signal_engine.generate_signal(analysis, news_status, df_ltf)
+    
+    # 7. Risk Calculation (Rule 24, 25, 26)
+    balance = portfolio_engine.get_balance(bot_state["mode"])
+    bot_state["equity"] = balance + (active_trade["pnl"] if active_trade else 0)
+    
+    risk_data = {"allowed": False}
+    if signal["status"] == "SIGNAL_DETECTED":
+        risk_data = risk_engine.calculate_position_size(balance=balance, entry=signal["entry"], stop_loss=signal["sl"])
+        
+        # 8. THE ORCHESTRATOR - EXECUTION (Rule 33, 55, 56)
+        # ARM Conditions (Rule 33)
+        can_trade = (
+            bot_state["armed"] and 
+            not broker_connector.emergency_stop_active and
+            risk_data["allowed"] and 
+            not active_trade and
+            news_status["trading_allowed"]
+        )
+
+        if can_trade:
+            state_machine.transition_to(BotState.EXECUTING)
+            exec_res = await execution_router.execute(bot_state["mode"], signal, risk_data, ticker)
+            if not exec_res.get("success"):
+                state_machine.transition_to(BotState.BROKER_ERROR)
+    
+    # 9. State Machine Transition Logic
+    if broker_connector.emergency_stop_active:
+        state_machine.transition_to(BotState.EMERGENCY_STOP)
+    elif active_trade:
+        state_machine.transition_to(BotState.POSITION_OPEN)
+    elif not news_status["trading_allowed"]:
+        state_machine.transition_to(BotState.NO_TRADE)
+    elif analysis.get("market_state") == "RANGE":
+        state_machine.transition_to(BotState.NO_TRADE)
+    elif signal["status"] == "SIGNAL_DETECTED":
+        state_machine.transition_to(BotState.SIGNAL_DETECTED)
+    else:
+        state_machine.transition_to(BotState.ANALYZING)
+    
+    return {
+        **bot_state,
+        "status": state_machine.current_state,
+        "status_display": state_machine.current_state.value.replace('_', ' '),
+        "balance": balance,
+        "news": news_status,
+        "analysis": analysis,
+        "signal": signal,
+        "risk": risk_data,
+        "active_trade": active_trade,
+        "history": portfolio_engine.history[-15:],
+        "stats": portfolio_engine.get_stats(),
+        "broker_info": broker_info
+    }
+
+@app.get("/api/scanner")
+async def get_scanner():
+    overview = await data_engine.get_market_overview()
+    all_assets = []
+    for cat in overview:
+        for item in overview[cat]:
+            item["ai_score"] = min(99, max(10, 50 + int(item.get("change", 0) * 10)))
+            item["tradable"] = item["status"] == "LIVE"
+            all_assets.append(item)
+    return {"assets": all_assets}
 
 @app.post("/api/emergency-stop")
 async def emergency_stop():
     broker_connector.trigger_emergency_stop()
     bot_state["armed"] = False
-    bot_state["status"] = "EMERGENCY STOP"
     return {"status": "STOPPED"}
+
+@app.post("/api/emergency-stop/reset")
+async def reset_emergency():
+    broker_connector.reset_emergency_stop()
+    return {"status": "RESET_SUCCESSFUL"}
 
 @app.post("/api/mode")
 async def toggle_mode():
     if broker_connector.emergency_stop_active:
          return {"success": False, "message": "Emergency Stop is active. Reset required."}
-    
     new_mode = "REAL" if bot_state["mode"] == "DEMO" else "DEMO"
     success, msg = await broker_connector.set_mode(new_mode)
     if success:
@@ -126,29 +153,11 @@ async def arm_bot():
     bot_state["armed"] = not bot_state["armed"]
     return {"armed": bot_state["armed"]}
 
-@app.get("/api/analysis/{symbol:path}")
-async def get_analysis(symbol: str):
-    df = await data_engine.fetch_crypto_ohlcv(symbol)
-    if df.empty:
-        return {"error": "Data unavailable"}
-    return analysis_engine.identify_structure(df)
-
-@app.get("/api/markets")
-async def get_markets():
-    # Note: On a besoin de recréer get_market_overview ou similaire
-    # Pour ce lot, on simplifie pour le dashboard
-    tasks = [data_engine.fetch_crypto_price(s) for s in data_engine.symbols["CRYPTO"]]
-    results = await __import__('asyncio').gather(*tasks)
-    return {"CRYPTO": results}
-
 @app.get("/")
 async def read_index():
     return FileResponse('public/index.html')
 
 app.mount("/", StaticFiles(directory="public"), name="public")
-
-# Montage des fichiers statiques (pour plus tard)
-# app.mount("/static", StaticFiles(directory="frontend/assets"), name="static")
 
 if __name__ == "__main__":
     import uvicorn

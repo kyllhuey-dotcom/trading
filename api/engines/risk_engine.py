@@ -1,73 +1,87 @@
 from typing import Dict, Any, Optional
 
 class RiskEngine:
-    def __init__(self, max_risk_pct: float = 1.0, max_daily_loss_pct: float = 5.0, default_leverage: int = 1):
-        self.max_risk_pct = max_risk_pct # Risque 1% par trade par défaut
-        self.max_daily_loss_pct = max_daily_loss_pct
-        self.default_leverage = default_leverage
-        
+    """
+    Risk Engine Professionnel (Rule 24, 25, 26).
+    Gère le dimensionnement des positions, le levier et la protection du capital.
+    """
+    def __init__(self, max_risk_pct: float = 1.0, max_leverage: int = 20, min_account_balance: float = 10.0):
+        self.max_risk_pct = max_risk_pct
+        self.max_leverage = max_leverage
+        self.min_account_balance = min_account_balance
+
     def calculate_position_size(self, balance: float, entry: float, stop_loss: float, fee_pct: float = 0.05) -> Dict[str, Any]:
         """
-        Optimisation du Risk Engine : Frais réduits et validation stricte.
+        Calcule la taille de position et le levier (Rule 24, 25, 26).
         """
-        if balance <= 0:
-            return {"allowed": False, "reason": "Insufficient balance"}
-        
-        # Sécurité Drawdown
-        if balance < 10.0: # Hard limit pour compte 20€
-            return {"allowed": False, "reason": "Capital protection: balance too low"}
+        # 1. FAIL-SAFE: Solde insuffisant (Rule 25)
+        if balance < self.min_account_balance:
+            return {"allowed": False, "reason": f"Account balance too low: {balance:.2f} < {self.min_account_balance}"}
 
-        # 1. Calcul du montant risqué en cash
+        # 2. CALCUL DU RISQUE CASH
         risk_amount = balance * (self.max_risk_pct / 100)
         
-        # 2. Distance au stop loss
+        # 3. DISTANCE AU STOP LOSS
         price_risk_per_unit = abs(entry - stop_loss)
         if price_risk_per_unit == 0:
-            return {"allowed": False, "reason": "Invalid Stop Loss (distance zero)"}
-            
-        # 3. Quantité à acheter/vendre pour respecter le risque cash
-        # Formule : Quantité = Risque / Distance Stop
+            return {"allowed": False, "reason": "Invalid Stop Loss distance (Zero)"}
+
+        # 4. QUANTITÉ THÉORIQUE (Notional Risk)
+        # Quantity = Risk Amount / Price Risk
         quantity = risk_amount / price_risk_per_unit
         
-        # 4. Valeur nominale de la position (Notional Value)
+        # 5. VALEUR NOMINALE (Notional Value)
         notional_value = quantity * entry
         
-        # 5. Calcul du levier nécessaire
-        # Levier = Valeur Nominale / Capital
+        # 6. CALCUL DU LEVIER NÉCESSAIRE (Rule 26)
+        # Leverage = Notional Value / Balance
         required_leverage = notional_value / balance
         
-        # 6. Vérification des frais (estimation simple entrée + sortie)
-        estimated_fees = notional_value * (fee_pct / 100) * 2
-        
-        # Rule 12 : Petit capital (ex: 20€)
-        # On vérifie si la position est trop petite ou trop grande
-        min_notional = 10.0 # Souvent 10 USDT sur Binance
-        if notional_value < min_notional:
-            # Si trop petit, on essaie d'ajuster à la taille minimale si le risque le permet
-            if (min_notional / entry) * price_risk_per_unit <= risk_amount * 1.5: # Tolérance 50% extra risque
-                notional_value = min_notional
-                quantity = notional_value / entry
-                required_leverage = notional_value / balance
-            else:
-                return {"allowed": False, "reason": f"Position size too small for broker ({notional_value:.2f} < {min_notional})"}
+        # 7. SÉCURITÉ LEVIER (Rule 26)
+        if required_leverage > self.max_leverage:
+            # Si le levier requis est trop haut, on réduit la taille de position 
+            # pour ne pas dépasser le levier max, même si on risque moins de 1%
+            safe_leverage = self.max_leverage
+            notional_value = balance * safe_leverage
+            quantity = notional_value / entry
+            required_leverage = safe_leverage
+            # Recalcul du risque réel
+            actual_risk_amount = quantity * price_risk_per_unit
+            actual_risk_pct = (actual_risk_amount / balance) * 100
+        else:
+            actual_risk_pct = self.max_risk_pct
+            actual_risk_amount = risk_amount
 
-        # Sécurité levier (Rule 11)
-        max_allowed_leverage = 20 # Limite de sécurité configurable
-        if required_leverage > max_allowed_leverage:
-             return {"allowed": False, "reason": f"Required leverage too high ({required_leverage:.1f}x > {max_allowed_leverage}x)"}
+        # 8. VÉRIFICATION MINIMUM ORDER SIZE (Rule 25)
+        # Simulation d'un minimum de 10 USDT pour les petites positions (Rule 12/25)
+        if notional_value < 10.0:
+             return {
+                "allowed": False, 
+                "reason": f"Order size too small ({notional_value:.2f}€). Min: 10€",
+                "notional": notional_value
+             }
+
+        # 9. ESTIMATION DES FRAIS (Rule 21)
+        estimated_fees = notional_value * (fee_pct / 100) * 2 # In + Out
 
         return {
             "allowed": True,
             "balance": balance,
-            "risk_amount": float(risk_amount),
+            "risk_amount": float(actual_risk_amount),
+            "risk_pct": float(actual_risk_pct),
             "quantity": float(quantity),
             "notional_value": float(notional_value),
             "leverage": float(required_leverage),
             "estimated_fees": float(estimated_fees),
-            "risk_reward_ratio": 1.5, # Fixé par SignalEngine pour l'instant
-            "max_risk_pct": self.max_risk_pct
+            "max_allowed_leverage": self.max_leverage
         }
 
-    def check_daily_limit(self, current_pnl: float, balance: float) -> bool:
-        limit = - (balance * (self.max_daily_loss_pct / 100))
-        return current_pnl > limit
+    def check_daily_loss(self, current_pnl: float, balance: float, limit_pct: float = 2.0) -> Dict[str, Any]:
+        limit = -(balance * (limit_pct / 100))
+        is_locked = current_pnl <= limit
+        return {
+            "is_locked": is_locked,
+            "daily_pnl": current_pnl,
+            "loss_limit": limit,
+            "status": "LOCKED" if is_locked else "SAFE"
+        }

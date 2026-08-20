@@ -1,79 +1,75 @@
-import ccxt
-import yfinance as yf
-import pandas as pd
-from datetime import datetime
 import asyncio
-from typing import Dict, Any, List
+import pandas as pd
+from typing import Dict, Any, List, Optional
+from datetime import datetime
+
+from .data_providers.crypto_provider import CryptoProvider
+from .data_providers.yahoo_provider import YahooProvider
+from .market_catalog import MarketCatalog
 
 class DataEngine:
     def __init__(self):
-        self.crypto_exchange = ccxt.binance()
-        # On définit quelques symboles de référence
-        self.symbols = {
-            "CRYPTO": ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
-            "FOREX": ["EURUSD=X", "GBPUSD=X", "USDJPY=X"],
-            "COMMODITIES": ["GC=F", "CL=F"], # Gold, Crude Oil
-            "INDICES": ["^GSPC", "^IXIC"] # S&P 500, Nasdaq
-        }
+        self.crypto_provider = CryptoProvider()
+        self.yahoo_forex = YahooProvider("FOREX")
+        self.yahoo_commodity = YahooProvider("COMMODITY")
+        self.yahoo_index = YahooProvider("INDEX")
+        self.catalog = MarketCatalog()
 
-    async def fetch_crypto_price(self, symbol: str) -> Dict[str, Any]:
-        try:
-            ticker = self.crypto_exchange.fetch_ticker(symbol)
-            return {
-                "symbol": symbol,
-                "price": ticker['last'],
-                "change": ticker['percentage'],
-                "timestamp": ticker['timestamp'],
-                "type": "LIVE DATA",
-                "source": "Binance"
-            }
-        except Exception as e:
-            return {"error": str(e), "symbol": symbol}
+    def _get_provider(self, symbol: str):
+        info = self.catalog.get_info(symbol)
+        if info.get("provider") == "crypto":
+            return self.crypto_provider
+        elif info.get("class") == "FOREX":
+            return self.yahoo_forex
+        elif info.get("class") == "COMMODITY":
+            return self.yahoo_commodity
+        elif info.get("class") == "INDEX":
+            return self.yahoo_index
+        return None
 
-    async def fetch_yfinance_price(self, symbol: str) -> Dict[str, Any]:
-        try:
-            # yfinance est synchrone, on l'exécute dans un thread pour ne pas bloquer l'event loop
-            ticker = await asyncio.to_thread(yf.Ticker, symbol)
-            data = await asyncio.to_thread(ticker.history, period="1d", interval="1m")
-            if data.empty:
-                return {"error": "No data found", "symbol": symbol}
+    async def fetch_ticker(self, symbol: str) -> Optional[Dict[str, Any]]:
+        provider = self._get_provider(symbol)
+        if not provider:
+            return None
+        
+        md = await provider.fetch_ticker(symbol)
+        if md:
+            # Fraîcheur check (Rule 5)
+            now_ms = int(datetime.now().timestamp() * 1000)
+            md.data_age_ms = now_ms - md.timestamp
             
-            last_price = data['Close'].iloc[-1]
-            prev_close = data['Open'].iloc[0]
-            change_pct = ((last_price - prev_close) / prev_close) * 100
+            # Threshold varies by asset class
+            limit = 60000 # 1 min default
+            if md.asset_class == "CRYPTO": limit = 10000 # 10s for crypto
             
-            return {
-                "symbol": symbol,
-                "price": last_price,
-                "change": change_pct,
-                "timestamp": int(datetime.now().timestamp() * 1000),
-                "type": "LIVE DATA",
-                "source": "Yahoo Finance"
-            }
-        except Exception as e:
-            return {"error": str(e), "symbol": symbol}
+            if md.data_age_ms > limit:
+                md.status = "DELAYED"
+            
+            return md.to_dict()
+        return None
 
-    async def fetch_crypto_ohlcv(self, symbol: str, timeframe: str = '1m', limit: int = 100) -> pd.DataFrame:
-        try:
-            ohlcv = self.crypto_exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-            df = pd.DataFrame(ohlcv, columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
-            return df
-        except Exception as e:
-            print(f"Error fetching OHLCV for {symbol}: {e}")
+    async def fetch_ohlcv(self, symbol: str, timeframe: str = '1m', limit: int = 100) -> pd.DataFrame:
+        provider = self._get_provider(symbol)
+        if not provider:
             return pd.DataFrame()
+        return await provider.fetch_ohlcv(symbol, timeframe, limit)
 
     async def get_market_overview(self) -> Dict[str, List[Dict[str, Any]]]:
-        tasks = []
-        for s in self.symbols["CRYPTO"]:
-            tasks.append(self.fetch_crypto_price(s))
+        symbols = self.catalog.get_all_symbols()
+        tasks = [self.fetch_ticker(s) for s in symbols]
+        results = await asyncio.gather(*tasks)
         
-        # On peut rajouter les autres si besoin, mais restons sur crypto pour la démo
-        results = await __import__('asyncio').gather(*tasks)
-        return {"CRYPTO": results}
+        overview = {"CRYPTO": [], "FOREX": [], "COMMODITY": [], "INDEX": []}
+        for res in results:
+            if res:
+                overview[res["asset_class"]].append(res)
+        return overview
 
-if __name__ == "__main__":
-    engine = DataEngine()
-    async def test():
-        data = await engine.get_market_overview()
-        print(data)
-    asyncio.run(test())
+    async def fetch_crypto_ohlcv(self, symbol: str, timeframe: str = '1m', limit: int = 100) -> pd.DataFrame:
+        # Legacy compatibility for api/index.py
+        return await self.fetch_ohlcv(symbol, timeframe, limit)
+
+    async def fetch_crypto_price(self, symbol: str) -> Dict[str, Any]:
+        # Legacy compatibility
+        ticker = await self.fetch_ticker(symbol)
+        return ticker or {"error": "unavailable", "symbol": symbol}

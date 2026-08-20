@@ -1,107 +1,113 @@
 import json
 import os
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 class ExecutionEngine:
-    def __init__(self, storage_path: str = "data/trades.json"):
-        self.storage_path = storage_path
-        self.active_positions = []
-        self.history = []
-        self._load_data()
+    """
+    Simule l'exécution en mode DEMO en utilisant les prix réels (Rule 27).
+    Prépare l'interface pour le mode REAL (Lot 8).
+    """
+    def __init__(self, portfolio: Any, data_dir: str = "data"):
+        self.portfolio = portfolio
+        self.data_dir = data_dir
+        self.active_positions_file = os.path.join(data_dir, "active_positions.json")
+        self.active_positions = self._load_positions()
 
-    def _load_data(self):
-        if os.path.exists(self.storage_path) and os.path.getsize(self.storage_path) > 0:
-            try:
-                with open(self.storage_path, 'r') as f:
-                    data = json.load(f)
-                    self.active_positions = data.get("active", [])
-                    self.history = data.get("history", [])
-            except:
-                pass
+    def _load_positions(self):
+        if os.path.exists(self.active_positions_file):
+            with open(self.active_positions_file, 'r') as f:
+                try: return json.load(f)
+                except: return []
+        return []
 
-    def _save_data(self):
-        with open(self.storage_path, 'w') as f:
-            json.dump({
-                "active": self.active_positions,
-                "history": self.history
-            }, f)
+    def _save_positions(self):
+        with open(self.active_positions_file, 'w') as f:
+            json.dump(self.active_positions, f, indent=2)
 
-    def open_simulated_trade(self, signal: Dict[str, Any], risk: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_order(self, mode: str, signal: Dict[str, Any], risk: Dict[str, Any], ticker: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Exécute un ordre en utilisant le prix réel (Bid/Ask).
+        """
         if self.active_positions:
-            return {"success": False, "reason": "Position already open"}
+            return {"success": False, "reason": "Already have an open position"}
+
+        # Rule 27 : Fill simulé basé sur bid/ask réel
+        # Si BUY -> on achète au ASK. Si SELL -> on vend au BID.
+        entry_price = ticker.get('ask') if signal["direction"] == "BUY" else ticker.get('bid')
         
-        trade = {
-            "id": datetime.now().strftime("%Y%m%d%H%M%S"),
+        # Fallback si bid/ask non dispos
+        if not entry_price:
+            entry_price = ticker.get('last')
+
+        # Ajout du slippage (0.01% par défaut pour simulation réaliste)
+        slippage = 0.0001 
+        if signal["direction"] == "BUY":
+            entry_price *= (1 + slippage)
+        else:
+            entry_price *= (1 - slippage)
+
+        position = {
+            "id": f"SIM-{int(datetime.now().timestamp())}",
+            "mode": mode,
             "symbol": signal["symbol"],
             "direction": signal["direction"],
-            "entry": signal["entry"],
+            "entry_price": float(entry_price),
+            "quantity": risk["quantity"],
             "sl": signal["sl"],
             "tp": signal["tp"],
-            "quantity": risk["quantity"],
             "leverage": risk["leverage"],
-            "notional": risk["notional_value"],
+            "fees": risk["estimated_fees"] / 2, # Frais d'ouverture
             "open_time": datetime.now().isoformat(),
             "status": "OPEN",
-            "pnl": 0.0
+            "pnl": - (risk["estimated_fees"] / 2) # On commence avec les frais payés
         }
-        self.active_positions.append(trade)
-        self._save_data()
-        return {"success": True, "trade": trade}
 
-    def update_positions(self, current_price: float) -> List[Dict[str, Any]]:
+        self.active_positions.append(position)
+        self._save_positions()
+        return {"success": True, "position": position}
+
+    async def update_active_positions(self, mode: str, tickers: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Met à jour le P&L latent et vérifie les sorties (SL/TP) avec prix réels.
+        """
         closed_trades = []
         for pos in self.active_positions[:]:
-            pnl = 0
+            if pos["mode"] != mode: continue
+            
+            ticker = tickers.get(pos["symbol"])
+            if not ticker: continue
+            
+            # Prix pour fermer : Si on est LONG -> on vend au BID. Si SHORT -> on achète au ASK.
+            current_exit_price = ticker.get('bid') if pos["direction"] == "BUY" else ticker.get('ask')
+            if not current_exit_price: current_exit_price = ticker.get('last')
+            
+            # Calcul PnL
             if pos["direction"] == "BUY":
-                pnl = (current_price - pos["entry"]) * pos["quantity"]
-                hit_sl = current_price <= pos["sl"]
-                hit_tp = current_price >= pos["tp"]
+                pnl = (current_exit_price - pos["entry_price"]) * pos["quantity"]
             else:
-                pnl = (pos["entry"] - current_price) * pos["quantity"]
-                hit_sl = current_price >= pos["sl"]
-                hit_tp = current_price <= pos["tp"]
+                pnl = (pos["entry_price"] - current_exit_price) * pos["quantity"]
             
-            pos["pnl"] = pnl
-            
+            pos["pnl"] = float(pnl)
+
+            # Vérification SL / TP
+            hit_sl = (pos["direction"] == "BUY" and current_exit_price <= pos["sl"]) or \
+                     (pos["direction"] == "SELL" and current_exit_price >= pos["sl"])
+            hit_tp = (pos["direction"] == "BUY" and current_exit_price >= pos["tp"]) or \
+                     (pos["direction"] == "SELL" and current_exit_price <= pos["tp"])
+
             if hit_sl or hit_tp:
                 pos["status"] = "CLOSED"
-                pos["close_price"] = current_price
+                pos["exit_price"] = float(current_exit_price)
                 pos["close_time"] = datetime.now().isoformat()
-                pos["result"] = "PROFIT" if pnl > 0 else "LOSS"
-                self.history.append(pos)
+                # On retire les frais de sortie
+                pos["pnl"] -= (pos["fees"]) 
+                
+                self.portfolio.update_balance(mode, pos["pnl"])
+                self.portfolio.add_to_history(pos)
                 self.active_positions.remove(pos)
                 closed_trades.append(pos)
         
         if closed_trades:
-            self._save_data()
+            self._save_positions()
         return closed_trades
-
-    def get_stats(self) -> Dict[str, Any]:
-        if not self.history:
-            return {
-                "total_trades": 0,
-                "win_rate": 0,
-                "profit_factor": 0,
-                "total_pnl": 0,
-                "avg_win": 0,
-                "avg_loss": 0
-            }
-        
-        wins = [t["pnl"] for t in self.history if t["pnl"] > 0]
-        losses = [t["pnl"] for t in self.history if t["pnl"] <= 0]
-        
-        total_trades = len(self.history)
-        win_rate = (len(wins) / total_trades) * 100 if total_trades > 0 else 0
-        total_gain = sum(wins)
-        total_loss = abs(sum(losses))
-        profit_factor = total_gain / total_loss if total_loss > 0 else total_gain
-        
-        return {
-            "total_trades": total_trades,
-            "win_rate": round(win_rate, 2),
-            "profit_factor": round(profit_factor, 2),
-            "total_pnl": round(total_gain - total_loss, 2),
-            "avg_win": round(total_gain / len(wins), 2) if wins else 0,
-            "avg_loss": round(total_loss / len(losses), 2) if losses else 0
-        }

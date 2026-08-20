@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum Trade | Premium AI Trading</title>
+    <title>Quantum Trade | Professional AI Trading</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -39,20 +39,19 @@
         .btn-premium { border-radius: 980px; padding: 8px 18px; font-size: 14px; font-weight: 500; transition: transform 0.2s; }
         .btn-premium:active { transform: scale(0.96); }
 
-        .price-up { color: var(--accent-green); }
-        .price-down { color: var(--accent-red); }
-
         .tab-content { display: none; height: calc(100vh - 80px); overflow-y: auto; padding: 32px; animation: fadeIn 0.3s ease-out; }
         .tab-content.active { display: block; }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Custom Chart Placeholder Styles */
-        .chart-grid { display: grid; grid-template-columns: repeat(20, 1fr); gap: 4px; align-items: end; height: 100%; }
-        .bar { background: var(--accent-blue); opacity: 0.2; border-radius: 4px 4px 0 0; }
+        /* Custom Chart Bars */
+        .chart-grid { display: flex; align-items: end; gap: 2px; height: 100%; width: 100%; }
+        .bar { background: var(--accent-blue); opacity: 0.3; border-radius: 2px 2px 0 0; min-width: 4px; }
+        .bar.up { background: var(--accent-green); opacity: 0.6; }
+        .bar.down { background: var(--accent-red); opacity: 0.6; }
         
-        /* Hide scrollbar */
-        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        ::-webkit-scrollbar { width: 4px; background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 10px; }
 
         .switch-container { background: #f2f2f7; border-radius: 20px; padding: 4px; display: flex; gap: 4px; }
         .switch-option { padding: 4px 16px; border-radius: 16px; font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -74,19 +73,19 @@
             </div>
 
             <nav class="space-y-1 flex-1">
-                <div class="sidebar-item active" onclick="showTab('dashboard')"><i data-lucide="layout-grid" class="w-5 h-5"></i> Dashboard</div>
-                <div class="sidebar-item" onclick="showTab('markets')"><i data-lucide="bar-chart-2" class="w-5 h-5"></i> Markets</div>
-                <div class="sidebar-item" onclick="showTab('scanner')"><i data-lucide="search" class="w-5 h-5"></i> Scanner</div>
-                <div class="sidebar-item" onclick="showTab('trading')"><i data-lucide="cpu" class="w-5 h-5"></i> AI Analysis</div>
-                <div class="sidebar-item" onclick="showTab('positions')"><i data-lucide="briefcase" class="w-5 h-5"></i> Positions</div>
-                <div class="sidebar-item" onclick="showTab('history')"><i data-lucide="history" class="w-5 h-5"></i> History</div>
-                <div class="sidebar-item" onclick="showTab('analytics')"><i data-lucide="pie-chart" class="w-5 h-5"></i> Analytics</div>
-                <div class="sidebar-item" onclick="showTab('risk')"><i data-lucide="shield-check" class="w-5 h-5"></i> Risk Center</div>
+                <div class="sidebar-item active" data-tab="dashboard"><i data-lucide="layout-grid" class="w-5 h-5"></i> Dashboard</div>
+                <div class="sidebar-item" data-tab="markets"><i data-lucide="bar-chart-2" class="w-5 h-5"></i> Markets</div>
+                <div class="sidebar-item" data-tab="scanner"><i data-lucide="search" class="w-5 h-5"></i> Scanner</div>
+                <div class="sidebar-item" data-tab="trading"><i data-lucide="cpu" class="w-5 h-5"></i> AI Analysis</div>
+                <div class="sidebar-item" data-tab="positions"><i data-lucide="briefcase" class="w-5 h-5"></i> Positions</div>
+                <div class="sidebar-item" data-tab="history"><i data-lucide="history" class="w-5 h-5"></i> History</div>
+                <div class="sidebar-item" data-tab="analytics"><i data-lucide="pie-chart" class="w-5 h-5"></i> Analytics</div>
+                <div class="sidebar-item" data-tab="risk"><i data-lucide="shield-check" class="w-5 h-5"></i> Risk Center</div>
             </nav>
 
             <div class="mt-auto pt-6 space-y-1 border-t border-black/5">
-                <div class="sidebar-item" onclick="showTab('settings')"><i data-lucide="settings" class="w-5 h-5"></i> Settings</div>
-                <div class="sidebar-item text-red-500" id="emergency-stop"><i data-lucide="power" class="w-5 h-5"></i> Emergency Stop</div>
+                <div class="sidebar-item" data-tab="settings"><i data-lucide="settings" class="w-5 h-5"></i> Settings</div>
+                <div class="sidebar-item text-red-500" id="emergency-stop-btn"><i data-lucide="power" class="w-5 h-5"></i> Emergency Stop</div>
             </div>
         </aside>
 
@@ -98,571 +97,356 @@
                     <div class="flex flex-col">
                         <span class="text-[10px] uppercase font-bold text-secondary tracking-widest">System Status</span>
                         <div class="flex items-center gap-2">
-                            <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                            <span class="font-bold text-sm" id="system-status-text">SYSTEM READY</span>
+                            <div id="status-dot" class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                            <span class="font-bold text-sm" id="system-status-text">OFFLINE</span>
                         </div>
                     </div>
                     <div class="h-8 w-[1px] bg-black/5 mx-2"></div>
-                    <div class="relative group">
-                        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary"></i>
-                        <input type="text" placeholder="Search markets..." class="bg-black/5 rounded-full py-2 pl-10 pr-4 text-sm w-64 outline-none focus:bg-black/10 transition-all border border-transparent focus:border-accent-blue/20">
+                    <div class="flex flex-col">
+                         <span class="text-[10px] uppercase font-bold text-secondary tracking-widest">Broker</span>
+                         <span class="font-bold text-sm" id="broker-status-text">DISCONNECTED</span>
                     </div>
                 </div>
 
                 <div class="flex items-center gap-6">
                     <div class="switch-container">
-                        <div class="switch-option active" id="mode-demo" onclick="setMode('DEMO')">DEMO</div>
-                        <div class="switch-option" id="mode-live" onclick="setMode('LIVE')">LIVE</div>
+                        <div class="switch-option active" id="mode-demo-btn">DEMO</div>
+                        <div class="switch-option" id="mode-live-btn">LIVE</div>
                     </div>
                     <button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-black/5" id="theme-toggle">
                         <i data-lucide="moon" class="w-5 h-5"></i>
                     </button>
                     <div class="flex items-center gap-3 pl-4 border-l border-black/5">
                         <div class="text-right">
-                            <p class="text-xs font-bold" id="user-name">Professional Account</p>
-                            <p class="text-[10px] text-secondary uppercase tracking-tight" id="broker-conn">ActivTrades Linked</p>
+                            <p class="text-xs font-bold" id="user-name">Account v3.0</p>
+                            <p class="text-[10px] text-secondary uppercase tracking-tight" id="broker-id">No Active Broker</p>
                         </div>
-                        <div class="w-10 h-10 rounded-full bg-accent-blue flex items-center justify-center text-white font-bold">JD</div>
+                        <div class="w-10 h-10 rounded-full bg-accent-blue flex items-center justify-center text-white font-bold">QA</div>
                     </div>
                 </div>
             </header>
 
             <!-- DASHBOARD TAB -->
-            <div id="tab-dashboard" class="tab-content active">
+            <section id="tab-dashboard" class="tab-content active">
                 <div class="max-w-6xl mx-auto">
                     <div class="flex justify-between items-end mb-10">
                         <div>
-                            <h2 class="text-3xl font-extrabold tracking-tight mb-1">Overview</h2>
-                            <p class="text-secondary">Summary of your automated trading performance.</p>
-                        </div>
-                        <div class="flex gap-3">
-                            <button class="btn-premium bg-black text-white px-6 py-2.5 flex items-center gap-2 dark:bg-white dark:text-black">
-                                <i data-lucide="plus" class="w-4 h-4"></i> Deposit Capital
-                            </button>
+                            <h2 class="text-3xl font-extrabold tracking-tight mb-1">Portfolio</h2>
+                            <p class="text-secondary">Real-time performance across active accounts.</p>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                        <div class="card-premium flex flex-col justify-between">
-                            <div class="flex justify-between items-start">
-                                <span class="text-xs font-bold text-secondary uppercase tracking-widest">Total Balance</span>
-                                <i data-lucide="wallet" class="text-accent-blue w-5 h-5"></i>
-                            </div>
-                            <div class="mt-4">
-                                <h3 class="text-4xl font-black tracking-tighter" id="dash-balance">20.00 €</h3>
-                                <p class="text-xs font-semibold text-accent-green mt-2 flex items-center gap-1">
-                                    <i data-lucide="trending-up" class="w-3 h-3"></i> +1.2% Today
-                                </p>
-                            </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+                        <div class="card-premium">
+                            <span class="text-[10px] font-bold text-secondary uppercase tracking-widest block mb-4">Balance</span>
+                            <h3 class="text-3xl font-black tracking-tighter" id="dash-balance">-- €</h3>
                         </div>
                         <div class="card-premium">
-                            <div class="flex justify-between items-start">
-                                <span class="text-xs font-bold text-secondary uppercase tracking-widest">Equity Variation</span>
-                                <i data-lucide="activity" class="text-accent-blue w-5 h-5"></i>
-                            </div>
-                            <div class="mt-4 h-16 flex items-end gap-1">
-                                <div class="flex-1 bg-accent-blue/10 rounded-t h-[40%]"></div>
-                                <div class="flex-1 bg-accent-blue/10 rounded-t h-[60%]"></div>
-                                <div class="flex-1 bg-accent-blue/10 rounded-t h-[50%]"></div>
-                                <div class="flex-1 bg-accent-blue/20 rounded-t h-[80%]"></div>
-                                <div class="flex-1 bg-accent-blue/40 rounded-t h-[100%]"></div>
-                                <div class="flex-1 bg-accent-blue/20 rounded-t h-[70%]"></div>
-                                <div class="flex-1 bg-accent-blue/30 rounded-t h-[90%]"></div>
-                            </div>
+                            <span class="text-[10px] font-bold text-secondary uppercase tracking-widest block mb-4">Equity</span>
+                            <h3 class="text-3xl font-black tracking-tighter" id="dash-equity">-- €</h3>
                         </div>
                         <div class="card-premium">
-                            <div class="flex justify-between items-start">
-                                <span class="text-xs font-bold text-secondary uppercase tracking-widest">Risk Exposure</span>
-                                <i data-lucide="shield" class="text-accent-blue w-5 h-5"></i>
-                            </div>
-                            <div class="mt-4">
-                                <div class="flex justify-between items-end mb-2">
-                                    <span class="text-2xl font-black" id="dash-risk-label">SAFE</span>
-                                    <span class="text-xs text-secondary font-bold">12% Limit</span>
-                                </div>
-                                <div class="w-full bg-black/5 h-2 rounded-full overflow-hidden">
-                                    <div class="bg-accent-blue h-full w-[12%]"></div>
-                                </div>
-                            </div>
+                            <span class="text-[10px] font-bold text-secondary uppercase tracking-widest block mb-4">Win Rate</span>
+                            <h3 class="text-3xl font-black tracking-tighter" id="dash-winrate">--%</h3>
+                        </div>
+                        <div class="card-premium" id="arm-card">
+                            <span class="text-[10px] font-bold text-secondary uppercase tracking-widest block mb-4">AI Permission</span>
+                            <button id="main-arm-btn" class="w-full py-2 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold text-xs">ARM SYSTEM</button>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="card-premium">
-                            <h4 class="text-sm font-bold text-secondary uppercase tracking-widest mb-6">Today's Performance</h4>
-                            <div class="grid grid-cols-2 gap-8">
-                                <div class="border-l-2 border-accent-blue pl-4">
-                                    <p class="text-xs text-secondary mb-1">Realized P&L</p>
-                                    <p class="text-2xl font-black" id="dash-today-pnl">+0.00 €</p>
-                                </div>
-                                <div class="border-l-2 border-black/10 pl-4">
-                                    <p class="text-xs text-secondary mb-1">Win Rate</p>
-                                    <p class="text-2xl font-black" id="dash-winrate">0%</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="card-premium">
-                            <h4 class="text-sm font-bold text-secondary uppercase tracking-widest mb-6">AI Copilot Intelligence</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                         <div class="col-span-2 card-premium">
+                            <h4 class="text-sm font-bold text-secondary uppercase tracking-widest mb-6">Market Intel</h4>
                             <div class="flex gap-4">
                                 <div class="w-12 h-12 rounded-2xl bg-black flex items-center justify-center shadow-lg shadow-black/20">
                                     <i data-lucide="cpu" class="text-white w-6 h-6"></i>
                                 </div>
                                 <div class="flex-1">
                                     <p class="text-sm font-semibold italic text-primary leading-snug" id="ai-copilot-bubble">
-                                        "Analyzing top 20 crypto markets. Volatility is currently low, awaiting New York session opening."
+                                        "Initializing neural analysis..."
                                     </p>
-                                    <div class="mt-3 flex gap-2">
-                                        <span class="px-2 py-1 rounded bg-black/5 text-[10px] font-bold uppercase tracking-tight">BTC Bullish</span>
-                                        <span class="px-2 py-1 rounded bg-black/5 text-[10px] font-bold uppercase tracking-tight">Trend Strength: 82%</span>
-                                    </div>
+                                    <div class="mt-3 flex gap-2" id="ai-tags"></div>
                                 </div>
+                            </div>
+                        </div>
+                        <div class="card-premium">
+                            <h4 class="text-sm font-bold text-secondary uppercase tracking-widest mb-4">Active Signal</h4>
+                            <div id="dash-signal-box">
+                                <p class="text-secondary italic text-xs">Scanning...</p>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </section>
 
-            <!-- TRADING CENTER TAB -->
-            <div id="tab-trading" class="tab-content">
+            <!-- TRADING TAB -->
+            <section id="tab-trading" class="tab-content">
                 <div class="grid grid-cols-12 gap-6 h-full">
-                    <!-- Assets -->
-                    <div class="col-span-3 h-full flex flex-col">
-                        <div class="card-premium flex-1 flex flex-col overflow-hidden">
-                            <div class="flex gap-2 mb-6 p-1 bg-black/5 rounded-xl">
-                                <button class="flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-tight bg-white shadow-sm">Crypto</button>
-                                <button class="flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-tight text-secondary">FX</button>
-                                <button class="flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-tight text-secondary">Stocks</button>
-                            </div>
-                            <div class="flex-1 overflow-y-auto space-y-2 pr-1" id="trading-market-list">
-                                <!-- Dynamic items -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Main Chart Area -->
-                    <div class="col-span-6 h-full flex flex-col">
+                    <div class="col-span-8 h-full flex flex-col">
                         <div class="card-premium flex-1 flex flex-col relative group">
                             <div class="flex justify-between items-center mb-6">
-                                <div class="flex items-center gap-3">
-                                    <h3 class="text-xl font-black" id="active-symbol">BTC/USDT</h3>
-                                    <span class="px-2 py-0.5 rounded bg-accent-green/10 text-accent-green text-[10px] font-bold">LIVE</span>
-                                </div>
-                                <div class="flex gap-2">
-                                    <button class="w-8 h-8 rounded-lg bg-black/5 flex items-center justify-center"><i data-lucide="plus" class="w-4 h-4"></i></button>
-                                    <button class="w-8 h-8 rounded-lg bg-black/5 flex items-center justify-center"><i data-lucide="settings-2" class="w-4 h-4"></i></button>
-                                </div>
+                                <h3 class="text-xl font-black" id="active-symbol">BTC/USDT</h3>
+                                <div id="live-price-center" class="font-mono font-bold text-lg">--</div>
                             </div>
-                            <div class="flex-1 bg-black/5 rounded-2xl relative overflow-hidden flex items-center justify-center">
-                                <!-- Real Graph Simulation -->
-                                <div class="absolute inset-0 p-8 flex flex-col">
-                                    <div class="flex-1 flex items-end gap-2" id="simulated-bars">
-                                        <!-- Bars added by JS -->
-                                    </div>
-                                </div>
-                                <div class="z-10 bg-white dark:bg-black rounded-full px-6 py-2 shadow-2xl border border-black/5 font-bold text-sm">
-                                    Price: <span id="live-price-center" class="font-mono">59,230.40</span>
-                                </div>
-                                <!-- Watermark -->
-                                <div class="absolute bottom-8 right-8 opacity-5 text-4xl font-black">QUANTUM AI</div>
-                            </div>
-                            <!-- Trade Overlay (if active) -->
-                            <div id="chart-position-marker" class="absolute left-0 right-0 top-1/2 h-[1px] bg-accent-blue/50 hidden">
-                                <div class="absolute right-4 -top-3 bg-accent-blue text-white text-[10px] px-2 py-1 rounded font-bold">POS ENTRY @ <span id="marker-price">--</span></div>
+                            <div class="flex-1 bg-black/5 rounded-2xl p-8 relative overflow-hidden">
+                                <div class="chart-grid" id="simulated-bars"></div>
                             </div>
                         </div>
                     </div>
-
-                    <!-- Side Analysis Panel -->
-                    <div class="col-span-3 h-full flex flex-col">
-                        <div class="card-premium flex-1 flex flex-col space-y-6">
-                            <div>
-                                <h4 class="text-xs font-bold text-secondary uppercase tracking-widest mb-4">AI Analysis</h4>
-                                <div class="space-y-4">
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-sm font-medium">Trend Direction</span>
-                                        <span class="text-sm font-bold text-accent-green" id="ana-trend">Bullish</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-sm font-medium">Market State</span>
-                                        <span class="text-sm font-bold" id="ana-state">Trending</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-sm font-medium">Structure</span>
-                                        <span class="text-sm font-mono font-bold" id="ana-struct">HH → HL</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-sm font-medium">Quality Score</span>
-                                        <span class="text-sm font-bold text-accent-blue">82/100</span>
-                                    </div>
-                                </div>
+                    <div class="col-span-4 h-full">
+                        <div class="card-premium h-full flex flex-col space-y-6">
+                            <h4 class="text-xs font-bold text-secondary uppercase tracking-widest">AI Market Analysis</h4>
+                            <div class="space-y-4 text-sm" id="analysis-panel">
+                                <div class="flex justify-between"><span class="text-secondary">Trend</span><span id="ana-trend" class="font-bold">--</span></div>
+                                <div class="flex justify-between"><span class="text-secondary">Structure</span><span id="ana-struct" class="font-bold">--</span></div>
+                                <div class="flex justify-between"><span class="text-secondary">Market State</span><span id="ana-state" class="font-bold">--</span></div>
+                                <div class="flex justify-between"><span class="text-secondary">Momentum</span><span id="ana-momentum" class="font-bold">--</span></div>
                             </div>
-
                             <div class="pt-6 border-t border-black/5">
-                                <h4 class="text-xs font-bold text-secondary uppercase tracking-widest mb-4">Signal Details</h4>
-                                <div id="trading-signal-box">
-                                    <div class="text-secondary italic text-xs">Waiting for setup...</div>
+                                <h4 class="text-xs font-bold text-secondary uppercase tracking-widest mb-4">Risk Sizing</h4>
+                                <div id="risk-panel" class="space-y-2 text-xs">
+                                    <p class="text-secondary italic">Waiting for signal...</p>
                                 </div>
-                            </div>
-
-                            <div class="mt-auto space-y-3">
-                                <div class="flex justify-between text-xs font-bold">
-                                    <span class="text-secondary">AUTO-TRADING</span>
-                                    <span id="arm-status-label" class="text-red-500">OFF</span>
-                                </div>
-                                <button id="main-arm-btn" class="w-full py-4 bg-black text-white dark:bg-white dark:text-black rounded-2xl font-bold tracking-tight active:scale-[0.98] transition-transform">
-                                    ARM AI SYSTEM
-                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </section>
 
             <!-- SCANNER TAB -->
-            <div id="tab-scanner" class="tab-content">
+            <section id="tab-scanner" class="tab-content">
                 <div class="max-w-6xl mx-auto">
-                    <div class="flex justify-between items-center mb-8">
-                        <div>
-                            <h2 class="text-3xl font-extrabold tracking-tight">Market Scanner</h2>
-                            <p class="text-secondary">Real-time scan across 40+ assets.</p>
-                        </div>
-                        <div class="flex gap-2 bg-black/5 p-1 rounded-xl">
-                            <button class="px-4 py-2 rounded-lg text-xs font-bold bg-white shadow-sm">Trending</button>
-                            <button class="px-4 py-2 rounded-lg text-xs font-bold text-secondary">Best Setups</button>
-                            <button class="px-4 py-2 rounded-lg text-xs font-bold text-secondary">No Range</button>
-                        </div>
-                    </div>
+                    <h2 class="text-3xl font-extrabold tracking-tight mb-8">Asset Scanner</h2>
                     <div class="card-premium overflow-hidden !p-0">
-                        <table class="w-full">
-                            <thead>
-                                <tr class="bg-black/5 text-[10px] text-secondary font-bold uppercase tracking-widest">
+                        <table class="w-full text-sm">
+                            <thead class="bg-black/5 text-[10px] text-secondary font-bold uppercase tracking-widest">
+                                <tr>
                                     <th class="py-4 pl-8 text-left">Asset</th>
                                     <th class="py-4 text-right">Price</th>
                                     <th class="py-4 text-right">Change</th>
-                                    <th class="py-4 text-center">Trend</th>
-                                    <th class="py-4 text-center">Volatility</th>
-                                    <th class="py-4 text-center">AI Score</th>
-                                    <th class="py-4 pr-8 text-right">Status</th>
+                                    <th class="py-4 text-center">Status</th>
+                                    <th class="py-4 pr-8 text-right">AI Score</th>
                                 </tr>
                             </thead>
-                            <tbody id="scanner-table-body" class="text-sm">
-                                <!-- Data injected by JS -->
-                            </tbody>
+                            <tbody id="scanner-table-body"></tbody>
                         </table>
                     </div>
                 </div>
-            </div>
+            </section>
 
-            <!-- OTHER TABS (Simplified for this version) -->
-            <div id="tab-positions" class="tab-content">
-                 <div class="max-w-4xl mx-auto">
-                    <h2 class="text-3xl font-extrabold tracking-tight mb-8">Active Positions</h2>
-                    <div id="active-positions-list" class="space-y-4">
-                        <!-- Position Cards -->
-                    </div>
-                </div>
-            </div>
-            
-            <div id="tab-history" class="tab-content">
+            <!-- POSITIONS & HISTORY -->
+            <section id="tab-positions" class="tab-content">
                 <div class="max-w-4xl mx-auto">
-                    <h2 class="text-3xl font-extrabold tracking-tight mb-8">Trade History</h2>
-                    <div id="history-table-body" class="space-y-2">
-                        <!-- History lines -->
-                    </div>
+                    <h2 class="text-3xl font-extrabold tracking-tight mb-8">Active Trade</h2>
+                    <div id="active-pos-container"></div>
                 </div>
-            </div>
+            </section>
 
-            <div id="tab-analytics" class="tab-content">
-                <div class="max-w-6xl mx-auto">
-                    <h2 class="text-3xl font-extrabold tracking-tight mb-10">Advanced Analytics</h2>
-                    <div class="grid grid-cols-4 gap-6 mb-10">
-                        <div class="card-premium">
-                            <p class="text-[10px] text-secondary font-bold uppercase tracking-widest mb-1">Profit Factor</p>
-                            <p class="text-3xl font-black" id="ana-pf">2.45</p>
-                        </div>
-                        <div class="card-premium">
-                            <p class="text-[10px] text-secondary font-bold uppercase tracking-widest mb-1">Expectancy</p>
-                            <p class="text-3xl font-black">+4.20 €</p>
-                        </div>
-                        <div class="card-premium">
-                            <p class="text-[10px] text-secondary font-bold uppercase tracking-widest mb-1">Max DD</p>
-                            <p class="text-3xl font-black text-accent-red">2.1%</p>
-                        </div>
-                        <div class="card-premium">
-                            <p class="text-[10px] text-secondary font-bold uppercase tracking-widest mb-1">Avg Win/Loss</p>
-                            <p class="text-3xl font-black">1.8:1</p>
-                        </div>
-                    </div>
-                    <div class="card-premium h-80 flex flex-col">
-                        <h4 class="text-sm font-bold text-secondary uppercase mb-8">Equity Growth Curve</h4>
-                        <div class="flex-1 flex items-end gap-1 px-4">
-                            <!-- Curve simulation -->
-                            <div class="flex-1 bg-accent-blue rounded-t h-[10%]"></div>
-                            <div class="flex-1 bg-accent-blue rounded-t h-[15%]"></div>
-                            <div class="flex-1 bg-accent-blue rounded-t h-[12%]"></div>
-                            <div class="flex-1 bg-accent-blue rounded-t h-[20%]"></div>
-                            <div class="flex-1 bg-accent-blue rounded-t h-[25%]"></div>
-                            <div class="flex-1 bg-accent-blue rounded-t h-[22%]"></div>
-                            <div class="flex-1 bg-accent-blue rounded-t h-[30%]"></div>
-                            <div class="flex-1 bg-accent-blue rounded-t h-[45%]"></div>
-                            <div class="flex-1 bg-accent-blue rounded-t h-[40%]"></div>
-                            <div class="flex-1 bg-accent-blue rounded-t h-[55%]"></div>
-                        </div>
-                    </div>
+            <section id="tab-history" class="tab-content">
+                <div class="max-w-4xl mx-auto">
+                    <h2 class="text-3xl font-extrabold tracking-tight mb-8">Trade Journal</h2>
+                    <div id="history-container" class="space-y-2"></div>
                 </div>
-            </div>
+            </section>
 
-            <div id="tab-risk" class="tab-content">
-                <div class="max-w-3xl mx-auto">
-                    <h2 class="text-3xl font-extrabold tracking-tight mb-8 text-center">Risk Management Center</h2>
-                    <div class="grid gap-6">
-                        <div class="card-premium">
-                            <div class="flex justify-between items-center mb-6">
-                                <h4 class="font-bold">Daily Loss Limit</h4>
-                                <span class="text-sm font-mono">0.00 € / 20.00 €</span>
-                            </div>
-                            <div class="w-full bg-black/5 h-4 rounded-full overflow-hidden">
-                                <div class="bg-accent-blue h-full w-[2%]"></div>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-6">
-                             <div class="card-premium text-center">
-                                <p class="text-[10px] text-secondary font-bold uppercase mb-2">Max Open Exposure</p>
-                                <p class="text-2xl font-black">1 Position</p>
-                            </div>
-                            <div class="card-premium text-center">
-                                <p class="text-[10px] text-secondary font-bold uppercase mb-2">Account Safety</p>
-                                <p class="text-2xl font-black text-accent-green">ENFORCED</p>
-                            </div>
-                        </div>
-                        <div class="card-premium bg-red-500/5 border-red-500/20">
-                            <p class="text-xs text-accent-red font-bold uppercase mb-4 tracking-widest">Protocol Override</p>
-                            <p class="text-sm text-secondary mb-6">Instantly halt all algorithmic operations and liquidate all open positions across all linked brokers.</p>
-                            <button class="w-full py-4 bg-accent-red text-white rounded-2xl font-black tracking-tight active:scale-[0.98] shadow-xl shadow-red-500/20">
-                                TRIGGER SYSTEM HALT
-                            </button>
-                        </div>
+            <!-- RISK CENTER -->
+            <section id="tab-risk" class="tab-content">
+                <div class="max-w-2xl mx-auto">
+                    <h2 class="text-3xl font-extrabold tracking-tight mb-8 text-center">Safety Protocols</h2>
+                    <div class="card-premium border-2 border-red-500/20 bg-red-500/5 mb-6" id="emergency-status-card">
+                        <h4 class="text-accent-red font-bold uppercase text-xs mb-4 tracking-widest">Emergency Stop</h4>
+                        <p class="text-sm text-secondary mb-6">Status: <span id="emergency-label" class="font-bold">INACTIVE</span></p>
+                        <button id="reset-emergency-btn" class="w-full py-4 bg-black text-white rounded-2xl font-bold hidden">RESET SYSTEM PROTOCOLS</button>
                     </div>
                 </div>
-            </div>
-            
+            </section>
         </main>
     </div>
 
     <script>
-        // Init Lucide Icons
         lucide.createIcons();
 
-        // Navigation System
-        function showTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.getElementById(`tab-tab-${tabId}`) || document.getElementById(`tab-${tabId}`).classList.add('active');
-            
-            document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
-            event.currentTarget.classList.add('active');
-        }
-
-        // Theme Toggle
-        const themeToggle = document.getElementById('theme-toggle');
-        themeToggle.addEventListener('click', () => {
-            document.body.classList.toggle('dark');
-            const icon = themeToggle.querySelector('i');
-            if (document.body.classList.contains('dark')) {
-                icon.setAttribute('data-lucide', 'sun');
-            } else {
-                icon.setAttribute('data-lucide', 'moon');
-            }
-            lucide.createIcons();
+        // State & Navigation
+        let currentMode = 'DEMO';
+        
+        document.querySelectorAll('.sidebar-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const tab = item.getAttribute('data-tab');
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+                document.getElementById(`tab-${tab}`).classList.add('active');
+                item.classList.add('active');
+            });
         });
 
         // Mode Switching
-        function setMode(mode) {
-            document.querySelectorAll('.switch-option').forEach(el => el.classList.remove('active'));
-            document.getElementById(`mode-${mode.toLowerCase()}`).classList.add('active');
-            
-            if (mode === 'LIVE') {
-                if (!confirm("WARNING: Switching to LIVE trading. Real funds at risk. Confirm?")) {
-                    setMode('DEMO');
-                    return;
+        const setMode = async (mode) => {
+            if (mode === 'LIVE' && !confirm("REAL FUNDS AT RISK. Proceed?")) return;
+            const res = await fetch('/api/mode', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                currentMode = data.mode;
+                document.getElementById('mode-demo-btn').classList.toggle('active', currentMode === 'DEMO');
+                document.getElementById('mode-live-btn').classList.toggle('active', currentMode === 'REAL');
+            } else {
+                alert(data.message);
+            }
+        };
+
+        document.getElementById('mode-demo-btn').onclick = () => setMode('DEMO');
+        document.getElementById('mode-live-btn').onclick = () => setMode('LIVE');
+
+        // Actions
+        document.getElementById('main-arm-btn').onclick = () => fetch('/api/arm', { method: 'POST' });
+        document.getElementById('emergency-stop-btn').onclick = async () => {
+            if(confirm("HALT SYSTEM?")) await fetch('/api/emergency-stop', { method: 'POST' });
+        };
+        document.getElementById('reset-emergency-btn').onclick = async () => {
+            await fetch('/api/emergency-stop/reset', { method: 'POST' });
+        };
+
+        // Theme
+        document.getElementById('theme-toggle').onclick = () => {
+            document.body.classList.toggle('dark');
+            lucide.createIcons();
+        };
+
+        // Core Update Loop
+        const update = async () => {
+            try {
+                const res = await fetch('/api/status');
+                const s = await res.json();
+
+                // Status & Broker
+                document.getElementById('system-status-text').innerText = s.status_display.toUpperCase();
+                document.getElementById('status-dot').className = `w-2 h-2 rounded-full ${s.status === 'DATA_ERROR' || s.status === 'EMERGENCY_STOP' ? 'bg-red-500' : 'bg-green-500'} animate-pulse`;
+                
+                const b = s.broker_info || {};
+                document.getElementById('broker-status-text').innerText = b.connected ? 'CONNECTED' : 'DISCONNECTED';
+                document.getElementById('broker-status-text').className = `font-bold text-sm ${b.connected ? 'text-green-500' : 'text-red-500'}`;
+                document.getElementById('broker-id').innerText = b.broker || 'No Active Broker';
+
+                // Stats
+                document.getElementById('dash-balance').innerText = `${s.balance.toFixed(2)} €`;
+                document.getElementById('dash-equity').innerText = `${s.equity.toFixed(2)} €`;
+                document.getElementById('dash-winrate').innerText = `${s.stats.win_rate}%`;
+                
+                const armBtn = document.getElementById('main-arm-btn');
+                armBtn.innerText = s.armed ? 'DISARM SYSTEM' : 'ARM SYSTEM';
+                armBtn.className = `w-full py-2 ${s.armed ? 'bg-red-500' : 'bg-black dark:bg-white'} text-white dark:text-black rounded-xl font-bold text-xs`;
+
+                // Emergency
+                const isEmerg = b.emergency_stop;
+                document.getElementById('emergency-label').innerText = isEmerg ? 'ACTIVE' : 'INACTIVE';
+                document.getElementById('emergency-label').className = `font-bold ${isEmerg ? 'text-red-500' : 'text-green-500'}`;
+                document.getElementById('reset-emergency-btn').classList.toggle('hidden', !isEmerg);
+
+                // AI Bubble
+                const bubble = document.getElementById('ai-copilot-bubble');
+                if (s.signal?.status === 'SIGNAL_DETECTED') {
+                    bubble.innerText = `"${s.signal.reason}"`;
+                } else if (s.analysis?.market_state === 'RANGE') {
+                    bubble.innerText = '"Market is currently in range. Awaiting directional breakout for safe entry."';
+                } else {
+                    bubble.innerText = '"Analyzing trend vectors and market structure. System ready."';
                 }
-            }
-            
-            fetch('/api/mode', { method: 'POST' });
-        }
 
-        // API Polling
-        async function updateData() {
-            const res = await fetch('/api/status');
-            const status = await res.json();
-            if (!status) return;
+                // Analysis
+                if (s.analysis && s.analysis.status === 'VALID') {
+                    const ana = s.analysis;
+                    document.getElementById('ana-trend').innerText = ana.trend;
+                    document.getElementById('ana-trend').className = `font-bold ${ana.trend === 'BULLISH' ? 'text-green-500' : 'text-red-500'}`;
+                    document.getElementById('ana-struct').innerText = ana.is_hh ? 'HH/HL' : (ana.is_ll ? 'LH/LL' : 'Neutral');
+                    document.getElementById('ana-state').innerText = ana.market_state;
+                    document.getElementById('ana-momentum').innerText = `${ana.momentum.toFixed(2)}%`;
 
-            // Global Balance
-            document.getElementById('dash-balance').innerText = `${status.balance.toFixed(2)} €`;
-            document.getElementById('stat-balance').innerText = `${status.balance.toFixed(2)} €`;
-            document.getElementById('dash-today-pnl').innerText = `${status.today_stats.pnl >= 0 ? '+' : ''}${status.today_stats.pnl.toFixed(2)} €`;
-            document.getElementById('dash-today-pnl').className = `text-2xl font-black ${status.today_stats.pnl >= 0 ? 'text-accent-green' : 'text-accent-red'}`;
-            
-            // Stats
-            if (status.stats) {
-                document.getElementById('dash-winrate').innerText = `${status.stats.win_rate}%`;
-                document.getElementById('stat-winrate').innerText = `${status.stats.win_rate}%`;
-                document.getElementById('stat-winrate-bar').style.width = `${status.stats.win_rate}%`;
-                document.getElementById('stat-profit-factor').innerText = status.stats.profit_factor.toFixed(2);
-                document.getElementById('ana-pf').innerText = status.stats.profit_factor.toFixed(2);
-            }
+                    // Chart
+                    if (ana.df_preview) {
+                        const grid = document.getElementById('simulated-bars');
+                        const prices = ana.df_preview.map(d => d.Close);
+                        const max = Math.max(...prices);
+                        const min = Math.min(...prices);
+                        const range = max - min;
+                        
+                        grid.innerHTML = ana.df_preview.map(d => {
+                            const h = range === 0 ? 50 : ((d.Close - min) / range) * 80 + 10;
+                            const color = d.Close >= d.Open ? 'up' : 'down';
+                            return `<div class="bar ${color}" style="height: ${h}%"></div>`;
+                        }).join('');
+                        document.getElementById('live-price-center').innerText = prices[prices.length-1].toLocaleString();
+                    }
+                }
 
-            // System Status
-            const stText = document.getElementById('system-status-text');
-            stText.innerText = (status.status_display || status.status).toUpperCase();
-            
-            // Arm Button
-            const armBtn = document.getElementById('main-arm-btn');
-            const armStatusLabel = document.getElementById('arm-status-label');
-            if (status.armed) {
-                armBtn.innerText = 'DISARM AI SYSTEM';
-                armBtn.className = 'w-full py-4 bg-accent-red text-white rounded-2xl font-bold tracking-tight active:scale-[0.98] transition-all shadow-xl shadow-red-500/20';
-                armStatusLabel.innerText = 'ACTIVE';
-                armStatusLabel.className = 'text-accent-green';
-            } else {
-                armBtn.innerText = 'ARM AI SYSTEM';
-                armBtn.className = 'w-full py-4 bg-black text-white dark:bg-white dark:text-black rounded-2xl font-bold tracking-tight active:scale-[0.98] transition-all';
-                armStatusLabel.innerText = 'OFF';
-                armStatusLabel.className = 'text-accent-red';
-            }
+                // Signal
+                const sigBox = document.getElementById('dash-signal-box');
+                const riskPanel = document.getElementById('risk-panel');
+                if (s.signal?.status === 'SIGNAL_DETECTED') {
+                    const sig = s.signal;
+                    const r = s.risk || {};
+                    const color = sig.direction === 'BUY' ? 'text-green-500' : 'text-red-500';
+                    sigBox.innerHTML = `<div class="p-3 bg-black/5 rounded-xl"><p class="text-xl font-black ${color}">${sig.direction}</p><p class="text-[10px] font-bold">SCORE: ${sig.score}/100</p></div>`;
+                    riskPanel.innerHTML = `
+                        <div class="flex justify-between"><span>Risk Cash</span><span class="font-bold">${r.risk_amount.toFixed(2)}€</span></div>
+                        <div class="flex justify-between"><span>Leverage</span><span class="font-bold">${r.leverage.toFixed(1)}x</span></div>
+                        <div class="flex justify-between"><span>Fees Est.</span><span class="font-bold">${r.estimated_fees.toFixed(2)}€</span></div>
+                    `;
+                } else {
+                    sigBox.innerHTML = `<p class="text-secondary italic text-xs">${s.signal?.reason || 'Scanning...'}</p>`;
+                    riskPanel.innerHTML = `<p class="text-secondary italic">Waiting for signal...</p>`;
+                }
 
-            // AI Copilot Bubble
-            const aiBubble = document.getElementById('ai-copilot-bubble');
-            if (status.signal?.status === 'SIGNAL_DETECTED') {
-                aiBubble.innerText = `"${status.signal.motif}"`;
-            } else if (status.analysis?.is_range) {
-                aiBubble.innerText = `"Range detected on ${status.signal?.symbol || 'market'}. Market is in equilibrium, no high-probability setups."`;
-            }
-
-            // Analysis Panel
-            if (status.analysis) {
-                const ana = status.analysis;
-                document.getElementById('ana-trend').innerText = ana.trend;
-                document.getElementById('ana-trend').className = `text-sm font-bold ${ana.trend === 'BULLISH' ? 'text-accent-green' : 'text-accent-red'}`;
-                document.getElementById('ana-state').innerText = ana.is_range ? 'Range' : 'Trending';
-                document.getElementById('ana-struct').innerText = ana.is_hh ? 'HH → HL' : (ana.is_ll ? 'LH → LL' : 'Neutral');
-            }
-
-            // Signal Panel
-            const sigBox = document.getElementById('trading-signal-box');
-            if (status.signal?.status === 'SIGNAL_DETECTED') {
-                const s = status.signal;
-                sigBox.innerHTML = `
-                    <div class="p-4 bg-accent-blue/5 rounded-2xl border border-accent-blue/20">
-                        <div class="flex justify-between items-center mb-3">
-                            <span class="text-lg font-black ${s.direction === 'BUY' ? 'text-accent-green' : 'text-accent-red'}">${s.direction}</span>
-                            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-black/5">${s.score}/100</span>
-                        </div>
-                        <div class="space-y-2">
-                            <div class="flex justify-between text-[10px]"><span class="text-secondary font-bold">ENTRY</span><span class="font-mono font-bold">${s.entry.toFixed(2)}</span></div>
-                            <div class="flex justify-between text-[10px]"><span class="text-accent-red font-bold">STOP</span><span class="font-mono font-bold">${s.sl.toFixed(2)}</span></div>
-                            <div class="flex justify-between text-[10px]"><span class="text-accent-green font-bold">TARGET</span><span class="font-mono font-bold">${s.tp.toFixed(2)}</span></div>
-                        </div>
-                    </div>
-                `;
-            } else {
-                sigBox.innerHTML = `<div class="text-secondary italic text-xs p-4 bg-black/5 rounded-2xl border border-dashed border-black/10">${status.signal?.reason || 'Scanning for A+ Setups...'}</div>`;
-            }
-
-            // Scanner Table
-            if (status.scanner_data) {
-                const body = document.getElementById('scanner-table-body');
-                body.innerHTML = status.scanner_data.map(d => `
-                    <tr class="border-b border-black/5 hover:bg-black/[0.02] transition-colors cursor-pointer">
-                        <td class="py-4 pl-8 font-bold">${d.asset}</td>
-                        <td class="py-4 text-right font-mono">${d.price.toLocaleString()}</td>
-                        <td class="py-4 text-right font-bold ${d.change >= 0 ? 'text-accent-green' : 'text-accent-red'}">${d.change >= 0 ? '+' : ''}${d.change}%</td>
-                        <td class="py-4 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${d.trend === 'Bullish' ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'}">${d.trend}</span></td>
-                        <td class="py-4 text-center text-xs font-medium text-secondary">${d.volatility}</td>
-                        <td class="py-4 text-center">
-                            <div class="w-10 h-10 rounded-full border-2 border-accent-blue/20 flex items-center justify-center text-[10px] font-black mx-auto">
-                                ${d.ai_score}
+                // Active Pos
+                const posContainer = document.getElementById('active-pos-container');
+                if (s.active_trade) {
+                    const p = s.active_trade;
+                    posContainer.innerHTML = `
+                        <div class="card-premium border-2 border-accent-blue">
+                            <div class="flex justify-between mb-6">
+                                <div><p class="text-lg font-black">${p.symbol}</p><p class="text-xs font-bold ${p.direction==='BUY'?'text-green-500':'text-red-500'}">${p.direction}</p></div>
+                                <p class="text-2xl font-black ${p.pnl>=0?'text-green-500':'text-red-500'}">${p.pnl.toFixed(2)} €</p>
                             </div>
-                        </td>
-                        <td class="py-4 pr-8 text-right font-bold text-accent-blue">${d.status}</td>
-                    </tr>
-                `).join('');
-            }
-
-            // Positions
-            const posList = document.getElementById('active-positions-list');
-            if (status.active_trade) {
-                const p = status.active_trade;
-                posList.innerHTML = `
-                    <div class="card-premium border-2 border-accent-blue shadow-2xl shadow-accent-blue/10">
-                        <div class="flex justify-between items-center mb-6">
-                            <div class="flex items-center gap-4">
-                                <div class="w-10 h-10 rounded-full bg-accent-blue flex items-center justify-center text-white"><i data-lucide="zap" class="w-5 h-5"></i></div>
-                                <div><p class="text-lg font-black">${p.symbol}</p><p class="text-[10px] text-secondary font-bold uppercase">${p.direction} • ${p.quantity.toFixed(4)} Units</p></div>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-2xl font-black ${p.pnl >= 0 ? 'text-accent-green' : 'text-accent-red'}">${p.pnl >= 0 ? '+' : ''}${p.pnl.toFixed(2)} €</p>
-                                <p class="text-[10px] font-bold text-secondary uppercase">Current P&L</p>
+                            <div class="grid grid-cols-3 gap-4 text-xs">
+                                <div><span class="text-secondary">Entry</span><p class="font-bold">${p.entry_price.toFixed(2)}</p></div>
+                                <div><span class="text-secondary">Stop</span><p class="font-bold text-red-500">${p.sl.toFixed(2)}</p></div>
+                                <div><span class="text-secondary">Target</span><p class="font-bold text-green-500">${p.tp.toFixed(2)}</p></div>
                             </div>
                         </div>
-                        <div class="grid grid-cols-3 gap-4 mb-6">
-                            <div class="bg-black/5 p-3 rounded-xl"><p class="text-[10px] text-secondary font-bold mb-1">ENTRY</p><p class="font-mono font-bold">${p.entry.toFixed(2)}</p></div>
-                            <div class="bg-black/5 p-3 rounded-xl"><p class="text-[10px] text-secondary font-bold mb-1">STOP LOSS</p><p class="font-mono font-bold text-accent-red">${p.sl.toFixed(2)}</p></div>
-                            <div class="bg-black/5 p-3 rounded-xl"><p class="text-[10px] text-secondary font-bold mb-1">TAKE PROFIT</p><p class="font-mono font-bold text-accent-green">${p.tp.toFixed(2)}</p></div>
+                    `;
+                } else {
+                    posContainer.innerHTML = `<p class="text-center py-10 text-secondary italic">No active position.</p>`;
+                }
+
+                // History
+                if (s.history) {
+                    document.getElementById('history-container').innerHTML = s.history.slice().reverse().map(h => `
+                        <div class="card-premium !py-3 flex justify-between text-xs">
+                            <span class="font-bold">${h.symbol}</span>
+                            <span class="${h.pnl>=0?'text-green-500':'text-red-500'} font-black">${h.pnl.toFixed(2)} €</span>
                         </div>
-                        <button class="w-full py-3 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold text-sm">Close Position</button>
-                    </div>
-                `;
-                lucide.createIcons();
-            } else {
-                posList.innerHTML = `<div class="text-center py-20 opacity-30"><i data-lucide="inbox" class="w-12 h-12 mx-auto mb-4"></i><p class="font-bold">No active positions</p></div>`;
-                lucide.createIcons();
-            }
+                    `).join('');
+                }
 
-            // History
-            const histList = document.getElementById('history-table-body');
-            if (status.history && status.history.length > 0) {
-                histList.innerHTML = status.history.slice().reverse().map(h => `
-                    <div class="card-premium !py-3 flex justify-between items-center group hover:bg-black/[0.02] transition-colors">
-                        <div class="flex items-center gap-4">
-                            <span class="w-8 h-8 rounded-lg flex items-center justify-center ${h.direction === 'BUY' ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'} font-black text-[10px]">${h.direction[0]}</span>
-                            <div><p class="font-bold text-sm">${h.symbol}</p><p class="text-[10px] text-secondary">${h.open_time.split('T')[1].substring(0,5)} • Scalp</p></div>
-                        </div>
-                        <div class="text-right"><p class="font-black ${h.pnl >= 0 ? 'text-accent-green' : 'text-accent-red'}">${h.pnl >= 0 ? '+' : ''}${h.pnl.toFixed(2)} €</p></div>
-                    </div>
-                `).join('');
-            }
-        }
+                // Scanner
+                const scanRes = await fetch('/api/scanner');
+                const scan = await scanRes.json();
+                if (scan.assets) {
+                    document.getElementById('scanner-table-body').innerHTML = scan.assets.map(a => `
+                        <tr class="border-b border-black/5 hover:bg-black/[0.02]">
+                            <td class="py-4 pl-8 font-bold">${a.symbol}</td>
+                            <td class="py-4 text-right font-mono">${a.last.toFixed(2)}</td>
+                            <td class="py-4 text-right ${a.change>=0?'text-green-500':'text-red-500'} font-bold">${a.change.toFixed(2)}%</td>
+                            <td class="py-4 text-center text-[10px] font-bold uppercase">${a.status}</td>
+                            <td class="py-4 pr-8 text-right font-black text-accent-blue">${a.ai_score}</td>
+                        </tr>
+                    `).join('');
+                }
 
-        // Arming Listener
-        document.getElementById('main-arm-btn').addEventListener('click', async () => {
-             const res = await fetch('/api/arm', { method: 'POST' });
-             updateData();
-        });
-        
-        document.getElementById('arm-button').addEventListener('click', async () => {
-             const res = await fetch('/api/arm', { method: 'POST' });
-             updateData();
-        });
+            } catch (e) { console.error("UI Update Failed", e); }
+        };
 
-        document.getElementById('emergency-stop').addEventListener('click', async () => {
-            if (confirm("!!! EMERGENCY STOP !!! Halt all operations?")) {
-                await fetch('/api/emergency-stop', { method: 'POST' });
-                updateData();
-            }
-        });
-
-        // Initialize Simulated Bars
-        const simBars = document.getElementById('simulated-bars');
-        for(let i=0; i<30; i++) {
-            const h = Math.random() * 80 + 10;
-            const bar = document.createElement('div');
-            bar.className = 'flex-1 bg-accent-blue/10 rounded-t';
-            bar.style.height = `${h}%`;
-            simBars.appendChild(bar);
-        }
-
-        setInterval(updateData, 2000);
-        updateData();
+        setInterval(update, 2000);
+        update();
     </script>
 </body>
 </html>

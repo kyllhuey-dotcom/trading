@@ -1,105 +1,64 @@
-import httpx
 from typing import Dict, Any, Optional
-import os
-
-class MetaApiConnector:
-    """
-    Connecteur pour ActivTrades via le pont cloud MetaApi.
-    Permet l'exécution Vercel-ready sans terminal local.
-    """
-    def __init__(self, api_token: Optional[str] = None, account_id: Optional[str] = None):
-        self.api_token = api_token or os.getenv("META_API_TOKEN")
-        self.account_id = account_id or os.getenv("META_ACCOUNT_ID")
-        self.base_url = "https://mt-client-api-v1.new-york.agiliumtrade.ai" # Endpoint MetaApi
-
-    async def check_connection(self) -> bool:
-        if not self.api_token or not self.account_id:
-            return False
-        try:
-            async with httpx.AsyncClient() as client:
-                headers = {"auth-token": self.api_token}
-                url = f"{self.base_url}/users/current/accounts/{self.account_id}"
-                response = await client.get(url, headers=headers)
-                return response.status_code == 200
-        except:
-            return False
-
-    async def get_account_info(self) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
-            headers = {"auth-token": self.api_token}
-            url = f"{self.base_url}/users/current/accounts/{self.account_id}/account-information"
-            response = await client.get(url, headers=headers)
-            return response.json()
-
-    async def execute_trade(self, symbol: str, side: str, volume: float, stop_loss: float, take_profit: float) -> Dict[str, Any]:
-        """
-        Exécution réelle sur ActivTrades via le bridge.
-        """
-        if not await self.check_connection():
-            return {"success": False, "reason": "Broker Connection Failed"}
-
-        payload = {
-            "symbol": symbol.replace("/", ""), # Format MT5 (BTCUSD)
-            "actionType": "ORDER_TYPE_BUY" if side == "BUY" else "ORDER_TYPE_SELL",
-            "volume": volume,
-            "stopLoss": stop_loss,
-            "takeProfit": take_profit
-        }
-
-        async with httpx.AsyncClient() as client:
-            headers = {"auth-token": self.api_token}
-            url = f"{self.base_url}/users/current/accounts/{self.account_id}/trade"
-            # Note: En production MetaApi utilise un endpoint spécifique /trade
-            # Ici on simule l'appel réussi pour la structure
-            return {"success": True, "broker_order_id": "AT-12345678", "status": "EXECUTED"}
+from .broker_adapters.ccxt_adapter import CCXTAdapter
+from .broker_adapters.primexbt_adapter import PrimeXBTAdapter
 
 class BrokerConnector:
+    """
+    Orchestrateur de connexions broker (Lot 8).
+    """
     def __init__(self):
-        self.mode = "DEMO"
-        self.connector = MetaApiConnector()
+        self.adapters = {
+            "BINANCE": CCXTAdapter("binance"),
+            "PRIMEXBT": PrimeXBTAdapter()
+        }
+        self.active_broker = "BINANCE"
         self.emergency_stop_active = False
-        self.daily_loss_limit = -100.0 # Par défaut, arrêt à -100€
-        self.max_trades_per_day = 10
-        self.trades_today = 0
 
     def trigger_emergency_stop(self):
+        """Rule 32: Stop all, block all."""
         self.emergency_stop_active = True
-        self.mode = "DEMO" # Force le retour en démo par sécurité
+        return True
+
+    def reset_emergency_stop(self):
+        """Rule 32: Requiert une action explicite."""
+        self.emergency_stop_active = False
         return True
 
     async def set_mode(self, mode: str):
-        if self.emergency_stop_active and mode == "REAL":
-            return False, "EMERGENCY STOP ACTIVE - Cannot enter REAL mode"
-        
+        """Rule 28 & 43: Switch sécurisé."""
         if mode == "REAL":
-            connected = await self.connector.check_connection()
-            if not connected:
-                return False, "Failed to connect to ActivTrades Cloud Bridge"
-            self.mode = "REAL"
-            return True, "Mode RÉEL Activé"
-        else:
-            self.mode = "DEMO"
-            return True, "Mode DÉMO Activé"
+            if self.emergency_stop_active:
+                return False, "Emergency Stop is active. Reset required."
+            
+            # Check broker connection before allowing REAL mode
+            adapter = self.adapters.get(self.active_broker)
+            if not adapter or not await adapter.connect():
+                return False, f"Cannot enter LIVE: Broker {self.active_broker} not connected."
+                
+            return True, "Entering LIVE MODE. Real funds at risk."
+        
+        return True, "Mode DEMO Activated."
+
+    async def connect(self, broker_id: str) -> bool:
+        if broker_id in self.adapters:
+            self.active_broker = broker_id
+            return await self.adapters[broker_id].connect()
+        return False
 
     async def execute(self, signal: Dict[str, Any], risk: Dict[str, Any]):
-        if self.emergency_stop_active:
-            return {"success": False, "reason": "EMERGENCY STOP ACTIVE"}
-            
-        if self.mode == "DEMO":
-            return {"mode": "DEMO", "simulated": True}
-        else:
-            # Sécurités supplémentaires avant exécution réelle
-            if self.trades_today >= self.max_trades_per_day:
-                return {"success": False, "reason": "Max daily trades reached"}
-
-            res = await self.connector.execute_trade(
+        adapter = self.adapters.get(self.active_broker)
+        if adapter:
+            return await adapter.execute_order(
                 symbol=signal["symbol"],
                 side=signal["direction"],
-                volume=risk["quantity"],
-                stop_loss=signal["sl"],
-                take_profit=signal["tp"]
+                quantity=risk["quantity"],
+                sl=signal["sl"],
+                tp=signal["tp"]
             )
-            
-            if res.get("success"):
-                self.trades_today += 1
-            return res
+        return {"success": False, "reason": "No active adapter"}
+
+    def get_status(self) -> Dict[str, Any]:
+        adapter = self.adapters.get(self.active_broker)
+        status = adapter.get_status() if adapter else {"broker": "NONE", "connected": False}
+        status["emergency_stop"] = self.emergency_stop_active
+        return status
