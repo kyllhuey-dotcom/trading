@@ -415,9 +415,12 @@ async def get_scanner():
 @app.get("/api/markets")
 async def get_markets():
     if bot_state["latest_scan"]:
-        overview = {cat: [] for cat in data_engine.universe.get_categories()}
+        categories = data_engine.universe.get_categories()
+        overview = {cat: [] for cat in categories}
         for item in bot_state["latest_scan"]:
-            overview[item["asset_class"]].append(item)
+            ac = item.get("asset_class")
+            if ac in overview:
+                overview[ac].append(item)
         return overview
     return await data_engine.get_market_overview()
 

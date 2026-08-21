@@ -441,6 +441,11 @@
                                             <option value="kucoin">KuCoin</option>
                                             <option value="okx">OKX</option>
                                             <option value="coinbase">Coinbase</option>
+                                            <option value="bitfinex">Bitfinex</option>
+                                            <option value="mexc">MEXC</option>
+                                            <option value="bitget">Bitget</option>
+                                            <option value="huobi">HTX (Huobi)</option>
+                                            <option value="phemex">Phemex</option>
                                         </select>
                                     </div>
                                     <div class="flex flex-col gap-2">
@@ -1154,8 +1159,12 @@
             const res = await fetchAPI('/markets');
             if (res && !res.detail) {
                 let html = '';
-                Object.keys(res).forEach(cat => {
+                // Rule: Ensure we only iterate over valid categories
+                const categories = ["CRYPTO", "FOREX", "INDICES", "COMMODITIES"];
+                
+                categories.forEach(cat => {
                     if (currentFilter !== 'ALL' && cat !== currentFilter) return;
+                    if (!res[cat] || res[cat].length === 0) return;
                     
                     // Group Header
                     html += `
@@ -1164,45 +1173,44 @@
                         </div>
                     `;
 
-                    html += res[cat].map(m => `
-                        <div class="market-card" onclick="selectMarket('${m.market_id}')">
+                    html += res[cat].map(m => {
+                        if (!m) return '';
+                        const displayName = m.display_symbol || m.symbol || 'Unknown';
+                        const assetClass = m.asset_class || cat;
+                        const price = m.price ? m.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4}) : '--';
+                        const change = m.change !== undefined ? m.change : 0;
+                        const status = m.market_status || 'CLOSED';
+
+                        return `
+                        <div class="market-card" onclick="selectMarket('${m.market_id || m.symbol}')">
                             <div class="flex justify-between items-start mb-4">
-                                <span class="text-[9px] font-black text-secondary uppercase tracking-widest opacity-60">${m.asset_class}</span>
-                                <span class="status-badge bg-black/5 dark:bg-white/5 text-[7px]">${m.market_status}</span>
+                                <span class="text-[9px] font-black text-secondary uppercase tracking-widest opacity-60">${assetClass}</span>
+                                <span class="status-badge bg-black/5 dark:bg-white/5 text-[7px]">${status}</span>
                             </div>
-                            <h4 class="font-black text-lg tracking-tighter mb-1">${m.display_symbol}</h4>
-                            <p class="font-black text-sm tabular-nums mb-4">${m.price ? m.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4}) : '--'}</p>
+                            <h4 class="font-black text-lg tracking-tighter mb-1">${displayName}</h4>
+                            <p class="font-black text-sm tabular-nums mb-4">${price}</p>
                             <div class="flex justify-between items-center pt-4 border-t border-black/5 dark:border-white/5">
                                 <span class="text-[10px] font-bold text-secondary uppercase">24h Chg</span>
-                                <span class="text-[10px] font-black ${m.change >= 0 ? 'text-green-500' : 'text-red-500'}">${m.change >= 0 ? '+' : ''}${(m.change || 0).toFixed(2)}%</span>
+                                <span class="text-[10px] font-black ${change >= 0 ? 'text-green-500' : 'text-red-500'}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</span>
                             </div>
                         </div>
-                    `).join('');
+                    `}).join('');
                 });
                 grid.innerHTML = html || '<div class="col-span-full py-20 text-center text-secondary font-medium">No assets matching filter.</div>';
             }
         }
 
-        // Actions
-        document.getElementById('main-toggle-btn').onclick = async () => {
-            const btn = document.getElementById('main-toggle-btn');
-            const isStarting = btn.innerText.includes('START');
-            btn.disabled = true;
-            await fetchAPI(isStarting ? '/start' : '/stop', 'POST');
-            btn.disabled = false;
-            update();
-        };
-
-        document.getElementById('arm-toggle-btn').onclick = () => fetchAPI('/arm', 'POST').then(update);
-        document.getElementById('mode-demo-btn').onclick = () => fetchAPI('/mode', 'POST').then(update);
-        document.getElementById('mode-live-btn').onclick = () => { if(confirm("DANGER: Switching to REAL mode will use actual broker API keys. Proceed with caution?")) fetchAPI('/mode', 'POST').then(update); };
-        document.getElementById('emergency-stop-btn').onclick = () => { if(confirm("EMERGENCY STOP: Halt all systems immediately?")) fetchAPI('/emergency-stop', 'POST').then(update); };
-
         async function setBalance() {
             const val = document.getElementById('demo-bal-input').value;
             if (!val) return;
-            await fetchAPI(`/demo/account?amount=${val}`, 'POST');
-            update();
+            
+            if (confirm(`Confirm setting Demo Capital to ${parseFloat(val).toLocaleString()} €? This will affect risk calculations.`)) {
+                const res = await fetchAPI(`/demo/account?amount=${val}`, 'POST');
+                if (res && res.success) {
+                    alert(`Capital updated: ${res.balance.toLocaleString()} €`);
+                    update();
+                }
+            }
         }
 
         async function resetAccount() {
