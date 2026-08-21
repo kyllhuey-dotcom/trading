@@ -119,3 +119,33 @@
 2026-08-21 17:48:52,813 [ERROR] yfinance: $ZNC=F: possibly delisted; no price data found  (period=1d)
 2026-08-21 17:48:58,065 [INFO] QuantumTradePro: System shutting down...
 2026-08-21 17:48:58,572 [INFO] QuantumTradePro: Shutdown complete. Bye.
+2026-08-21 18:00:55,562 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar.php?week=this "HTTP/1.1 301 Moved Permanently"
+2026-08-21 18:00:55,600 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar.php?week=this "HTTP/1.1 301 Moved Permanently"
+2026-08-21 18:00:55,632 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar.php?week=this "HTTP/1.1 301 Moved Permanently"
+2026-08-21 18:00:55,644 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar.php?week=this "HTTP/1.1 301 Moved Permanently"
+2026-08-21 18:00:55,689 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar "HTTP/1.1 200 OK"
+2026-08-21 18:00:55,717 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar "HTTP/1.1 200 OK"
+2026-08-21 18:00:55,911 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar.php?week=this "HTTP/1.1 301 Moved Permanently"
+2026-08-21 18:00:55,912 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar "HTTP/1.1 200 OK"
+2026-08-21 18:00:55,915 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar "HTTP/1.1 200 OK"
+2026-08-21 18:00:56,552 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar "HTTP/1.1 200 OK"
+2026-08-21 18:01:08,553 [ERROR] yfinance: $ZNC=F: possibly delisted; no price data found  (period=1d)
+2026-08-21 18:01:08,558 [ERROR] yfinance: $ZNC=F: possibly delisted; no price data found  (period=1d)
+2026-08-21 18:01:08,739 [ERROR] yfinance: $ZNC=F: possibly delisted; no price data found  (period=1d)
+2026-08-21 18:01:13,526 [INFO] QuantumTradePro: System shutting down...
+2026-08-21 18:01:14,030 [INFO] QuantumTradePro: Shutdown complete. Bye.
+2026-08-21 18:16:38,014 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar.php?week=this "HTTP/1.1 301 Moved Permanently"
+2026-08-21 18:16:38,026 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar.php?week=this "HTTP/1.1 301 Moved Permanently"
+2026-08-21 18:16:38,029 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar.php?week=this "HTTP/1.1 301 Moved Permanently"
+2026-08-21 18:16:38,123 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar "HTTP/1.1 200 OK"
+2026-08-21 18:16:38,138 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar.php?week=this "HTTP/1.1 301 Moved Permanently"
+2026-08-21 18:16:38,142 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar "HTTP/1.1 200 OK"
+2026-08-21 18:16:38,145 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar.php?week=this "HTTP/1.1 301 Moved Permanently"
+2026-08-21 18:16:38,154 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar "HTTP/1.1 200 OK"
+2026-08-21 18:16:38,336 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar "HTTP/1.1 200 OK"
+2026-08-21 18:16:38,339 [INFO] httpx: HTTP Request: GET https://www.forexfactory.com/calendar "HTTP/1.1 200 OK"
+2026-08-21 18:16:50,153 [ERROR] yfinance: $ZNC=F: possibly delisted; no price data found  (period=1d)
+2026-08-21 18:16:50,170 [ERROR] yfinance: $ZNC=F: possibly delisted; no price data found  (period=1d)
+2026-08-21 18:16:50,172 [ERROR] yfinance: $ZNC=F: possibly delisted; no price data found  (period=1d)
+2026-08-21 18:16:54,831 [INFO] QuantumTradePro: System shutting down...
+2026-08-21 18:16:55,333 [INFO] QuantumTradePro: Shutdown complete. Bye.
