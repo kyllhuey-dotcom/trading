@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Any
 from .data_providers.base_provider import MarketDataProvider, TickerModel
 import pandas as pd
 import asyncio
+import json
 
 class DataIntegrityError(Exception):
     pass

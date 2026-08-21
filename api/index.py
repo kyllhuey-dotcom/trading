@@ -80,7 +80,7 @@ bot_state = {
 
 async def auto_scan_loop():
     """
-    Rule 25: Continuous Auto Scan background task.
+    Rule 25: Continuous Auto Scan and Background Execution.
     """
     while True:
         try:
@@ -91,10 +91,42 @@ async def auto_scan_loop():
             bot_state["engine_stats"]["markets"] = len(data_engine.universe.get_all_ids())
             bot_state["engine_stats"]["scanned"] = len([r for r in results if r.get("status") != "ERROR" and r.get("status") != "DATA_UNAVAILABLE"])
             bot_state["engine_stats"]["analyzing"] = len([r for r in results if r.get("trend") != "NEUTRAL"])
-            bot_state["engine_stats"]["signals"] = len([r for r in results if r.get("score", 0) > 70])
+            bot_state["engine_stats"]["signals"] = len([r for r in results if r.get("score", 0) >= 80])
             bot_state["engine_stats"]["tradable"] = len([r for r in results if r.get("tradable")])
             bot_state["engine_stats"]["scan_duration"] = scanner_engine.last_scan_duration
-            
+
+            # BACKGROUND EXECUTION (Lot 18)
+            if bot_state["is_running"] and bot_state["armed"]:
+                # Check for high confidence signals in the scan results
+                for res in sorted(results, key=lambda x: x.get("score", 0), reverse=True):
+                    if res.get("score", 0) >= 80 and not demo_execution.active_positions:
+                        # 1. Fetch live data for the candidate
+                        mid = res["symbol"]
+                        ticker = await data_engine.fetch_ticker(mid)
+                        if not ticker: continue
+
+                        # 2. Risk Calculation
+                        balance = portfolio_engine.get_balance(bot_state["mode"])
+                        risk_data = risk_engine.calculate_position_size(
+                            balance=balance, entry=ticker["last"], stop_loss=ticker["last"] * 0.98 # Default 2% SL if not provided
+                        )
+                        
+                        if risk_data.get("allowed"):
+                            # 3. Create signal model for router
+                            signal_model = {
+                                "market_id": mid,
+                                "display_symbol": res.get("display_symbol", mid),
+                                "direction": res.get("trend") == "BULLISH" and "BUY" or "SELL",
+                                "entry": ticker["last"],
+                                "sl": ticker["last"] * 0.98,
+                                "tp": ticker["last"] * 1.04,
+                                "score": res["score"]
+                            }
+                            # 4. Execute
+                            exec_res = await execution_router.execute(bot_state["mode"], signal_model, risk_data, ticker)
+                            db_manager.log_audit("CRITICAL", "BACKGROUND_ALPHA_TRADE", f"Auto-executed {mid} ({res['score']}%)", exec_res)
+                            break # Only one position at a time for now
+
             # Broadcast via WebSocket
             await manager.broadcast(json.dumps({
                 "type": "SCAN_COMPLETED",
@@ -106,7 +138,7 @@ async def auto_scan_loop():
             print(f"Auto-Scan Loop Error: {e}")
         
         # Rule 31: Throttle scan loop based on bot state
-        await asyncio.sleep(15 if bot_state["is_running"] else 45)
+        await asyncio.sleep(10 if bot_state["is_running"] else 30)
 
 async def broadcaster_loop():
     """
@@ -288,7 +320,8 @@ async def get_status(market_id: str = "btc_usdt"):
     analysis["df_preview"] = df_ltf.tail(40).to_dict('records')
     
     await demo_execution.update_active_positions(bot_state["mode"], {info["display_symbol"]: ticker})
-    active_trade = demo_execution.active_positions[0] if demo_execution.active_positions else None
+    active_trades = demo_execution.active_positions
+    active_trade = active_trades[0] if active_trades else None
     
     signal_result = signal_engine.generate_signal(analysis, news_status, df_ltf)
     signal_result["market_id"] = market_id
