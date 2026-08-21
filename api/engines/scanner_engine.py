@@ -1,6 +1,6 @@
 import asyncio
 import pandas as pd
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 class ScannerEngine:
@@ -16,7 +16,7 @@ class ScannerEngine:
         self.max_concurrent = max_concurrent
         self.last_scan_duration = 0.0
 
-    async def scan_asset(self, symbol: str, semaphore: asyncio.Semaphore) -> Dict[str, Any]:
+    async def scan_asset(self, symbol: str, semaphore: asyncio.Semaphore, strategy_mode: Optional[str] = None) -> Dict[str, Any]:
         """
         Full analysis of a single asset with concurrency control.
         """
@@ -31,7 +31,18 @@ class ScannerEngine:
                 df_htf_task = self.data.fetch_ohlcv(symbol, timeframe='15m', limit=30)
                 ticker_task = self.data.fetch_ticker(symbol)
                 
-                df_ltf, df_htf, ticker = await asyncio.gather(df_ltf_task, df_htf_task, ticker_task)
+                # Lot 6: Fetch orderbook and trades for Tape Reading
+                ob_task = self.data.fetch_order_book(symbol)
+                tr_task = self.data.fetch_trades(symbol)
+                
+                df_ltf, df_htf, ticker, orderbook, trades = await asyncio.gather(
+                    df_ltf_task, df_htf_task, ticker_task, ob_task, tr_task
+                )
+                
+                # Lot 5: Fetch cross quotes for arbitrage
+                cross_quotes = None
+                if info.get("asset_class") == "CRYPTO":
+                    cross_quotes = await self.data.fetch_cross_quotes(symbol)
                 
                 if df_ltf.empty or not ticker:
                     return {
@@ -45,6 +56,7 @@ class ScannerEngine:
                 # 3. Market Analysis (Rule 9, 12, 17)
                 htf_analysis = self.analysis.identify_structure(df_htf)
                 ltf_analysis = self.analysis.identify_structure(df_ltf, htf_bias=htf_analysis.get("trend"))
+                ltf_analysis["market_id"] = symbol
                 
                 # 4. News Risk (Rule 15)
                 # Asset specific news filtering if symbol has a currency mapping
@@ -58,10 +70,10 @@ class ScannerEngine:
                 # Bypass fail-safe for ranking
                 scoring_news = news_status.copy()
                 scoring_news["trading_allowed"] = True
-                raw_signal = self.signal.generate_signal(ltf_analysis, scoring_news, df_ltf)
+                raw_signal = self.signal.generate_signal(ltf_analysis, scoring_news, df_ltf, strategy_mode=strategy_mode, cross_quotes=cross_quotes, orderbook=orderbook, trades=trades)
                 
                 # Real signal check
-                signal = self.signal.generate_signal(ltf_analysis, news_status, df_ltf)
+                signal = self.signal.generate_signal(ltf_analysis, news_status, df_ltf, strategy_mode=strategy_mode, cross_quotes=cross_quotes, orderbook=orderbook, trades=trades)
                 
                 return {
                     "symbol": symbol,
@@ -81,20 +93,21 @@ class ScannerEngine:
                     "signal": signal.get("status"),
                     "score": int(raw_signal.get("score", 0)),
                     "tradable": signal.get("status") == "SIGNAL_DETECTED",
-                    "reason": signal.get("reason", ltf_analysis.get("market_state"))
+                    "reason": signal.get("reason", ltf_analysis.get("market_state")),
+                    "signal_data": signal
                 }
             except Exception as e:
                 print(f"Scanner Error ({symbol}): {e}")
                 return {"symbol": symbol, "status": "ERROR", "tradable": False, "reason": str(e)}
 
-    async def scan_all(self) -> List[Dict[str, Any]]:
+    async def scan_all(self, strategy_mode: Optional[str] = None) -> List[Dict[str, Any]]:
         start_time = datetime.now()
         symbols = self.data.universe.get_all_ids()
         
         # Rule 31: Use semaphore to limit concurrent requests
         semaphore = asyncio.Semaphore(self.max_concurrent)
         
-        tasks = [self.scan_asset(s, semaphore) for s in symbols]
+        tasks = [self.scan_asset(s, semaphore, strategy_mode=strategy_mode) for s in symbols]
         results = await asyncio.gather(*tasks)
         
         self.last_scan_duration = (datetime.now() - start_time).total_seconds()

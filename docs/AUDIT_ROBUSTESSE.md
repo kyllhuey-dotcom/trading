@@ -1,28 +1,35 @@
-# Audit de Robustesse - Quantum Trade Pro (Août 2026)
+# Audit de Robustesse et Nouvelles Stratégies - Quantum Trade Pro (Août 2026)
 
-Cet audit identifie les points de défaillance critiques (P0/P1) du bot de trading ultra-scalping.
+Cet audit identifie les points de défaillance critiques (P0/P1) et valide l'intégration des nouvelles stratégies institutionnelles.
 
-## Bugs Critiques Identifiés (P0)
-- **KeyError 'High' dans le Signal Engine** : Le calcul de l'ATR échoue si le DataFrame OHLCV est incomplet ou mal formé.
-- **Race Conditions (État Global)** : Les boucles background (`auto_scan_loop` et `broadcaster`) et les endpoints API accèdent à `bot_state` et `active_positions` sans synchronisation, risquant des corruptions de données.
-- **Paramètres Hardcodés** : Utilisation de valeurs de SL/TP codées en dur (0.98/1.04) dans la boucle d'exécution au lieu de respecter les signaux et réglages utilisateur.
+## Objectif Stratégique 2026
+L'application est désormais capable d'exécuter des stratégies complexes en temps réel avec une architecture modulaire et sécurisée.
 
-## Instabilité de l'Infrastructure (P1)
-- **Persistence SQLite** : Mode par défaut sujet au verrouillage (`database is locked`) sous charge. Nécessite le mode WAL.
-- **Secrets en Clair** : Absence de chiffrement pour les clés API stockées en base de données.
-- **Fraîcheur des Données** : Aucune vérification de l'âge des ticks avant décision, risquant des entrées sur des prix obsolètes (Stale Data).
-- **Tests Incomplets** : Couverture insuffisante sur les moteurs critiques et absence de mocks pour les appels réseau.
+## Bugs Critiques Résolus (P0)
+- [x] **KeyError 'High'** : Validation OHLCV et ATR robuste.
+- [x] **Race Conditions** : `asyncio.Lock` global pour la synchronisation de l'état.
+- [x] **Positions Zombies** : Gestion stricte des positions via DB.
+
+## Améliorations Infrastructure (P1)
+- [x] **SQLite WAL & Busy Timeout** : Haute disponibilité de la base de données.
+- [x] **Secrets Chiffrés** : AES-256 Fernet.
+- [x] **Data Freshness Gate** : Protection contre les données obsolètes (< 5s pour Crypto).
+- [x] **Emergency Stop** : Fermeture instantanée de toutes les positions (Locales + Brokers).
+
+## Nouvelles Stratégies Implémentées
+| Stratégie | Cible Winrate | Statut | Description |
+|-----------|---------------|--------|-------------|
+| **Structure (BOS/CHoCH)** | 70-75% | Opérationnel | Suivi de tendance et cassures de structure. |
+| **Micro-Arbitrage** | 80-90% | Opérationnel | Exploite les spreads inter-plateformes (> 0.15%). |
+| **Tape Reading** | 75-85% | Opérationnel | Analyse du flux d'ordres et imbalance du book. |
+| **Liquidity Gaps** | 75-85% | Opérationnel | Scalping sur les zones de faible liquidité. |
+
+## Observabilité
+- **Endpoint `/api/metrics`** : Suivi en temps réel des scans, trades et signaux par stratégie.
+- **WebSocket Heartbeat** : Maintien de la connexion et monitoring de la latence.
 
 ## État de la Branche
-Branche : `audit-robustesse-2026-08`
-Statut : **VALIDÉ** (100% des points traités)
+Branche : `audit-robustesse-strategies-2026-08`
+Statut : **100% COMPLET - PRÊT POUR DÉPLOIEMENT DEMO**
 
-### Statut Final des Corrections
-- [x] **KeyError 'High'** : Corrigé par une validation stricte du DataFrame dans `SignalEngine`.
-- [x] **Race Conditions** : Résolues via `asyncio.Lock` dans tous les chemins critiques d'accès à `bot_state`.
-- [x] **SL/TP Hardcodés** : Supprimés. Le bot respecte désormais les sorties calculées dynamiquement.
-- [x] **SQLite WAL** : Activé.
-- [x] **Secrets Chiffrés** : Implémenté avec Fernet.
-- [x] **Data Freshness** : Gate opérationnelle (CRYPTO < 5s).
-- [x] **Tests & CI** : Suite de tests couvrant la robustesse et intégration de la couverture (70% minimum).
-- [x] **Observabilité** : Endpoint `/api/metrics` actif.
+*Note: L'exécution en mode REAL reste expérimentale. Utilisez le mode DEMO pour valider les stratégies.*

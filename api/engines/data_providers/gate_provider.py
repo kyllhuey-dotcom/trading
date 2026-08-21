@@ -62,5 +62,17 @@ class GateProvider(MarketDataProvider):
         except Exception as e:
             return {"provider": self.source_name, "status": "ERROR", "message": str(e)}
 
+    async def get_order_book(self, symbol: str) -> Optional[Dict[str, Any]]:
+        try:
+            return await self.exchange.fetch_order_book(symbol, limit=20)
+        except:
+            return None
+
+    async def get_recent_trades(self, symbol: str) -> Optional[List[Dict[str, Any]]]:
+        try:
+            return await self.exchange.fetch_trades(symbol, limit=50)
+        except:
+            return None
+
     async def close(self):
         await self.exchange.close()

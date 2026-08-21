@@ -68,6 +68,29 @@ class BrokerConnector:
         
         return results
 
+    async def add_broker(self, broker_id: str, exchange_id: str, api_key: str, api_secret: str, passphrase: Optional[str] = None) -> bool:
+        """Connect to a new broker via adapter (Lot 4)."""
+        if exchange_id.upper() == "PRIMEXBT":
+             adapter = PrimeXBTAdapter(api_key, api_secret)
+        else:
+             adapter = CCXTAdapter(exchange_id, api_key, api_secret, passphrase)
+        
+        success = await adapter.connect()
+        if success:
+            self.active_adapters[broker_id] = adapter
+        return success
+
+    async def close_all_positions(self):
+        """Rule 3: Emergency close all positions across all brokers (Lot 3)."""
+        results = {}
+        for bid, adapter in self.active_adapters.items():
+            try:
+                res = await adapter.close_all_positions()
+                results[bid] = res
+            except Exception as e:
+                results[bid] = {"success": False, "error": str(e)}
+        return results
+
     def trigger_emergency_stop(self):
         self.emergency_stop_active = True
         return True
@@ -82,7 +105,7 @@ class BrokerConnector:
                 return False, "Emergency Stop active."
             if not self.active_adapters:
                 return False, "No active broker connected. Please add a broker in settings."
-            return True, "LIVE MODE active."
+            return True, "LIVE MODE active (EXPERIMENTAL - Use with caution)."
         return True, "DEMO MODE active."
 
     async def execute(self, signal: Dict[str, Any], risk: Dict[str, Any]):

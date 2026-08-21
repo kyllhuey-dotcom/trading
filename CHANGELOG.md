@@ -1,5 +1,23 @@
 # Changelog - Quantum Trade Pro
 
+## [1.3.0] - 2026-08-21
+### Added
+- **Multi-Strategy Core**: Implemented a modular framework supporting "multi" mode.
+- **Micro-Arbitrage Strategy**: High-confidence strategy exploiting price discrepancies between Gate/Bybit/Binance.
+- **Tape Reading Strategy**: Institutional-grade order flow analysis (Imbalance + Trade Delta).
+- **Liquidity Gap Strategy**: Predictive scalping on order book holes.
+- **Diagnostic Upgrade**: The engine now details which strategy generated the signal and why.
+- **WebSocket Heartbeat**: Regular PING/PONG style broadcast to monitor connection health.
+
+### Improved
+- **Execution Efficiency**: Scanner now returns full signal data, avoiding redundant calculations in the background loop.
+- **Emergency Stop**: Now triggers global `close_all_positions` across all connected broker adapters.
+- **Metrics**: Added strategy-specific signal tracking to `/api/metrics`.
+
+### Fixed
+- Missing `add_broker` method in `BrokerConnector`.
+- Concurrency hardening for `bot_state` access in background loops.
+
 ## [1.2.0] - 2026-08-21
 ### Hardened
 - **Signal Engine**: Prevented KeyError on incomplete OHLCV data and hardened ATR calculation.

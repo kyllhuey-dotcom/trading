@@ -118,6 +118,15 @@ class DataEngine:
         quotes = await self.layer.get_all_quotes([market_id], self.universe)
         return quotes[0].model_dump() if quotes else None
 
+    async def fetch_cross_quotes(self, market_id: str):
+        return await self.layer.get_cross_quotes(market_id, self.universe)
+
+    async def fetch_order_book(self, market_id: str):
+        return await self.layer.get_order_book(market_id, self.universe)
+
+    async def fetch_trades(self, market_id: str):
+        return await self.layer.get_trades(market_id, self.universe)
+
     def is_fresh(self, ticker: Dict[str, Any], asset_class: str) -> bool:
         """Rule: Verify data freshness before any decision (Lot 3)."""
         if not ticker or "timestamp" not in ticker:

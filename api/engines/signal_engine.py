@@ -1,16 +1,65 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import pandas as pd
 from datetime import datetime
+from .strategies.micro_arbitrage import MicroArbitrageStrategy
+from .strategies.tape_reading import TapeReadingStrategy
+from .strategies.liquidity_gap import LiquidityGapStrategy
 
 class SignalEngine:
     def __init__(self, min_score: int = 80):
         self.min_score = min_score
+        self.strategies = {
+            "arbitrage": MicroArbitrageStrategy(),
+            "tape": TapeReadingStrategy(),
+            "liquidity": LiquidityGapStrategy()
+        }
+        self.active_strategy_names = ["structure"]
 
-    def generate_signal(self, analysis: Dict[str, Any], news_status: Dict[str, Any], df: pd.DataFrame) -> Dict[str, Any]:
+    def set_active_strategies(self, strategy_list: List[str]):
+        self.active_strategy_names = strategy_list
+
+    def generate_signal(self, analysis: Dict[str, Any], news_status: Dict[str, Any], df: pd.DataFrame, 
+                        strategy_mode: Optional[str] = None, cross_quotes: Optional[List[Dict[str, Any]]] = None,
+                        orderbook: Optional[Dict[str, Any]] = None, trades: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Ultra-scalping deterministic signal generation (Rule 17, 18, 19).
         Calculates a score from 0-100 based on technical confluence.
         """
+        # If strategy_mode is not specified, use the list of active strategies
+        if not strategy_mode:
+            strategy_mode = "multi" if len(self.active_strategy_names) > 1 else self.active_strategy_names[0]
+
+        if strategy_mode == "multi":
+            results = []
+            for mode in self.active_strategy_names:
+                res = self.generate_signal(analysis, news_status, df, strategy_mode=mode, 
+                                          cross_quotes=cross_quotes, orderbook=orderbook, trades=trades)
+                if res.get("status") == "SIGNAL_DETECTED":
+                    results.append(res)
+            
+            if not results:
+                return {"status": "NO_TRADE", "reason": "No strategy generated a signal", "score": 0}
+            
+            # Return the best signal
+            best_res = max(results, key=lambda x: x.get("score", 0))
+            best_res["multi_strategy"] = True
+            best_res["all_signals"] = [r["reason"] for r in results]
+            return best_res
+
+        # If strategy_mode is a specific custom strategy
+        if strategy_mode in self.strategies:
+            market_id = analysis.get("market_id", "unknown")
+            res = self.strategies[strategy_mode].generate_signal(
+                market_id=market_id, 
+                df=df, 
+                cross_quotes=cross_quotes,
+                orderbook=orderbook,
+                trades=trades
+            )
+            res["strategy"] = strategy_mode
+            return res
+
+        # Default: structure strategy
         if analysis.get("status") != "VALID":
             return {"status": "NO_TRADE", "reason": "Invalid Market Analysis", "score": 0}
 
@@ -62,7 +111,7 @@ class SignalEngine:
         # --- 2. Trade Execution Logic ---
         # Rule: Validate DataFrame completeness before ATR/SL/TP calculation (Lot 1)
         required_cols = ['High', 'Low', 'Close']
-        if not all(col in df.columns for col in required_cols) or len(df) < 15:
+        if df is None or df.empty or not all(col in df.columns for col in required_cols) or len(df) < 15:
             return {"status": "NO_TRADE", "reason": "Insufficient OHLCV data for ATR", "score": score}
 
         direction = "BUY" if analysis["trend"] == "BULLISH" else "SELL"

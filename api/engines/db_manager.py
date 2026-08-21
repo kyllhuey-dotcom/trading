@@ -124,7 +124,8 @@ class DatabaseManager:
                     "trailing_stop_distance_atr": "1.5",
                     "emergency_stop_drawdown_pct": "10.0",
                     "auto_arm_on_startup": "false",
-                    "slippage_tolerance_pct": "0.1"
+                    "slippage_tolerance_pct": "0.1",
+                    "active_strategies": "structure,arbitrage,tape,liquidity"
                 }
                 for k, v in defaults.items():
                     conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))

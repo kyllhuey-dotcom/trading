@@ -109,6 +109,48 @@ class DataLayer:
         
         return pd.DataFrame()
 
+    async def get_order_book(self, market_id: str, catalog: Any) -> Optional[Dict[str, Any]]:
+        info = catalog.get_info(market_id)
+        if not info: return None
+        for pid, psymbol in info.get("providers", {}).items():
+            if pid in self.providers:
+                try:
+                    ob = await self.providers[pid].get_order_book(psymbol)
+                    if ob: return ob
+                except: continue
+        return None
+
+    async def get_trades(self, market_id: str, catalog: Any) -> Optional[List[Dict[str, Any]]]:
+        info = catalog.get_info(market_id)
+        if not info: return None
+        for pid, psymbol in info.get("providers", {}).items():
+            if pid in self.providers:
+                try:
+                    t = await self.providers[pid].get_recent_trades(psymbol)
+                    if t: return t
+                except: continue
+        return None
+
+    async def get_cross_quotes(self, market_id: str, catalog: Any) -> List[Dict[str, Any]]:
+        """Fetch quotes from all available providers for a single market (Lot 5)."""
+        info = catalog.get_info(market_id)
+        if not info: return []
+        
+        provider_list = list(info.get("providers", {}).items())
+        tasks = []
+        for pid, psymbol in provider_list:
+            if pid in self.providers:
+                tasks.append(self.providers[pid].get_quote(psymbol))
+        
+        quotes = await asyncio.gather(*tasks, return_exceptions=True)
+        results = []
+        for i, q in enumerate(quotes):
+            if isinstance(q, TickerModel):
+                d = q.model_dump()
+                d["provider"] = provider_list[i][0]
+                results.append(d)
+        return results
+
     async def get_health(self) -> List[Dict[str, Any]]:
         tasks = [p.health_check() for p in self.providers.values()]
         return await asyncio.gather(*tasks)

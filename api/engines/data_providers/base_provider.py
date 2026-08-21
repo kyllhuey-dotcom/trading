@@ -52,3 +52,11 @@ class MarketDataProvider(ABC):
     async def health_check(self) -> Dict[str, Any]:
         """Return provider status, latency and last update."""
         pass
+
+    async def get_order_book(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Optional: Get current order book."""
+        return None
+
+    async def get_recent_trades(self, symbol: str) -> Optional[List[Dict[str, Any]]]:
+        """Optional: Get recent trade history."""
+        return None

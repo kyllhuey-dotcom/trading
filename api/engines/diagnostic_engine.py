@@ -24,7 +24,8 @@ class DiagnosticEngine:
                  leverage_valid: bool,
                  broker_valid: bool,
                  system_armed: bool,
-                 reasons: Dict[str, str]) -> Dict[str, Any]:
+                 reasons: Dict[str, str],
+                 strategy_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         
         checks = {
             "DATA_VALID": "PASS" if data_valid else "FAIL",
@@ -68,5 +69,7 @@ class DiagnosticEngine:
             "checks": checks,
             "main_blocker": main_blocker,
             "main_reason": reasons.get(main_blocker, "No specific reason provided"),
-            "secondary_blockers": secondary_blockers
+            "secondary_blockers": secondary_blockers,
+            "strategy": strategy_info.get("strategy", "structure") if strategy_info else "structure",
+            "score": strategy_info.get("score", 0) if strategy_info else 0
         }
