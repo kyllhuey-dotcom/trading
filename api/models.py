@@ -53,6 +53,7 @@ class AnalysisResult(BaseModel):
     htf_bias: Optional[str] = None
     volatility: Optional[str] = None
     atr: Optional[float] = None
+    indicators: Optional[Dict[str, Any]] = None
 
 class SignalResult(BaseModel):
     status: str

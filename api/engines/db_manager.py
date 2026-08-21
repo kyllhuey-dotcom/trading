@@ -83,7 +83,14 @@ class DatabaseManager:
                     "max_daily_loss_pct": "3.0",
                     "cool_down_mins": "30",
                     "max_open_positions": "3",
-                    "trailing_stop_active": "true"
+                    "trailing_stop_active": "true",
+                    "max_spread_pct": "0.5",
+                    "min_signal_score": "75",
+                    "risk_reward_ratio": "2.0",
+                    "trailing_stop_distance_atr": "1.5",
+                    "emergency_stop_drawdown_pct": "10.0",
+                    "auto_arm_on_startup": "false",
+                    "slippage_tolerance_pct": "0.1"
                 }
                 for k, v in defaults.items():
                     conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))

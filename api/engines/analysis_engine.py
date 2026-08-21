@@ -100,6 +100,18 @@ class AnalysisEngine:
         # 5. Momentum
         momentum = float(df['Close'].pct_change(self.window).iloc[-1] * 100)
 
+        # 6. Technical Indicators (Lot 13 - Pro Terminal)
+        # RSI
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = float(100 - (100 / (1 + rs)).iloc[-1]) if not loss.iloc[-1] == 0 else 50.0
+
+        # EMAs
+        ema8 = float(df['Close'].ewm(span=8).mean().iloc[-1])
+        ema21 = float(df['Close'].ewm(span=21).mean().iloc[-1])
+
         return {
             "status": "VALID",
             "market_state": market_state,
@@ -115,5 +127,11 @@ class AnalysisEngine:
             "last_high": last_h,
             "last_low": last_l,
             "atr": atr,
-            "volatility": "HIGH" if price_std > atr * 1.5 else ("MEDIUM" if price_std > atr * 0.5 else "LOW")
+            "volatility": "HIGH" if price_std > atr * 1.5 else ("MEDIUM" if price_std > atr * 0.5 else "LOW"),
+            "indicators": {
+                "rsi": rsi,
+                "ema8": ema8,
+                "ema21": ema21,
+                "ema_cross": "BULLISH" if ema8 > ema21 else "BEARISH"
+            }
         }

@@ -496,11 +496,11 @@
 
             <!-- TRADING TERMINAL -->
             <section id="tab-trading" class="tab-content">
-                <div class="grid grid-cols-12 gap-8 h-full max-w-[1600px] mx-auto">
-                    <div class="col-span-12 lg:col-span-8 flex flex-col h-full gap-8">
-                        <!-- Chart Area -->
-                        <div class="card-premium flex-1 flex flex-col relative">
-                            <div class="flex justify-between items-start mb-8">
+                <div class="grid grid-cols-12 gap-6 h-full max-w-[1600px] mx-auto">
+                    <!-- Left: Chart & Data -->
+                    <div class="col-span-12 lg:col-span-8 flex flex-col gap-6">
+                        <div class="card-premium flex-1 flex flex-col min-h-[500px]">
+                            <div class="flex justify-between items-start mb-6">
                                 <div>
                                     <div class="flex items-center gap-3 mb-1">
                                         <h3 class="text-3xl font-black tracking-tighter" id="trading-active-symbol">---</h3>
@@ -517,36 +517,67 @@
                                 </div>
                             </div>
                             
+                            <!-- Indicators Bar -->
+                            <div class="flex gap-4 mb-6">
+                                <div class="px-3 py-1.5 bg-black/5 dark:bg-white/5 rounded-xl flex items-center gap-2">
+                                    <span class="text-[8px] font-black text-secondary uppercase">RSI (14)</span>
+                                    <span id="ind-rsi" class="text-[10px] font-black">--</span>
+                                </div>
+                                <div class="px-3 py-1.5 bg-black/5 dark:bg-white/5 rounded-xl flex items-center gap-2">
+                                    <span class="text-[8px] font-black text-secondary uppercase">EMA 8/21</span>
+                                    <span id="ind-ema" class="text-[10px] font-black">--</span>
+                                </div>
+                                <div class="px-3 py-1.5 bg-black/5 dark:bg-white/5 rounded-xl flex items-center gap-2">
+                                    <span class="text-[8px] font-black text-secondary uppercase">ATR</span>
+                                    <span id="ind-atr" class="text-[10px] font-black">--</span>
+                                </div>
+                            </div>
+
                             <div class="flex-1 bg-black/[0.03] dark:bg-white/[0.03] rounded-[32px] p-8 relative overflow-hidden group">
                                 <div class="chart-grid" id="main-chart-bars"></div>
-                                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                    <span class="bg-black/10 dark:bg-white/10 backdrop-blur-md px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest">Interactive Chart Coming Soon</span>
-                                </div>
                             </div>
                         </div>
 
-                        <!-- News Ticker -->
-                        <div class="card-premium h-[200px] flex flex-col">
-                            <div class="flex justify-between items-center mb-6">
-                                <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest">Global Data Stream</h4>
-                                <div class="flex items-center gap-4">
-                                    <div class="flex items-center gap-2">
-                                        <div class="w-1 h-1 rounded-full bg-red-500"></div>
-                                        <span class="text-[8px] font-bold text-secondary uppercase">High Impact News</span>
+                        <!-- Manual Order Entry -->
+                        <div class="grid grid-cols-2 gap-6">
+                            <div class="card-premium">
+                                <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4">Institutional Order Entry</h4>
+                                <div class="flex flex-col gap-4">
+                                    <div class="flex gap-4">
+                                        <button onclick="manualTrade('BUY')" class="flex-1 py-4 bg-green-500 text-white rounded-2xl font-black text-sm active:scale-95 transition-all shadow-lg shadow-green-500/20">BUY / LONG</button>
+                                        <button onclick="manualTrade('SELL')" class="flex-1 py-4 bg-red-500 text-white rounded-2xl font-black text-sm active:scale-95 transition-all shadow-lg shadow-red-500/20">SELL / SHORT</button>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-2">
+                                        <div class="bg-black/5 dark:bg-white/5 p-3 rounded-xl">
+                                            <p class="text-[8px] font-black text-secondary uppercase mb-1">Quantity</p>
+                                            <input type="number" id="trade-qty" value="0.1" class="bg-transparent w-full text-xs font-black outline-none">
+                                        </div>
+                                        <div class="bg-black/5 dark:bg-white/5 p-3 rounded-xl">
+                                            <p class="text-[8px] font-black text-secondary uppercase mb-1">SL (Price)</p>
+                                            <input type="number" id="trade-sl" placeholder="Auto" class="bg-transparent w-full text-xs font-black outline-none">
+                                        </div>
+                                        <div class="bg-black/5 dark:bg-white/5 p-3 rounded-xl">
+                                            <p class="text-[8px] font-black text-secondary uppercase mb-1">TP (Price)</p>
+                                            <input type="number" id="trade-tp" placeholder="Auto" class="bg-transparent w-full text-xs font-black outline-none">
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                            <div id="terminal-news-list" class="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                                <p class="text-secondary font-medium text-xs italic text-center py-4">Connecting to decentralized data feeds...</p>
+                            <div class="card-premium flex flex-col">
+                                <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4">Global Data Stream</h4>
+                                <div id="terminal-news-list" class="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
+                                    <p class="text-secondary font-medium text-xs italic text-center py-4">Connecting to decentralized data feeds...</p>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    
-                    <div class="col-span-12 lg:col-span-4 h-full flex flex-col gap-8">
-                        <div class="card-premium flex-1 flex flex-col">
-                            <h4 class="text-sm font-black uppercase tracking-widest mb-8 border-b border-black/5 dark:border-white/5 pb-4">Neural Intelligence</h4>
+
+                    <!-- Right: Intelligence & Logs -->
+                    <div class="col-span-12 lg:col-span-4 flex flex-col gap-6">
+                        <div class="card-premium flex flex-col">
+                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Neural Intelligence</h4>
                             
-                            <div class="space-y-6 flex-1">
+                            <div class="space-y-6">
                                 <div class="space-y-4" id="ai-analysis-panel">
                                     <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Trend Alignment</span><span id="ana-trend" class="font-black text-sm">--</span></div>
                                     <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Structure Points</span><span id="ana-struct" class="font-black text-sm">--</span></div>
@@ -554,18 +585,18 @@
                                     <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Local Volatility</span><span id="ana-vol" class="font-black text-sm">--</span></div>
                                 </div>
 
-                                <div class="pt-8 border-t border-black/5 dark:border-white/5">
-                                    <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4">Signal Logic</h4>
-                                    <div id="trading-signal-box" class="min-h-[140px] flex items-center justify-center text-center">
+                                <div class="pt-6 border-t border-black/5 dark:border-white/5">
+                                    <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4">Decision Signal</h4>
+                                    <div id="trading-signal-box" class="min-h-[120px] flex items-center justify-center text-center">
                                         <p class="text-secondary font-medium text-xs italic">Awaiting market trigger...</p>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="mt-auto pt-8">
+                            <div class="mt-8">
                                 <div class="flex justify-between items-center mb-4">
                                     <div class="flex items-center gap-2">
-                                        <span class="text-[10px] font-black text-secondary uppercase tracking-widest">Engine Status</span>
+                                        <span class="text-[10px] font-black text-secondary uppercase tracking-widest">Bot Authority</span>
                                         <div id="arm-status-indicator" class="w-1.5 h-1.5 rounded-full bg-red-500"></div>
                                     </div>
                                     <span id="arm-label" class="text-[10px] font-black text-red-500 uppercase tracking-widest">DISARMED</span>
@@ -577,10 +608,18 @@
                         </div>
 
                         <!-- Safety Blockers -->
-                        <div class="card-premium h-[180px] border-2 border-transparent" id="blocker-card">
-                            <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-6">Security Layer</h4>
-                            <div id="terminal-blockers" class="space-y-3">
+                        <div class="card-premium border-2 border-transparent" id="blocker-card">
+                            <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4">Security Layer</h4>
+                            <div id="terminal-blockers" class="space-y-2">
                                 <!-- Blockers injected here -->
+                            </div>
+                        </div>
+
+                        <!-- Execution Logs -->
+                        <div class="card-premium flex-1">
+                            <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4">Execution Logs</h4>
+                            <div id="terminal-audit-logs" class="space-y-3 overflow-y-auto max-h-[300px] custom-scrollbar text-[9px] font-bold">
+                                <p class="text-secondary opacity-50 italic">System ready.</p>
                             </div>
                         </div>
                     </div>
@@ -618,56 +657,97 @@
 
             <!-- SETTINGS TAB -->
             <section id="tab-settings" class="tab-content">
-                <div class="max-w-3xl mx-auto">
-                    <h2 class="text-4xl font-black tracking-tight mb-10">Intelligence Config</h2>
+                <div class="max-w-4xl mx-auto pb-20">
+                    <header class="mb-10">
+                        <h2 class="text-4xl font-black tracking-tight mb-2">Intelligence Config</h2>
+                        <p class="text-secondary font-medium">Fine-tune your algorithmic DNA and execution parameters.</p>
+                    </header>
                     
                     <div class="space-y-8">
+                        <!-- Risk Profile -->
                         <div class="card-premium">
-                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Algorithmic Risk Parameters</h4>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div class="flex flex-col gap-2">
-                                    <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Risk per Trade (%)</label>
-                                    <input type="number" id="set-max_risk_pct" step="0.1" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-3 outline-none font-bold">
+                            <div class="flex items-center gap-3 mb-8 border-b border-black/5 dark:border-white/5 pb-4">
+                                <i data-lucide="shield-check" class="text-accent-blue w-5 h-5"></i>
+                                <h4 class="text-sm font-black uppercase tracking-widest">Institutional Risk Profile</h4>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
+                                <div class="space-y-2">
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Risk Per Trade</label><span class="text-[10px] font-bold text-accent-blue" id="val-max_risk_pct">1.0%</span></div>
+                                    <input type="range" id="set-max_risk_pct" min="0.1" max="5.0" step="0.1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="document.getElementById('val-max_risk_pct').innerText=this.value+'%'">
+                                    <p class="text-[9px] text-secondary">Percentage of equity risked per single execution.</p>
                                 </div>
-                                <div class="flex flex-col gap-2">
-                                    <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Max Leverage</label>
-                                    <input type="number" id="set-max_leverage" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-3 outline-none font-bold">
+                                <div class="space-y-2">
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Max Leverage</label><span class="text-[10px] font-bold text-accent-blue" id="val-max_leverage">20x</span></div>
+                                    <input type="range" id="set-max_leverage" min="1" max="100" step="1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="document.getElementById('val-max_leverage').innerText=this.value+'x'">
+                                    <p class="text-[9px] text-secondary">Hard limit for broker-side leverage application.</p>
                                 </div>
-                                <div class="flex flex-col gap-2">
-                                    <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Daily Loss Limit (%)</label>
-                                    <input type="number" id="set-max_daily_loss_pct" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-3 outline-none font-bold">
+                                <div class="space-y-2">
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Daily Loss Limit</label><span class="text-[10px] font-bold text-accent-red" id="val-max_daily_loss_pct">3.0%</span></div>
+                                    <input type="range" id="set-max_daily_loss_pct" min="1.0" max="10.0" step="0.5" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-red-600" oninput="document.getElementById('val-max_daily_loss_pct').innerText=this.value+'%'">
+                                    <p class="text-[9px] text-secondary">Automatic system shutdown if daily equity drops by this %.</p>
                                 </div>
-                                <div class="flex flex-col gap-2">
-                                    <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Cool Down (Minutes)</label>
-                                    <input type="number" id="set-cool_down_mins" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-3 outline-none font-bold">
-                                </div>
-                                <div class="flex flex-col gap-2">
-                                    <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Max Concurrent Positions</label>
-                                    <input type="number" id="set-max_open_positions" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-3 outline-none font-bold">
+                                <div class="space-y-2">
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Recovery Cool Down</label><span class="text-[10px] font-bold text-secondary" id="val-cool_down_mins">30m</span></div>
+                                    <input type="range" id="set-cool_down_mins" min="5" max="240" step="5" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-cool_down_mins').innerText=this.value+'m'">
+                                    <p class="text-[9px] text-secondary">Forced inactivity period after a losing trade (prevent revenge trading).</p>
                                 </div>
                             </div>
-                            <button onclick="saveBotSettings()" class="w-full btn-premium bg-black text-white dark:bg-white dark:text-black py-4 mt-8 font-black uppercase tracking-widest text-xs">Deploy Parameters</button>
                         </div>
 
+                        <!-- Execution Strategy -->
                         <div class="card-premium">
-                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Capital Provisioning</h4>
+                            <div class="flex items-center gap-3 mb-8 border-b border-black/5 dark:border-white/5 pb-4">
+                                <i data-lucide="zap" class="text-yellow-500 w-5 h-5"></i>
+                                <h4 class="text-sm font-black uppercase tracking-widest">Execution & Alpha Strategy</h4>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
+                                <div class="space-y-2">
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Min AI Confidence Score</label><span class="text-[10px] font-bold text-accent-green" id="val-min_signal_score">75</span></div>
+                                    <input type="range" id="set-min_signal_score" min="50" max="95" step="1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-min_signal_score').innerText=this.value">
+                                </div>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Risk/Reward Ratio</label><span class="text-[10px] font-bold text-accent-green" id="val-risk_reward_ratio">2.0</span></div>
+                                    <input type="range" id="set-risk_reward_ratio" min="1.0" max="5.0" step="0.1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-risk_reward_ratio').innerText=this.value">
+                                </div>
+                                <div class="flex items-center justify-between p-3 bg-black/[0.02] rounded-xl">
+                                    <div>
+                                        <p class="text-[10px] font-black uppercase">Trailing Stop Loss</p>
+                                        <p class="text-[8px] text-secondary">Follow price to lock in profits.</p>
+                                    </div>
+                                    <input type="checkbox" id="set-trailing_stop_active" class="w-10 h-5 bg-gray-200 rounded-full appearance-none checked:bg-accent-blue relative transition-colors cursor-pointer before:content-[''] before:absolute before:w-4 before:h-4 before:bg-white before:rounded-full before:top-0.5 before:left-0.5 checked:before:left-5 before:transition-all">
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="text-[10px] font-black text-secondary uppercase">Max Allowed Spread (%)</label>
+                                    <input type="number" id="set-max_spread_pct" step="0.01" class="w-full bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-bold">
+                                </div>
+                            </div>
+                            <button onclick="saveBotSettings()" class="w-full btn-premium bg-black text-white dark:bg-white dark:text-black py-4 mt-8 font-black uppercase tracking-widest text-xs shadow-xl">Deploy Neural Parameters</button>
+                        </div>
+
+                        <!-- Capital Provisioning -->
+                        <div class="card-premium">
+                            <div class="flex items-center gap-3 mb-8 border-b border-black/5 dark:border-white/5 pb-4">
+                                <i data-lucide="banknote" class="text-green-500 w-5 h-5"></i>
+                                <h4 class="text-sm font-black uppercase tracking-widest">Capital Provisioning</h4>
+                            </div>
                             <div class="flex flex-col gap-4">
-                                <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Initial Demo Balance (€)</label>
+                                <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Update Demo Balance (€)</label>
                                 <div class="flex gap-4">
                                     <input type="number" id="demo-bal-input" placeholder="10,000.00" class="flex-1 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-accent-blue/40 font-black text-lg">
-                                    <button onclick="setBalance()" class="btn-premium bg-accent-blue text-white shadow-lg shadow-accent-blue/30">Set Capital</button>
+                                    <button onclick="setBalance()" class="btn-premium bg-accent-blue text-white shadow-lg shadow-accent-blue/30 px-10">Set Capital</button>
                                 </div>
                             </div>
                         </div>
 
+                        <!-- Danger Zone -->
                         <div class="card-premium border-red-500/20 bg-red-500/[0.02]">
-                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 text-red-500">System Reset</h4>
+                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 text-red-500">System Lifecycle Control</h4>
                             <p class="text-xs text-secondary font-medium mb-8 leading-relaxed">
-                                Warning: Resetting the account will permanently erase your trade history and re-initialize the demo balance to default levels.
+                                Warning: Erasing trade journal will permanently remove historical performance data. Protocol reset will disconnect all live APIs.
                             </p>
                             <div class="flex gap-4">
                                 <button onclick="resetAccount()" class="flex-1 py-4 border-2 border-red-500/20 text-red-500 rounded-2xl font-black text-xs hover:bg-red-500/5 transition-colors uppercase tracking-widest">Wipe Trade Journal</button>
-                                <button onclick="resetEmergency()" class="flex-1 py-4 bg-black text-white dark:bg-white dark:text-black rounded-2xl font-black text-xs uppercase tracking-widest">Reset Protocols</button>
+                                <button onclick="resetEmergency()" class="flex-1 py-4 bg-black text-white dark:bg-white dark:text-black rounded-2xl font-black text-xs uppercase tracking-widest">Reset Core Protocols</button>
                             </div>
                         </div>
                     </div>
@@ -747,16 +827,22 @@
             const table = document.getElementById('broker-status-table');
             if (table && brokers) {
                 table.innerHTML = brokers.map(b => `
-                    <tr class="border-b border-black/5 dark:border-white/5">
-                        <td class="py-4 px-6 font-black">${b.broker_id}</td>
+                    <tr class="border-b border-black/5 dark:border-white/5 group hover:bg-black/[0.01]">
+                        <td class="py-4 px-6">
+                            <div class="flex items-center gap-3">
+                                <div class="w-2 h-2 rounded-full ${b.is_active ? 'bg-green-500 shadow-sm shadow-green-500/50' : 'bg-slate-300'}"></div>
+                                <span class="font-black">${b.broker_id}</span>
+                            </div>
+                        </td>
                         <td class="py-4 px-6 font-bold text-secondary uppercase">${b.exchange_id}</td>
                         <td class="py-4 px-6">
                             <span class="status-badge ${b.is_active ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">
-                                ${b.is_active ? 'ACTIVE' : 'INACTIVE'}
+                                ${b.is_active ? 'READY' : 'INACTIVE'}
                             </span>
                         </td>
-                        <td class="py-4 px-6 text-right">
-                             <button class="text-accent-red font-black text-[9px] uppercase tracking-widest hover:underline">Disconnect</button>
+                        <td class="py-4 px-6 text-right space-x-4">
+                             <button onclick="toggleBroker('${b.broker_id}', ${!b.is_active})" class="text-accent-blue font-black text-[9px] uppercase tracking-widest hover:underline">${b.is_active ? 'Disable' : 'Enable'}</button>
+                             <button onclick="deleteBroker('${b.broker_id}')" class="text-accent-red font-black text-[9px] uppercase tracking-widest hover:underline">Remove</button>
                         </td>
                     </tr>
                 `).join('');
@@ -766,19 +852,54 @@
             if (walletList && wallets) {
                 const bids = Object.keys(wallets);
                 if (bids.length > 0) {
-                    walletList.innerHTML = bids.map(bid => `
-                        <div class="p-5 bg-black/[0.03] dark:bg-white/[0.03] rounded-[24px] border border-black/5 dark:border-white/5">
-                            <div class="flex justify-between items-start mb-4">
-                                <span class="text-[9px] font-black text-secondary uppercase tracking-widest">${bid}</span>
-                                <i data-lucide="shield-check" class="w-4 h-4 text-green-500"></i>
+                    walletList.innerHTML = bids.map(bid => {
+                        const w = wallets[bid];
+                        if (w.error) return '';
+                        
+                        const assetsHtml = w.assets ? w.assets.map(a => `
+                            <div class="flex justify-between text-[8px] font-bold opacity-60">
+                                <span>${a.asset}</span>
+                                <span>${a.total.toFixed(4)}</span>
                             </div>
-                            <p class="text-2xl font-black tracking-tighter">${wallets[bid].toLocaleString()} <span class="text-xs text-secondary font-medium">USDT</span></p>
+                        `).join('') : '';
+
+                        return `
+                        <div class="p-6 bg-black/[0.03] dark:bg-white/[0.03] rounded-[28px] border border-black/5 dark:border-white/5 hover:border-accent-blue/30 transition-all">
+                            <div class="flex justify-between items-start mb-6">
+                                <div>
+                                    <span class="text-[10px] font-black text-secondary uppercase tracking-[0.1em]">${bid}</span>
+                                    <p class="text-[8px] font-bold opacity-40 uppercase">${w.exchange}</p>
+                                </div>
+                                <div class="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center">
+                                    <i data-lucide="shield-check" class="w-4 h-4 text-green-500"></i>
+                                </div>
+                            </div>
+                            <p class="text-3xl font-black tracking-tighter mb-4">${w.total_usdt.toLocaleString(undefined, {minimumFractionDigits: 2})} <span class="text-xs text-secondary font-medium">USDT</span></p>
+                            <div class="space-y-1 pt-4 border-t border-black/5 dark:border-white/5">
+                                ${assetsHtml}
+                            </div>
                         </div>
-                    `).join('');
+                    `}).join('');
                     lucide.createIcons();
                 } else {
-                    walletList.innerHTML = '<p class="text-secondary italic text-xs p-6">No wallets synchronized.</p>';
+                    walletList.innerHTML = `
+                        <div class="col-span-full py-12 text-center border-2 border-dashed border-black/5 rounded-[32px]">
+                            <p class="text-secondary font-medium text-xs">No institutional wallets synchronized.</p>
+                        </div>
+                    `;
                 }
+            }
+        }
+
+        async function toggleBroker(bid, active) {
+            const res = await fetchAPI(`/brokers/toggle?broker_id=${bid}&active=${active}`, 'POST');
+            if (res.success) updateBrokers();
+        }
+
+        async function deleteBroker(bid) {
+            if (confirm(`Completely remove broker connection "${bid}"?`)) {
+                const res = await fetchAPI(`/brokers/delete?broker_id=${bid}`, 'POST');
+                if (res.success) updateBrokers();
             }
         }
 
@@ -814,15 +935,72 @@
         }
 
         async function saveBotSettings() {
-            const keys = ["max_risk_pct", "max_leverage", "max_daily_loss_pct", "cool_down_mins", "max_open_positions"];
+            const keys = [
+                "max_risk_pct", "max_leverage", "max_daily_loss_pct", "cool_down_mins", 
+                "max_open_positions", "min_signal_score", "risk_reward_ratio", 
+                "max_spread_pct", "trailing_stop_active"
+            ];
             const data = {};
             keys.forEach(k => {
                 const el = document.getElementById(`set-${k}`);
-                if (el) data[k] = el.value;
+                if (el) {
+                    if (el.type === 'checkbox') {
+                        data[k] = el.checked ? 'true' : 'false';
+                    } else {
+                        data[k] = el.value;
+                    }
+                }
             });
             
             const res = await fetchAPI('/settings', 'POST', data);
-            if (res.success) alert("Settings saved and deployed to engine.");
+            if (res && res.success) {
+                alert("Institutional parameters deployed to neural engine.");
+                update();
+            }
+        }
+
+        async function loadSettings() {
+            const settings = await fetchAPI('/settings');
+            if (settings) {
+                Object.keys(settings).forEach(key => {
+                    const el = document.getElementById(`set-${key}`);
+                    const valDisplay = document.getElementById(`val-${key}`);
+                    if (el) {
+                        if (el.type === 'checkbox') {
+                            el.checked = settings[key] === 'true';
+                        } else {
+                            el.value = settings[key];
+                            // Update labels
+                            if (valDisplay) {
+                                if (key.includes('pct')) valDisplay.innerText = el.value + '%';
+                                else if (key.includes('leverage')) valDisplay.innerText = el.value + 'x';
+                                else if (key.includes('mins')) valDisplay.innerText = el.value + 'm';
+                                else valDisplay.innerText = el.value;
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        async function manualTrade(direction) {
+            const qty = document.getElementById('trade-qty').value;
+            const sl = document.getElementById('trade-sl').value;
+            const tp = document.getElementById('trade-tp').value;
+
+            if (confirm(`Execute Manual ${direction} on ${selectedSymbol.toUpperCase()}?`)) {
+                const res = await fetchAPI('/trade/manual', 'POST', {
+                    market_id: selectedSymbol,
+                    direction: direction,
+                    quantity: parseFloat(qty),
+                    sl: sl ? parseFloat(sl) : null,
+                    tp: tp ? parseFloat(tp) : null
+                });
+                if (res && res.success) {
+                    alert("Manual order sent to gateway.");
+                    update();
+                }
+            }
         }
 
         function selectMarket(market_id) {
@@ -889,9 +1067,25 @@
         }
 
         // Core Update Loop
+        let botIsRunning = false;
+        let botIsArmed = false;
+
         async function update() {
             const s = await fetchAPI(`/status?market_id=${selectedSymbol}`);
             if (!s) return;
+            
+            botIsRunning = s.is_running;
+            botIsArmed = s.armed;
+
+            // Technical Indicators
+            if (s.analysis && s.analysis.indicators) {
+                const ind = s.analysis.indicators;
+                document.getElementById('ind-rsi').innerText = ind.rsi.toFixed(2);
+                document.getElementById('ind-rsi').className = `text-[10px] font-black ${ind.rsi > 70 ? 'text-accent-red' : (ind.rsi < 30 ? 'text-accent-green' : '')}`;
+                document.getElementById('ind-ema').innerText = `${ind.ema_cross}`;
+                document.getElementById('ind-ema').className = `text-[10px] font-black ${ind.ema_cross === 'BULLISH' ? 'text-accent-green' : 'text-accent-red'}`;
+                document.getElementById('ind-atr').innerText = s.analysis.atr ? s.analysis.atr.toFixed(s.selected_market.includes('usd') ? 5 : 2) : '--';
+            }
 
             // Global State
             document.getElementById('active-symbol-header').innerText = s.selected_market.toUpperCase().replace('_', '/');
@@ -906,6 +1100,18 @@
                 toggleBtn.className = 'btn-premium bg-black text-white dark:bg-white dark:text-black shadow-lg';
             }
             lucide.createIcons();
+            
+            // Audit Logs (Real-time execution logs)
+            const audit = await fetchAPI('/audit?limit=10');
+            if (audit && document.getElementById('terminal-audit-logs')) {
+                document.getElementById('terminal-audit-logs').innerHTML = audit.map(log => `
+                    <div class="flex gap-2 border-l-2 ${log.level === 'ERROR' ? 'border-red-500' : 'border-blue-500'} pl-2 py-0.5">
+                        <span class="opacity-30 min-w-[50px]">${log.timestamp.split(' ')[1]}</span>
+                        <span class="text-accent-blue">${log.action}</span>
+                        <span class="text-primary truncate">${log.message}</span>
+                    </div>
+                `).join('');
+            }
 
             // Portfolio
             document.getElementById('dash-balance').innerText = `${s.balance.toLocaleString()} €`;
@@ -1187,8 +1393,8 @@
                                 <span class="text-[9px] font-black text-secondary uppercase tracking-widest opacity-60">${assetClass}</span>
                                 <span class="status-badge bg-black/5 dark:bg-white/5 text-[7px]">${status}</span>
                             </div>
-                            <h4 class="font-black text-lg tracking-tighter mb-1">${displayName}</h4>
-                            <p class="font-black text-sm tabular-nums mb-4">${price}</p>
+                            <h4 class="font-black text-sm mb-1">${displayName}</h4>
+                            <p class="font-black text-xs tabular-nums mb-4 opacity-50">${price}</p>
                             <div class="flex justify-between items-center pt-4 border-t border-black/5 dark:border-white/5">
                                 <span class="text-[10px] font-bold text-secondary uppercase">24h Chg</span>
                                 <span class="text-[10px] font-black ${change >= 0 ? 'text-green-500' : 'text-red-500'}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</span>
@@ -1228,17 +1434,16 @@
         // Global Actions & Handlers
         document.getElementById('main-toggle-btn').onclick = async () => {
             const btn = document.getElementById('main-toggle-btn');
-            const isStarting = btn.innerText.includes('START');
-            const endpoint = isStarting ? '/start' : '/stop';
+            const targetState = !botIsRunning;
+            const endpoint = targetState ? '/start' : '/stop';
             
-            // Visual feedback
             btn.style.opacity = '0.5';
             btn.disabled = true;
             
             try {
                 const res = await fetchAPI(endpoint, 'POST');
                 if (res && res.success) {
-                    console.log(`System ${isStarting ? 'started' : 'stopped'} successfully`);
+                    botIsRunning = targetState;
                 }
             } catch (e) {
                 console.error("Action error:", e);
@@ -1254,7 +1459,10 @@
             btn.style.opacity = '0.5';
             try {
                 const res = await fetchAPI('/arm', 'POST');
-                if (res) console.log("Engine arm state toggled");
+                if (res) {
+                    botIsArmed = res.armed;
+                    console.log("Engine arm state:", botIsArmed);
+                }
             } catch (e) {
                 console.error("Arm error:", e);
             } finally {

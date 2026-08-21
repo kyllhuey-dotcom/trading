@@ -41,12 +41,33 @@ class BrokerConnector:
             self.active_adapters[broker_id] = adapter
         return success
 
-    async def get_all_balances(self) -> Dict[str, float]:
-        """Aggregate balances from all connected wallets (wallets/ballets)."""
-        balances = {}
+    async def get_all_balances(self) -> Dict[str, Any]:
+        """Aggregate detailed balances from all connected institutional wallets."""
+        results = {}
         for bid, adapter in self.active_adapters.items():
-            balances[bid] = await adapter.get_balance()
-        return balances
+            try:
+                # Get main trading balance (usually USDT)
+                main_balance = await adapter.get_balance()
+                
+                # Try to fetch more detailed asset breakdown if supported by adapter
+                details = []
+                if adapter.client and hasattr(adapter.client, 'fetch_balance'):
+                    raw = await adapter.client.fetch_balance()
+                    # Filter for assets with non-zero balance
+                    if 'total' in raw:
+                        details = [{"asset": asset, "total": val} 
+                                  for asset, val in raw['total'].items() 
+                                  if val > 0][:5] # Limit to top 5 for UI clarity
+
+                results[bid] = {
+                    "exchange": adapter.exchange_id,
+                    "total_usdt": main_balance,
+                    "assets": details
+                }
+            except Exception as e:
+                print(f"Balance aggregation error for {bid}: {e}")
+                results[bid] = {"error": "Connection failed"}
+        return results
 
     def trigger_emergency_stop(self):
         self.emergency_stop_active = True

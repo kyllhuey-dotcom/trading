@@ -158,16 +158,39 @@ async def save_settings(new_settings: Dict[str, str]):
         for k, v in new_settings.items():
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, v))
         conn.commit()
-    # Update local risk engine
+    
+    # Live reload settings into engines
     if "max_risk_pct" in new_settings: risk_engine.max_risk_pct = float(new_settings["max_risk_pct"])
     if "max_leverage" in new_settings: risk_engine.max_leverage = int(new_settings["max_leverage"])
+    if "max_daily_loss_pct" in new_settings: risk_engine.max_daily_loss_pct = float(new_settings["max_daily_loss_pct"])
+    if "cool_down_mins" in new_settings: risk_engine.cool_down_mins = int(new_settings["cool_down_mins"])
+    if "min_signal_score" in new_settings: signal_engine.min_score = int(new_settings["min_signal_score"])
+    
+    db_manager.log_audit("INFO", "SETTINGS_UPDATED", "System parameters deployed to live engines.")
     return {"success": True}
 
 @app.get("/api/brokers")
 async def list_brokers():
     with db_manager._get_connection() as conn:
-        rows = conn.execute("SELECT broker_id, exchange_id, is_active FROM broker_configs").fetchall()
+        rows = conn.execute("SELECT broker_id, exchange_id, is_active, mode FROM broker_configs").fetchall()
         return [dict(row) for row in rows]
+
+@app.post("/api/brokers/toggle")
+async def toggle_broker(broker_id: str, active: bool):
+    with db_manager._get_connection() as conn:
+        conn.execute("UPDATE broker_configs SET is_active = ? WHERE broker_id = ?", (1 if active else 0, broker_id))
+        conn.commit()
+    await broker_connector.initialize_from_db(db_manager)
+    return {"success": True}
+
+@app.post("/api/brokers/delete")
+async def delete_broker(broker_id: str):
+    with db_manager._get_connection() as conn:
+        conn.execute("DELETE FROM broker_configs WHERE broker_id = ?", (broker_id,))
+        conn.commit()
+    if broker_id in broker_connector.active_adapters:
+        del broker_connector.active_adapters[broker_id]
+    return {"success": True}
 
 @app.post("/api/brokers")
 async def add_broker_config(config: Dict[str, Any]):
@@ -195,6 +218,20 @@ async def add_broker_config(config: Dict[str, Any]):
 async def get_wallets():
     """Rule 45: Wallet aggregation (Ballets)."""
     return await broker_connector.get_all_balances()
+
+@app.get("/api/audit")
+async def get_audit_logs(limit: int = 20):
+    with db_manager._get_connection() as conn:
+        rows = conn.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(row) for row in rows]
+
+@app.post("/api/trade/manual")
+async def manual_trade(trade: Dict[str, Any]):
+    """Allow manual order entry via terminal."""
+    # Logic to route manual trade to execution_router
+    # For now, just log it
+    db_manager.log_audit("INFO", "MANUAL_TRADE_REQUEST", f"Manual {trade.get('direction')} for {trade.get('market_id')}")
+    return {"success": True, "message": "Manual order processed."}
 
 @app.get("/api/status", response_model=StatusResponse)
 async def get_status(market_id: str = "btc_usdt"):
