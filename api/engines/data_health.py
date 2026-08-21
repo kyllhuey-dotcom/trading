@@ -14,31 +14,44 @@ class DataHealthMonitor:
         tasks = []
         provider_ids = list(self.providers.keys())
         for pid in provider_ids:
-            tasks.append(self.providers[pid].health_check())
+            # Wrap health check in a timeout to avoid blocking the whole report
+            tasks.append(asyncio.wait_for(self.providers[pid].health_check(), timeout=5.0))
         
-        results = await asyncio.gather(*tasks)
+        # Use return_exceptions=True to avoid one crash breaking the whole report
+        results = await asyncio.gather(*tasks, return_exceptions=True)
         
         report = []
         for i, res in enumerate(results):
             pid = provider_ids[i]
+            
+            if isinstance(res, Exception):
+                status = "ERROR"
+                message = str(res)
+                latency = 0
+            else:
+                status = res.get("status", "UNKNOWN")
+                message = res.get("message")
+                latency = res.get("latency_ms", 0)
+
             # Standardizing report (Rule 39)
             report.append({
                 "provider_id": pid,
                 "asset_class": self._guess_class(pid),
-                "status": res.get("status", "UNKNOWN"),
-                "latency_ms": res.get("latency_ms", 0),
-                "last_update": res.get("last_update", datetime.now().isoformat()),
-                "error": res.get("message")
+                "status": status,
+                "latency_ms": latency,
+                "last_update": datetime.now().isoformat(),
+                "error": message
             })
         return report
 
     def _guess_class(self, pid: str) -> str:
-        if "crypto" in pid or "gate" in pid or "binance" in pid:
+        pid_lower = pid.lower()
+        if "crypto" in pid_lower or "gate" in pid_lower or "binance" in pid_lower or "bybit" in pid_lower:
             return "CRYPTO"
-        if "forex" in pid:
+        if "forex" in pid_lower:
             return "FOREX"
-        if "indices" in pid:
+        if "indices" in pid_lower:
             return "INDICES"
-        if "commodities" in pid:
+        if "commodities" in pid_lower:
             return "COMMODITIES"
         return "MIXED"

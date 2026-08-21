@@ -83,4 +83,9 @@ class YahooProvider(MarketDataProvider):
             return pd.DataFrame()
 
     async def health_check(self) -> Dict[str, Any]:
-        return {"provider": f"Yahoo_{self.asset_class}", "status": "ONLINE"}
+        try:
+            # Check if Yahoo is responsive
+            await asyncio.to_thread(yf.Ticker("EURUSD=X").history, period="1d")
+            return {"provider": f"Yahoo_{self.asset_class}", "status": "ONLINE"}
+        except Exception as e:
+            return {"provider": f"Yahoo_{self.asset_class}", "status": "ERROR", "message": str(e)}

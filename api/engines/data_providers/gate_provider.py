@@ -56,10 +56,11 @@ class GateProvider(MarketDataProvider):
 
     async def health_check(self) -> Dict[str, Any]:
         try:
-            await self.exchange.fetch_status()
+            # More robust health check using a common ticker
+            await self.exchange.fetch_ticker('BTC/USDT')
             return {"provider": self.source_name, "status": "ONLINE"}
-        except:
-            return {"provider": self.source_name, "status": "ERROR"}
+        except Exception as e:
+            return {"provider": self.source_name, "status": "ERROR", "message": str(e)}
 
     async def close(self):
         await self.exchange.close()
