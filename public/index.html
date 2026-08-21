@@ -10,16 +10,16 @@
     <style>
         :root {
             --bg-color: #f5f5f7;
-            --surface-color: rgba(255, 255, 255, 0.8);
+            --surface-color: rgba(255, 255, 255, 0.85);
             --text-primary: #1d1d1f;
             --text-secondary: #86868b;
             --accent-blue: #0071e3;
             --accent-green: #28cd41;
             --accent-red: #ff3b30;
             --accent-orange: #ff9f0a;
-            --sidebar-width: 260px;
-            --glass-border: 1px solid rgba(255, 255, 255, 0.3);
-            --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.04);
+            --sidebar-width: 200px;
+            --glass-border: 1px solid rgba(0, 0, 0, 0.05);
+            --card-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.03);
         }
 
         body.dark {
@@ -54,13 +54,13 @@
         }
 
         .sidebar-item {
-            border-radius: 12px;
+            border-radius: 8px;
             cursor: pointer;
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            font-size: 14px;
+            gap: 10px;
+            padding: 8px 12px;
+            font-size: 13px;
             font-weight: 500;
             color: var(--text-secondary);
             transition: all 0.2s ease;
@@ -84,22 +84,22 @@
         .card-premium {
             background: var(--surface-color);
             backdrop-filter: blur(20px) saturate(180%);
-            border-radius: 24px;
+            border-radius: 12px;
             border: var(--glass-border);
-            padding: 24px;
+            padding: 12px;
             box-shadow: var(--card-shadow);
         }
 
         .btn-premium {
             border-radius: 980px;
-            padding: 10px 24px;
-            font-size: 14px;
+            padding: 6px 12px;
+            font-size: 12px;
             font-weight: 600;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            gap: 4px;
         }
 
         .btn-premium:active {
@@ -108,9 +108,9 @@
 
         .tab-content {
             display: none;
-            height: calc(100vh - 80px);
+            height: calc(100vh - 64px);
             overflow-y: auto;
-            padding: 40px;
+            padding: 20px;
             animation: slideUp 0.6s cubic-bezier(0.23, 1, 0.32, 1);
         }
 
@@ -199,13 +199,13 @@
         body.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
 
         .metric-value {
-            font-size: 28px;
+            font-size: 18px;
             font-weight: 800;
             letter-spacing: -0.02em;
         }
 
         .metric-label {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
             color: var(--text-secondary);
             text-transform: uppercase;
@@ -233,14 +233,14 @@
     </script>
     <div class="flex h-screen w-screen">
         <!-- SIDEBAR -->
-        <aside class="w-[260px] h-full border-r border-black/5 flex flex-col p-6 glass z-50">
-            <div class="flex items-center gap-3 mb-10 px-2">
-                <div class="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center">
-                    <i data-lucide="orbit" class="text-white dark:text-black w-6 h-6"></i>
+        <aside class="w-[200px] h-full border-r border-black/5 flex flex-col p-4 glass z-50">
+            <div class="flex items-center gap-3 mb-6 px-1">
+                <div class="w-8 h-8 bg-black dark:bg-white rounded-lg flex items-center justify-center">
+                    <i data-lucide="orbit" class="text-white dark:text-black w-5 h-5"></i>
                 </div>
                 <div>
-                    <h1 class="font-black text-lg leading-none tracking-tight">Quantum</h1>
-                    <p class="text-[10px] font-bold text-accent-blue uppercase tracking-widest mt-1">Trade Pro</p>
+                    <h1 class="font-black text-sm leading-none tracking-tight">Quantum</h1>
+                    <p class="text-[8px] font-bold text-accent-blue uppercase tracking-widest mt-0.5">Trade Pro</p>
                 </div>
             </div>
 
@@ -265,21 +265,28 @@
         <!-- MAIN CONTENT -->
         <main class="flex-1 h-full flex flex-col relative overflow-hidden">
             <!-- TOP BAR -->
-            <header class="h-[80px] w-full border-b border-black/5 dark:border-white/5 flex items-center justify-between px-10 glass z-40">
-                <div class="flex items-center gap-10">
+            <header class="h-[64px] w-full border-b border-black/5 dark:border-white/5 flex items-center justify-between px-6 glass z-40">
+                <div class="flex items-center gap-6">
                     <div class="flex items-center gap-3">
-                        <div id="status-dot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
+                        <div id="status-dot" class="w-2 h-2 rounded-full bg-slate-400"></div>
                         <div class="flex flex-col">
-                            <span id="system-status-text" class="text-xs font-black uppercase tracking-widest">Disconnected</span>
-                            <span class="text-[9px] font-bold text-secondary uppercase tracking-tighter" id="bot-mode-display">DEMO MODE ACTIVE</span>
+                            <span id="system-status-text" class="text-[10px] font-black uppercase tracking-widest">Disconnected</span>
+                            <span class="text-[8px] font-bold text-secondary uppercase tracking-tighter" id="bot-mode-display">DEMO</span>
                         </div>
                     </div>
                     
-                    <div class="h-8 w-[1px] bg-black/5 dark:bg-white/5"></div>
+                    <div class="h-6 w-[1px] bg-black/5 dark:bg-white/5"></div>
                     
                     <div class="flex flex-col">
+                         <span class="text-[9px] uppercase font-extrabold text-secondary tracking-widest">Global Balance</span>
+                         <span class="font-black text-xs tabular-nums" id="header-balance">0.00 €</span>
+                    </div>
+
+                    <div class="h-6 w-[1px] bg-black/5 dark:bg-white/5"></div>
+
+                    <div class="flex flex-col">
                          <span class="text-[9px] uppercase font-extrabold text-secondary tracking-widest">Active Instrument</span>
-                         <span class="font-black text-sm" id="active-symbol-header">---</span>
+                         <span class="font-black text-xs" id="active-symbol-header">---</span>
                     </div>
                 </div>
 
@@ -300,81 +307,79 @@
                 </div>
             </header>
 
-            <!-- DASHBOARD TAB -->
             <section id="tab-dashboard" class="tab-content active">
                 <div class="max-w-7xl mx-auto">
-                    <header class="mb-10">
-                        <h2 class="text-4xl font-black tracking-tight mb-2">Command Center</h2>
-                        <p class="text-secondary font-medium">Real-time performance and system diagnostic.</p>
+                    <header class="mb-6">
+                        <h2 class="text-2xl font-black tracking-tight mb-1">Command Center</h2>
+                        <p class="text-xs text-secondary font-medium">Real-time performance and system diagnostic.</p>
                     </header>
                     
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                         <div class="card-premium">
                             <span class="metric-label">Account Balance</span>
-                            <h3 class="metric-value mt-1" id="dash-balance">0.00 €</h3>
+                            <h3 class="metric-value mt-0.5" id="dash-balance">0.00 €</h3>
                         </div>
                         <div class="card-premium">
                             <span class="metric-label">Current Equity</span>
-                            <h3 class="metric-value mt-1" id="dash-equity">0.00 €</h3>
+                            <h3 class="metric-value mt-0.5" id="dash-equity">0.00 €</h3>
                         </div>
                         <div class="card-premium">
                             <span class="metric-label">Daily P&L</span>
-                            <h3 class="metric-value mt-1" id="dash-daily-pnl">0.00 €</h3>
+                            <h3 class="metric-value mt-0.5" id="dash-daily-pnl">0.00 €</h3>
                         </div>
                         <div class="card-premium">
                             <span class="metric-label">Max Drawdown</span>
-                            <h3 class="metric-value mt-1 text-accent-red" id="dash-drawdown">0.00%</h3>
+                            <h3 class="metric-value mt-0.5 text-accent-red" id="dash-drawdown">0.00%</h3>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10">
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
                         <div class="lg:col-span-4 card-premium flex flex-col">
-                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Engine Health</h4>
-                            <div class="space-y-4 flex-1">
-                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Scanner Status</span><span id="eng-status" class="status-badge bg-red-500/10 text-red-500">OFFLINE</span></div>
-                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Markets Tracked</span><span id="eng-markets" class="font-black text-sm">--</span></div>
-                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Assets Scanned</span><span id="eng-scanned" class="font-black text-sm">--</span></div>
-                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Trend Analysis</span><span id="eng-analyzing" class="font-black text-sm">--</span></div>
-                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Signals Detected</span><span id="eng-signals" class="font-black text-sm">--</span></div>
-                                <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary">Tradable Setups</span><span id="eng-tradable" class="status-badge bg-green-500/10 text-green-500">--</span></div>
-                                <div class="flex justify-between items-center border-t border-black/5 dark:border-white/5 pt-2 mt-2"><span class="text-[9px] font-black text-secondary uppercase">Last Scan Time</span><span id="eng-duration" class="font-mono text-[10px]">--s</span></div>
+                            <h4 class="text-[10px] font-black uppercase tracking-widest mb-4 border-b border-black/5 dark:border-white/5 pb-3">Engine Health</h4>
+                            <div class="space-y-3 flex-1">
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary">Scanner</span><span id="eng-status" class="status-badge bg-red-500/10 text-red-500">OFFLINE</span></div>
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary">Markets</span><span id="eng-markets" class="font-black text-xs">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary">Scanned</span><span id="eng-scanned" class="font-black text-xs">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary">Analyzing</span><span id="eng-analyzing" class="font-black text-xs">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary">Signals</span><span id="eng-signals" class="font-black text-xs">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary">Tradable</span><span id="eng-tradable" class="status-badge bg-green-500/10 text-green-500">--</span></div>
+                                <div class="flex justify-between items-center border-t border-black/5 dark:border-white/5 pt-1.5 mt-1.5"><span class="text-[8px] font-black text-secondary uppercase">Scan Time</span><span id="eng-duration" class="font-mono text-[9px]">--s</span></div>
                             </div>
                         </div>
 
                         <div class="lg:col-span-5 card-premium">
-                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4 text-accent-red">Decision Diagnostic</h4>
-                            <div id="diagnosis-panel" class="space-y-6">
-                                <div class="flex items-start gap-4">
-                                    <div id="diag-icon" class="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-white/5 flex items-center justify-center shrink-0">
-                                        <i data-lucide="activity" class="w-6 h-6 text-slate-500"></i>
+                            <h4 class="text-[10px] font-black uppercase tracking-widest mb-4 border-b border-black/5 dark:border-white/5 pb-3 text-accent-red">Decision Diagnostic</h4>
+                            <div id="diagnosis-panel" class="space-y-4">
+                                <div class="flex items-start gap-3">
+                                    <div id="diag-icon" class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-white/5 flex items-center justify-center shrink-0">
+                                        <i data-lucide="activity" class="w-5 h-5 text-slate-500"></i>
                                     </div>
                                     <div>
-                                        <p class="text-[10px] font-black text-secondary uppercase tracking-widest mb-1">Critical Blocker</p>
-                                        <p id="diag-main-blocker" class="text-lg font-black leading-tight mb-2">INITIALIZING...</p>
-                                        <p id="diag-reason" class="text-sm text-secondary font-medium leading-relaxed italic">
-                                            "System is warming up data streams..."
+                                        <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-0.5">Critical Blocker</p>
+                                        <p id="diag-main-blocker" class="text-sm font-black leading-tight mb-1">INITIALIZING...</p>
+                                        <p id="diag-reason" class="text-xs text-secondary font-medium leading-relaxed italic">
+                                            "System is warming up..."
                                         </p>
                                     </div>
                                 </div>
                                 
-                                <div class="pt-4 mt-4 border-t border-black/5 dark:border-white/5">
-                                    <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-3">Checklist Status (15/15)</p>
-                                    <div id="diag-checklist" class="grid grid-cols-3 gap-2">
-                                        <!-- Mini indicators for all 15 checks -->
+                                <div class="pt-3 mt-3 border-t border-black/5 dark:border-white/5">
+                                    <div id="diag-checklist" class="grid grid-cols-5 gap-1.5">
+                                        <!-- Indicators -->
                                     </div>
                                 </div>
                             </div>
                         </div>
 
                         <div class="lg:col-span-3 card-premium flex flex-col">
-                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Top Opportunities</h4>
-                            <div id="best-setups-list" class="space-y-3 flex-1 mb-6">
-                                <p class="text-secondary font-medium text-xs italic">Awaiting scanner data...</p>
+                            <h4 class="text-[10px] font-black uppercase tracking-widest mb-4 border-b border-black/5 dark:border-white/5 pb-3">Opportunities</h4>
+                            <div id="best-setups-list" class="space-y-2 flex-1 mb-4">
+                                <p class="text-secondary font-medium text-[10px] italic">Scanning...</p>
                             </div>
                             
-                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Economic Calendar</h4>
-                            <div id="dashboard-calendar" class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                <p class="text-secondary font-medium text-[10px] italic">Loading high impact events...</p>
+                            <h4 class="text-[10px] font-black uppercase tracking-widest mb-4 border-b border-black/5 dark:border-white/5 pb-3">Calendar</h4>
+                            <div id="dashboard-calendar" class="space-y-2 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
+                                <p class="text-secondary font-medium text-[9px] italic">Loading...</p>
                             </div>
                         </div>
                     </div>
@@ -384,10 +389,10 @@
             <!-- MARKETS TAB -->
             <section id="tab-markets" class="tab-content">
                 <div class="max-w-7xl mx-auto">
-                    <header class="flex justify-between items-center mb-10">
+                    <header class="flex justify-between items-center mb-6">
                         <div>
-                            <h2 class="text-4xl font-black tracking-tight mb-2">Market Hub</h2>
-                            <p class="text-secondary font-medium">Global assets across 4 classes.</p>
+                            <h2 class="text-2xl font-black tracking-tight mb-1">Market Hub</h2>
+                            <p class="text-xs text-secondary font-medium">Global assets across 5 classes.</p>
                         </div>
                         <div class="switch-container p-1" id="market-filters">
                             <div onclick="setMarketFilter('ALL')" class="switch-option active">ALL</div>
@@ -402,23 +407,22 @@
                 </div>
             </section>
 
-            <!-- SCANNER TAB -->
             <section id="tab-scanner" class="tab-content">
                 <div class="max-w-7xl mx-auto">
-                    <header class="mb-10">
-                        <h2 class="text-4xl font-black tracking-tight mb-2">Global Radar</h2>
-                        <p class="text-secondary font-medium">Unified scanning of all tracked instruments.</p>
+                    <header class="mb-6">
+                        <h2 class="text-2xl font-black tracking-tight mb-1">Global Radar</h2>
+                        <p class="text-xs text-secondary font-medium">Unified scanning of all tracked instruments.</p>
                     </header>
                     <div class="card-premium !p-0 overflow-hidden border border-black/5 dark:border-white/5">
-                        <table class="w-full text-sm text-left">
-                            <thead class="bg-black/[0.02] dark:bg-white/[0.02] text-[10px] text-secondary font-black uppercase tracking-widest">
+                        <table class="w-full text-xs text-left">
+                            <thead class="bg-black/[0.02] dark:bg-white/[0.02] text-[9px] text-secondary font-black uppercase tracking-widest">
                                 <tr>
-                                    <th class="py-5 px-8">Instrument</th>
-                                    <th class="py-5 text-right">Last Price</th>
-                                    <th class="py-5 text-right">24h Chg</th>
-                                    <th class="py-5 text-center">Trend Bias</th>
-                                    <th class="py-5 text-center">Data Type</th>
-                                    <th class="py-5 pr-8 text-right">AI Score</th>
+                                    <th class="py-3 px-6">Instrument</th>
+                                    <th class="py-3 text-right">Price</th>
+                                    <th class="py-3 text-right">24h</th>
+                                    <th class="py-3 text-center">Bias</th>
+                                    <th class="py-3 text-center">Data</th>
+                                    <th class="py-3 pr-6 text-right">Score</th>
                                 </tr>
                             </thead>
                             <tbody id="scanner-table-body" class="divide-y divide-black/5 dark:divide-white/5"></tbody>
@@ -427,75 +431,92 @@
                 </div>
             </section>
 
-            <!-- BROKERS & WALLETS TAB -->
             <section id="tab-brokers" class="tab-content">
                 <div class="max-w-7xl mx-auto">
-                    <header class="mb-10">
-                        <h2 class="text-4xl font-black tracking-tight mb-2">Brokers & Wallets</h2>
-                        <p class="text-secondary font-medium">Connect any institutional exchange and monitor your assets.</p>
+                    <header class="mb-6">
+                        <h2 class="text-2xl font-black tracking-tight mb-1">Brokers & Wallets</h2>
+                        <p class="text-xs text-secondary font-medium">Connect institutional exchanges.</p>
                     </header>
 
-                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                        <div class="lg:col-span-4 space-y-6">
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <div class="lg:col-span-4 space-y-4">
+                            <!-- Connect Broker (API) -->
                             <div class="card-premium">
-                                <h4 class="text-sm font-black uppercase tracking-widest mb-6">Connect New Broker</h4>
-                                <form id="broker-form" class="space-y-4">
-                                    <div class="flex flex-col gap-2">
-                                        <label class="text-[9px] font-black text-secondary uppercase">Unique Alias</label>
-                                        <input type="text" name="broker_id" placeholder="My Main Binance" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-bold" required>
+                                <h4 class="text-[10px] font-black uppercase tracking-widest mb-4">Connect Broker (API)</h4>
+                                <form id="broker-form" class="space-y-3">
+                                    <div class="flex flex-col gap-1.5">
+                                        <label class="text-[8px] font-black text-secondary uppercase">Alias</label>
+                                        <input type="text" name="broker_id" placeholder="Ex: Binance Main" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-xs font-bold" required>
                                     </div>
-                                    <div class="flex flex-col gap-2">
-                                        <label class="text-[9px] font-black text-secondary uppercase">Exchange (CCXT ID)</label>
-                                        <select name="exchange_id" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-bold" required>
+                                    <div class="flex flex-col gap-1.5">
+                                        <label class="text-[8px] font-black text-secondary uppercase">Exchange</label>
+                                        <select name="exchange_id" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-xs font-bold" required>
                                             <option value="gate">Gate.io</option>
                                             <option value="binance">Binance</option>
                                             <option value="bybit">Bybit</option>
                                             <option value="kraken">Kraken</option>
-                                            <option value="kucoin">KuCoin</option>
                                             <option value="okx">OKX</option>
-                                            <option value="coinbase">Coinbase</option>
-                                            <option value="bitfinex">Bitfinex</option>
-                                            <option value="mexc">MEXC</option>
-                                            <option value="bitget">Bitget</option>
-                                            <option value="huobi">HTX (Huobi)</option>
-                                            <option value="phemex">Phemex</option>
                                         </select>
                                     </div>
-                                    <div class="flex flex-col gap-2">
-                                        <label class="text-[9px] font-black text-secondary uppercase">API Key</label>
-                                        <input type="text" name="api_key" placeholder="Paste your API key" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-mono" required>
+                                    <div class="flex flex-col gap-1.5">
+                                        <label class="text-[8px] font-black text-secondary uppercase">API Key</label>
+                                        <input type="text" name="api_key" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-[10px] font-mono" required>
                                     </div>
-                                    <div class="flex flex-col gap-2">
-                                        <label class="text-[9px] font-black text-secondary uppercase">Secret Key</label>
-                                        <input type="password" name="api_secret" placeholder="••••••••••••••" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-mono" required>
+                                    <div class="flex flex-col gap-1.5">
+                                        <label class="text-[8px] font-black text-secondary uppercase">Secret</label>
+                                        <input type="password" name="api_secret" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-[10px] font-mono" required>
                                     </div>
-                                    <div class="flex flex-col gap-2">
-                                        <label class="text-[9px] font-black text-secondary uppercase">Passphrase (Optional)</label>
-                                        <input type="password" name="api_passphrase" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-mono">
+                                    <button type="submit" class="w-full btn-premium bg-black text-white dark:bg-white dark:text-black py-2.5 mt-1 font-black uppercase text-[10px]">Link Broker</button>
+                                </form>
+                            </div>
+
+                            <!-- Connect Wallet (Address) -->
+                            <div class="card-premium">
+                                <h4 class="text-[10px] font-black uppercase tracking-widest mb-4">Link Web3 Wallet</h4>
+                                <form id="wallet-form" class="space-y-3">
+                                    <div class="grid grid-cols-3 gap-2 mb-4">
+                                        <button type="button" onclick="setWalletProvider('METAMASK')" class="flex flex-col items-center p-2 bg-black/5 rounded-xl border border-transparent hover:border-accent-blue/30 w-provider active" id="p-METAMASK">
+                                            <span class="text-[8px] font-black mt-1">METAMASK</span>
+                                        </button>
+                                        <button type="button" onclick="setWalletProvider('PHANTOM')" class="flex flex-col items-center p-2 bg-black/5 rounded-xl border border-transparent hover:border-accent-blue/30 w-provider" id="p-PHANTOM">
+                                            <span class="text-[8px] font-black mt-1">PHANTOM</span>
+                                        </button>
+                                        <button type="button" onclick="setWalletProvider('OKX')" class="flex flex-col items-center p-2 bg-black/5 rounded-xl border border-transparent hover:border-accent-blue/30 w-provider" id="p-OKX">
+                                            <span class="text-[8px] font-black mt-1">OKX</span>
+                                        </button>
                                     </div>
-                                    <button type="submit" class="w-full btn-premium bg-accent-blue text-white py-3 mt-2">Connect Institutional API</button>
+                                    <input type="hidden" name="provider" id="selected-provider" value="METAMASK">
+                                    <div class="flex flex-col gap-1.5">
+                                        <label class="text-[8px] font-black text-secondary uppercase">Wallet Name</label>
+                                        <input type="text" name="wallet_id" placeholder="My Cold Wallet" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-xs font-bold" required>
+                                    </div>
+                                    <div class="flex flex-col gap-1.5">
+                                        <label class="text-[8px] font-black text-secondary uppercase">Public Address</label>
+                                        <input type="text" name="address" placeholder="0x... or Address" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-[10px] font-mono" required>
+                                    </div>
+                                    <button type="submit" class="w-full btn-premium bg-accent-blue text-white py-2.5 mt-1 font-black uppercase text-[10px]">Sync Wallet</button>
                                 </form>
                             </div>
                         </div>
 
-                        <div class="lg:col-span-8 space-y-8">
+                        <div class="lg:col-span-8 space-y-6">
                             <div class="card-premium">
-                                <h4 class="text-sm font-black uppercase tracking-widest mb-6">Active Institutional Wallets</h4>
+                                <h4 class="text-[10px] font-black uppercase tracking-widest mb-4">Institutional Wallets</h4>
                                 <div id="wallet-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <p class="text-secondary italic text-xs">No brokers connected yet.</p>
+                                    <p class="text-secondary italic text-[10px]">No wallets synchronized.</p>
                                 </div>
                             </div>
 
                             <div class="card-premium">
-                                <h4 class="text-sm font-black uppercase tracking-widest mb-6">Connected Brokers Status</h4>
-                                <div class="overflow-hidden border border-black/5 dark:border-white/5 rounded-2xl">
-                                    <table class="w-full text-xs text-left">
-                                        <thead class="bg-black/5 dark:bg-white/5 text-[9px] text-secondary font-black uppercase tracking-widest">
+                                <h4 class="text-[10px] font-black uppercase tracking-widest mb-4">Connections</h4>
+                                <div class="overflow-hidden border border-black/5 dark:border-white/5 rounded-xl">
+                                    <table class="w-full text-[10px] text-left">
+                                        <thead class="bg-black/5 dark:bg-white/5 text-[8px] text-secondary font-black uppercase tracking-widest">
                                             <tr>
-                                                <th class="py-4 px-6">Alias</th>
-                                                <th class="py-4 px-6">Exchange</th>
-                                                <th class="py-4 px-6">Status</th>
-                                                <th class="py-4 px-6 text-right">Actions</th>
+                                                <th class="py-3 px-4">Alias</th>
+                                                <th class="py-3 px-4">Exchange</th>
+                                                <th class="py-3 px-4">Status</th>
+                                                <th class="py-3 px-4 text-right">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody id="broker-status-table"></tbody>
@@ -664,30 +685,28 @@
                 </div>
             </section>
 
-            <!-- POSITIONS TAB -->
             <section id="tab-positions" class="tab-content">
                 <div class="max-w-4xl mx-auto">
-                    <div class="flex justify-between items-center mb-8">
-                        <h2 class="text-4xl font-black tracking-tight">Active Exposure</h2>
-                        <button onclick="fetchAPI('/demo/reset', 'POST').then(update)" class="btn-premium bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-widest px-6 hover:bg-red-500/20 transition-colors">Force Exit All</button>
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-black tracking-tight">Exposure</h2>
+                        <button onclick="fetchAPI('/demo/reset', 'POST').then(update)" class="btn-premium bg-red-500/10 text-red-500 text-[9px] font-black uppercase tracking-widest px-4 hover:bg-red-500/20 transition-colors">Exit All</button>
                     </div>
-                    <div id="active-pos-list" class="space-y-6"></div>
+                    <div id="active-pos-list" class="space-y-4"></div>
                 </div>
             </section>
 
-            <!-- HISTORY TAB -->
             <section id="tab-history" class="tab-content">
                 <div class="max-w-5xl mx-auto">
-                    <h2 class="text-4xl font-black tracking-tight mb-8">Trade Journal</h2>
+                    <h2 class="text-2xl font-black tracking-tight mb-6">Trade Journal</h2>
                     <div class="card-premium !p-0 overflow-hidden border border-black/5 dark:border-white/5">
-                         <table class="w-full text-sm text-left">
-                            <thead class="bg-black/[0.02] dark:bg-white/[0.02] text-[10px] text-secondary font-black uppercase tracking-widest">
+                         <table class="w-full text-xs text-left">
+                            <thead class="bg-black/[0.02] dark:bg-white/[0.02] text-[9px] text-secondary font-black uppercase tracking-widest">
                                 <tr>
-                                    <th class="py-5 px-8">Instrument</th>
-                                    <th class="py-5 text-center">Direction</th>
-                                    <th class="py-5 text-right">Entry</th>
-                                    <th class="py-5 text-right">Exit</th>
-                                    <th class="py-5 pr-8 text-right">Realized P&L</th>
+                                    <th class="py-3 px-6">Instrument</th>
+                                    <th class="py-3 text-center">Dir</th>
+                                    <th class="py-3 text-right">Entry</th>
+                                    <th class="py-3 text-right">Exit</th>
+                                    <th class="py-3 pr-6 text-right">P&L</th>
                                 </tr>
                             </thead>
                             <tbody id="history-table-body" class="divide-y divide-black/5 dark:divide-white/5"></tbody>
@@ -1010,6 +1029,32 @@
             }
         };
 
+        document.getElementById('wallet-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            const btn = e.target.querySelector('button');
+            
+            btn.innerText = 'SYNCING...';
+            btn.disabled = true;
+            
+            const res = await fetchAPI('/wallets/add', 'POST', data);
+            alert(res.message);
+            
+            btn.innerText = 'Sync Wallet';
+            btn.disabled = false;
+            if (res.success) {
+                e.target.reset();
+                updateBrokers();
+            }
+        };
+
+        function setWalletProvider(p) {
+            document.getElementById('selected-provider').value = p;
+            document.querySelectorAll('.w-provider').forEach(btn => btn.classList.remove('border-accent-blue', 'bg-accent-blue/5'));
+            document.getElementById(`p-${p}`).classList.add('border-accent-blue', 'bg-accent-blue/5');
+        }
+
         async function loadSettings() {
             const settings = await fetchAPI('/settings');
             if (settings) {
@@ -1220,6 +1265,15 @@
             }
 
             // Global State
+            const hBal = document.getElementById('header-balance');
+            if (hBal) {
+                const newBal = `${s.balance.toLocaleString()} ${s.mode === 'REAL' ? '$' : '€'}`;
+                if (hBal.innerText !== newBal) {
+                    hBal.innerText = newBal;
+                    hBal.style.color = 'var(--accent-blue)';
+                    setTimeout(() => hBal.style.color = '', 500);
+                }
+            }
             const displaySymbol = s.selected_market.toUpperCase().replace('_', '/');
             document.getElementById('active-symbol-header').innerText = displaySymbol;
             document.getElementById('bot-mode-display').innerText = `${s.mode} MODE ACTIVE`;

@@ -76,6 +76,7 @@ class ScannerEngine:
                     "structure": ltf_analysis.get("is_hh") and "HH/HL" or (ltf_analysis.get("is_ll") and "LH/LL" or "Neutral"),
                     "market_state": ltf_analysis.get("market_state"),
                     "volatility": ltf_analysis.get("volatility"),
+                    "market_status": self.data.universe.get_market_status(symbol),
                     "news_risk": "High" if not news_status["news_ok"] else "Low",
                     "signal": signal.get("status"),
                     "score": int(raw_signal.get("score", 0)),

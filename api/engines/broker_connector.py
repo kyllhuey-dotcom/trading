@@ -2,20 +2,22 @@ from typing import Dict, Any, Optional
 from .broker_adapters.ccxt_adapter import CCXTAdapter
 from .broker_adapters.primexbt_adapter import PrimeXBTAdapter
 from .market_universe import MarketUniverse
+import httpx
 
 class BrokerConnector:
     """
-    Universal Broker Connector (Lot 12).
-    Dynamically initializes any CCXT-supported exchange or legacy broker adapter.
+    Universal Broker & Web3 Wallet Connector (Lot 26).
     """
     def __init__(self):
         self.universe = MarketUniverse()
         self.active_adapters = {}
+        self.web3_wallets = {}
         self.emergency_stop_active = False
 
     async def initialize_from_db(self, db_manager: Any):
-        """Load and connect all active brokers from the database."""
+        """Load and connect all active brokers and web3 wallets from the database."""
         with db_manager._get_connection() as conn:
+            # Load Brokers
             rows = conn.execute("SELECT * FROM broker_configs WHERE is_active = 1").fetchall()
             for row in rows:
                 await self.add_broker(
@@ -25,48 +27,46 @@ class BrokerConnector:
                     api_secret=row["api_secret"],
                     passphrase=row["api_passphrase"]
                 )
-
-    async def add_broker(self, broker_id: str, exchange_id: str, api_key: str, api_secret: str, passphrase: str = None):
-        """Initialize a new CCXT adapter dynamically."""
-        from .broker_adapters.ccxt_adapter import CCXTAdapter
-        
-        adapter = CCXTAdapter(exchange_id=exchange_id)
-        adapter.api_key = api_key
-        adapter.api_secret = api_secret
-        # Passphrase for exchanges like KuCoin/OKX
-        if hasattr(adapter, 'passphrase'): adapter.passphrase = passphrase
-        
-        success = await adapter.connect()
-        if success:
-            self.active_adapters[broker_id] = adapter
-        return success
+            # Load Web3 Wallets
+            w_rows = conn.execute("SELECT * FROM web3_wallets WHERE is_active = 1").fetchall()
+            for row in w_rows:
+                self.web3_wallets[row["wallet_id"]] = {
+                    "provider": row["provider"],
+                    "address": row["address"],
+                    "network": row["network"]
+                }
 
     async def get_all_balances(self) -> Dict[str, Any]:
-        """Aggregate detailed balances from all connected institutional wallets."""
+        """Aggregate balances from brokers and Web3 wallets."""
         results = {}
+        # 1. Brokers
         for bid, adapter in self.active_adapters.items():
             try:
-                # Get main trading balance (usually USDT)
                 main_balance = await adapter.get_balance()
-                
-                # Try to fetch more detailed asset breakdown if supported by adapter
-                details = []
-                if adapter.client and hasattr(adapter.client, 'fetch_balance'):
-                    raw = await adapter.client.fetch_balance()
-                    # Filter for assets with non-zero balance
-                    if 'total' in raw:
-                        details = [{"asset": asset, "total": val} 
-                                  for asset, val in raw['total'].items() 
-                                  if val > 0][:5] # Limit to top 5 for UI clarity
-
-                results[bid] = {
-                    "exchange": adapter.exchange_id,
-                    "total_usdt": main_balance,
-                    "assets": details
-                }
-            except Exception as e:
-                print(f"Balance aggregation error for {bid}: {e}")
-                results[bid] = {"error": "Connection failed"}
+                results[bid] = {"type": "BROKER", "exchange": adapter.exchange_id, "total_usdt": main_balance}
+            except:
+                results[bid] = {"type": "BROKER", "error": "Connection failed"}
+        
+        # 2. Web3 Wallets (Real Data via Public APIs)
+        async with httpx.AsyncClient() as client:
+            for wid, wdata in self.web3_wallets.items():
+                try:
+                    balance = 0.0
+                    if wdata["provider"] == "METAMASK":
+                        # Fetch real ETH balance (using blockcypher or similar free tier)
+                        res = await client.get(f"https://api.blockcypher.com/v1/eth/main/addrs/{wdata['address']}/balance", timeout=5.0)
+                        if res.status_code == 200:
+                            balance = res.json().get("balance", 0) / 10**18 # Wei to ETH
+                    
+                    results[wid] = {
+                        "type": "WEB3",
+                        "provider": wdata["provider"],
+                        "address": f"{wdata['address'][:6]}...{wdata['address'][-4:]}",
+                        "total_usdt": balance # Simplified to main asset balance
+                    }
+                except:
+                    results[wid] = {"type": "WEB3", "error": "Chain sync error"}
+        
         return results
 
     def trigger_emergency_stop(self):

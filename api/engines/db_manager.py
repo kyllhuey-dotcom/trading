@@ -74,6 +74,17 @@ class DatabaseManager:
                 )
             """)
             
+            # Web3 Wallets Table (MetaMask, Phantom, etc.)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS web3_wallets (
+                    wallet_id TEXT PRIMARY KEY,
+                    provider TEXT, -- METAMASK, PHANTOM, OKX
+                    address TEXT,
+                    network TEXT,
+                    is_active INTEGER DEFAULT 1
+                )
+            """)
+            
             # Seed default settings
             cursor = conn.execute("SELECT COUNT(*) FROM settings")
             if cursor.fetchone()[0] == 0:

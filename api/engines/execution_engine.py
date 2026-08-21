@@ -6,11 +6,13 @@ class ExecutionEngine:
     """
     Simulates DEMO execution using real prices (Rule 27).
     Prepares interface for REAL mode (Lot 8).
+    Handles forced exits on market close (Lot 27).
     """
-    def __init__(self, portfolio: Any, db_manager: DatabaseManager, risk_engine: Any):
+    def __init__(self, portfolio: Any, db_manager: DatabaseManager, risk_engine: Any, universe: Any):
         self.portfolio = portfolio
         self.db = db_manager
         self.risk = risk_engine
+        self.universe = universe
 
     @property
     def active_positions(self):
@@ -19,7 +21,14 @@ class ExecutionEngine:
     async def execute_order(self, mode: str, signal: Dict[str, Any], risk: Dict[str, Any], ticker: Dict[str, Any]) -> Dict[str, Any]:
         """
         Executes order using real Bid/Ask prices.
+        Checks market status before opening.
         """
+        mid = signal.get("market_id")
+        
+        # Rule: Never open position if market is closed
+        if self.universe.get_market_status(mid) != "OPEN":
+            return {"success": False, "reason": "MARKET_CLOSED"}
+
         active = self.active_positions
         # Check if already in this symbol
         if any(p["symbol"] == signal.get("market_id") for p in active):
@@ -79,7 +88,21 @@ class ExecutionEngine:
             
             pos["pnl"] = float(pnl)
 
-            # SL / TP check
+            # 1. Check if market is still open (Lot 27 Rule)
+            # If market is closed, we force close the position at last known price
+            if self.universe.get_market_status(pos["symbol"]) != "OPEN":
+                pos["status"] = "CLOSED"
+                pos["exit_price"] = float(current_exit_price)
+                pos["close_time"] = datetime.now().isoformat()
+                pos["pnl"] -= (pos["fees"]) 
+                pos["metadata"] = {"close_reason": "MARKET_CLOSED_PROTECTION"}
+                
+                self.portfolio.update_balance(mode, pos["pnl"])
+                self.db.save_trade(pos)
+                closed_trades.append(pos)
+                continue
+
+            # 2. SL / TP check
             hit_sl = (pos["direction"] == "BUY" and current_exit_price <= pos["sl"]) or \
                      (pos["direction"] == "SELL" and current_exit_price >= pos["sl"])
             hit_tp = (pos["direction"] == "BUY" and current_exit_price >= pos["tp"]) or \

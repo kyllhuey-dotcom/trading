@@ -32,7 +32,7 @@ news_aggregator = NewsAggregator()
 signal_engine = SignalEngine()
 risk_engine = RiskEngine(max_risk_pct=1.0)
 portfolio_engine = PortfolioEngine(db_manager=db_manager)
-demo_execution = ExecutionEngine(portfolio=portfolio_engine, db_manager=db_manager, risk_engine=risk_engine)
+demo_execution = ExecutionEngine(portfolio=portfolio_engine, db_manager=db_manager, risk_engine=risk_engine, universe=data_engine.universe)
 broker_connector = BrokerConnector()
 broker_connector.universe = data_engine.universe # Share the same universe
 execution_router = ExecutionRouter(demo_adapter=demo_execution, broker_connector=broker_connector)
@@ -81,9 +81,11 @@ bot_state = {
 async def auto_scan_loop():
     """
     Rule 25: Continuous Auto Scan and Background Execution.
+    Optimized for high-frequency scan (Lot 25).
     """
     while True:
         try:
+            # Full Universe Scan
             results = await scanner_engine.scan_all()
             bot_state["latest_scan"] = results
             
@@ -94,6 +96,9 @@ async def auto_scan_loop():
             bot_state["engine_stats"]["signals"] = len([r for r in results if r.get("score", 0) >= 80])
             bot_state["engine_stats"]["tradable"] = len([r for r in results if r.get("tradable")])
             bot_state["engine_stats"]["scan_duration"] = scanner_engine.last_scan_duration
+
+            # Update global state with selected market from query if possible
+            # (Handled in get_status for now, but background scan uses it)
 
             # BACKGROUND EXECUTION (Lot 18 - Multi-Position)
             if bot_state["is_running"] and bot_state["armed"]:
@@ -165,24 +170,37 @@ async def auto_scan_loop():
 async def broadcaster_loop():
     """
     Rule 20, 22: Real-time update broadcaster (MarketDataBus).
+    Optimized for sub-second reactivity (Lot 25).
     """
     data_engine.set_ws_manager(manager)
     
     while True:
-        state = {
-            "type": "HEARTBEAT",
-            "timestamp": int(datetime.now().timestamp() * 1000),
-            "status": state_machine.current_state.value,
-            "is_running": bot_state["is_running"]
-        }
-        await manager.broadcast(json.dumps(state))
-        
-        if bot_state["is_running"]:
-            hot_markets = ["btc_usdt", "eth_usdt", "aapl", "nvda", "tsla", "eur_usd", "gold"] 
-            for mid in hot_markets:
-                await data_engine.broadcast_market_update(mid)
+        try:
+            state = {
+                "type": "HEARTBEAT",
+                "timestamp": int(datetime.now().timestamp() * 1000),
+                "status": state_machine.current_state.value,
+                "is_running": bot_state["is_running"],
+                "armed": bot_state["armed"]
+            }
+            await manager.broadcast(json.dumps(state))
             
-        await asyncio.sleep(2)
+            # Hot Markets: Priority broadcast
+            # Include selected market + active trades + top 3 crypto
+            hot_markets = [bot_state.get("selected_market", "btc_usdt"), "eth_usdt", "sol_usdt"]
+            active_trades = demo_execution.active_positions
+            for t in active_trades:
+                if t["symbol"] not in hot_markets:
+                    hot_markets.append(t["symbol"])
+            
+            # Rapid price fetch for hot markets
+            for mid in list(set(hot_markets)): # Deduplicate
+                await data_engine.broadcast_market_update(mid)
+                
+        except Exception as e:
+            print(f"Broadcaster Loop Error: {e}")
+            
+        await asyncio.sleep(0.5) # Sub-second refresh for "Live to the second" feel
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -227,7 +245,29 @@ async def save_settings(new_settings: Dict[str, str]):
 async def list_brokers():
     with db_manager._get_connection() as conn:
         rows = conn.execute("SELECT broker_id, exchange_id, is_active, mode FROM broker_configs").fetchall()
-        return [dict(row) for row in rows]
+        brokers = [dict(row) for row in rows]
+        
+        # Add Web3 wallets to the list
+        w_rows = conn.execute("SELECT wallet_id as broker_id, provider as exchange_id, is_active, 'REAL' as mode FROM web3_wallets").fetchall()
+        brokers.extend([dict(r) for r in w_rows])
+        
+        return brokers
+
+@app.post("/api/wallets/add")
+async def add_web3_wallet(config: Dict[str, Any]):
+    wallet_id = config.get("wallet_id")
+    provider = config.get("provider")
+    address = config.get("address")
+    
+    with db_manager._get_connection() as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO web3_wallets (wallet_id, provider, address, network)
+            VALUES (?, ?, ?, ?)
+        """, (wallet_id, provider, address, "MAINNET"))
+        conn.commit()
+    
+    await broker_connector.initialize_from_db(db_manager)
+    return {"success": True, "message": f"{provider} wallet linked."}
 
 @app.post("/api/brokers/toggle")
 async def toggle_broker(broker_id: str, active: bool):
@@ -289,6 +329,7 @@ async def manual_trade(trade: Dict[str, Any]):
 
 @app.get("/api/status", response_model=StatusResponse)
 async def get_status(market_id: str = "btc_usdt"):
+    bot_state["selected_market"] = market_id
     info = data_engine.universe.get_info(market_id)
     if not info:
          market_id = "btc_usdt"
@@ -343,7 +384,16 @@ async def get_status(market_id: str = "btc_usdt"):
     
     # 1. Update Positions and get Balance
     current_mode = bot_state["mode"]
-    balance = portfolio_engine.get_balance(current_mode)
+    
+    if current_mode == "REAL":
+        # Rule 45: Live aggregation for REAL mode
+        broker_balances = await broker_connector.get_all_balances()
+        balance = sum(b.get("total_usdt", 0.0) for b in broker_balances.values() if "total_usdt" in b)
+        # Sync DB for statistics consistency
+        portfolio_engine.set_balance("REAL", balance)
+    else:
+        balance = portfolio_engine.get_balance(current_mode)
+
     await demo_execution.update_active_positions(current_mode, {info["display_symbol"]: ticker})
     active_trades = demo_execution.active_positions
     active_trade = active_trades[0] if active_trades else None
@@ -487,7 +537,7 @@ async def get_status(market_id: str = "btc_usdt"):
         broker_info=broker_info,
         broker_connected=broker_info.get("connected", False) or bot_state["mode"] == "DEMO",
         asset_info=info,
-        best_setups=sorted([r for r in bot_state["latest_scan"] if r.get("score", 0) > 0], key=lambda x: x["score"], reverse=True)[:5]
+        best_setups=sorted([r for r in bot_state["latest_scan"] if r.get("score", 0) > 0 and r.get("market_status") == "OPEN"], key=lambda x: x["score"], reverse=True)[:5]
     )
 
 @app.post("/api/start")
