@@ -22,10 +22,14 @@ class YahooProvider(MarketDataProvider):
             # yfinance is synchronous, wrap in thread
             ticker = await asyncio.to_thread(yf.Ticker, symbol)
             # Use 1d history to get the most recent data point
+            # Reduced period to 1d and interval to 1m for ultra-scalping speed
             data = await asyncio.to_thread(ticker.history, period="1d", interval="1m")
             
             if data.empty:
-                return None
+                # If 1m data is missing (market closed?), try 5m or just last close
+                data = await asyncio.to_thread(ticker.history, period="5d", interval="1d")
+                if data.empty:
+                    return None
 
             last_row = data.iloc[-1]
             last_price = float(last_row['Close'])

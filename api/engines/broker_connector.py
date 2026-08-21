@@ -15,19 +15,18 @@ class BrokerConnector:
         self.emergency_stop_active = False
 
     async def initialize_from_db(self, db_manager: Any):
-        """Load and connect all active brokers and web3 wallets from the database."""
+        """Load and connect all active brokers from the database (Lot 4 Encryption)."""
+        configs = db_manager.get_active_broker_configs()
+        for row in configs:
+            await self.add_broker(
+                broker_id=row["broker_id"],
+                exchange_id=row["exchange_id"],
+                api_key=row["api_key"],
+                api_secret=row["api_secret"],
+                passphrase=row["api_passphrase"]
+            )
+        # Load Web3 Wallets
         with db_manager._get_connection() as conn:
-            # Load Brokers
-            rows = conn.execute("SELECT * FROM broker_configs WHERE is_active = 1").fetchall()
-            for row in rows:
-                await self.add_broker(
-                    broker_id=row["broker_id"],
-                    exchange_id=row["exchange_id"],
-                    api_key=row["api_key"],
-                    api_secret=row["api_secret"],
-                    passphrase=row["api_passphrase"]
-                )
-            # Load Web3 Wallets
             w_rows = conn.execute("SELECT * FROM web3_wallets WHERE is_active = 1").fetchall()
             for row in w_rows:
                 self.web3_wallets[row["wallet_id"]] = {

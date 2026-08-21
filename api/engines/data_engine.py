@@ -26,6 +26,9 @@ class DataEngine:
         self.index_provider = YahooProvider("INDICES")
         self.commodity_provider = YahooProvider("COMMODITIES")
         self.stock_provider = YahooProvider("STOCKS")
+        self.futures_provider = YahooProvider("FUTURES")
+        self.bonds_provider = YahooProvider("BONDS")
+        self.etfs_provider = YahooProvider("ETFS")
         
         # Register in Layer
         self.layer.register_provider("gate", self.crypto_primary)
@@ -34,6 +37,9 @@ class DataEngine:
         self.layer.register_provider("yahoo_indices", self.index_provider)
         self.layer.register_provider("yahoo_commodities", self.commodity_provider)
         self.layer.register_provider("yahoo_stocks", self.stock_provider)
+        self.layer.register_provider("yahoo_futures", self.futures_provider)
+        self.layer.register_provider("yahoo_bonds", self.bonds_provider)
+        self.layer.register_provider("yahoo_etfs", self.etfs_provider)
         
         # Initialize Health Monitor (Rule 39)
         self.health_monitor = DataHealthMonitor(self.layer.providers)
@@ -91,7 +97,7 @@ class DataEngine:
             info = self.universe.get_info(market_id)
             asset_class = info.get("asset_class")
             if asset_class in overview:
-                q_dict = q.dict()
+                q_dict = q.model_dump()
                 # Operational status (Rule 11)
                 q_dict.update({
                     "market_id": market_id,
@@ -110,15 +116,23 @@ class DataEngine:
 
     async def fetch_ticker(self, market_id: str):
         quotes = await self.layer.get_all_quotes([market_id], self.universe)
-        return quotes[0].dict() if quotes else None
+        return quotes[0].model_dump() if quotes else None
 
-    # Legacy method compatibility
-    async def fetch_crypto_ohlcv(self, symbol: str, timeframe: str = '1m', limit: int = 100):
-        return await self.fetch_ohlcv(symbol, timeframe, limit)
-
-    async def fetch_crypto_price(self, symbol: str):
-        return await self.fetch_ticker(symbol)
+    def is_fresh(self, ticker: Dict[str, Any], asset_class: str) -> bool:
+        """Rule: Verify data freshness before any decision (Lot 3)."""
+        if not ticker or "timestamp" not in ticker:
+            return False
+            
+        now_ms = int(datetime.now().timestamp() * 1000)
+        age_ms = now_ms - ticker["timestamp"]
         
+        if asset_class == "CRYPTO":
+            return age_ms < 5000 # 5 seconds
+        else:
+            # Forex/Indices/etc are often delayed by 15min at source, 
+            # but we check if our last FETCH was recent.
+            return age_ms < 60000 # 60 seconds
+            
     async def shutdown(self):
         await self.crypto_primary.close()
         await self.crypto_backup.close()

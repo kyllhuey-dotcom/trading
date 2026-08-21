@@ -60,6 +60,11 @@ class SignalEngine:
             score += 10
 
         # --- 2. Trade Execution Logic ---
+        # Rule: Validate DataFrame completeness before ATR/SL/TP calculation (Lot 1)
+        required_cols = ['High', 'Low', 'Close']
+        if not all(col in df.columns for col in required_cols) or len(df) < 15:
+            return {"status": "NO_TRADE", "reason": "Insufficient OHLCV data for ATR", "score": score}
+
         direction = "BUY" if analysis["trend"] == "BULLISH" else "SELL"
         if analysis["trend"] == "NEUTRAL":
             # If trend is neutral but we have a CHoCH, we might anticipate a reversal
@@ -72,15 +77,24 @@ class SignalEngine:
 
         current_price = float(df['Close'].iloc[-1])
         
-        # Professional ATR-based SL/TP (Rule 20)
-        # Calculate true ATR
-        high_low = df['High'] - df['Low']
-        high_close = (df['High'] - df['Close'].shift()).abs()
-        low_close = (df['Low'] - df['Close'].shift()).abs()
-        ranges = pd.concat([high_low, high_close, low_close], axis=1)
-        true_range = ranges.max(axis=1)
-        atr = float(true_range.tail(14).mean())
+        # Professional ATR-based SL/TP (Rule 20) - Hardened (Lot 1)
+        try:
+            high_low = df['High'] - df['Low']
+            high_close = (df['High'] - df['Close'].shift()).abs()
+            low_close = (df['Low'] - df['Close'].shift()).abs()
+            ranges = pd.concat([high_low, high_close, low_close], axis=1)
+            true_range = ranges.max(axis=1)
+            # Handle NaNs and ensure sufficient tail for mean
+            atr_series = true_range.dropna()
+            if len(atr_series) < 14:
+                return {"status": "NO_TRADE", "reason": "Insufficient valid data for ATR", "score": score}
+            atr = float(atr_series.tail(14).mean())
+        except Exception as e:
+            return {"status": "NO_TRADE", "reason": f"ATR Calculation Error: {str(e)}", "score": score}
         
+        if atr <= 0 or pd.isna(atr):
+            return {"status": "NO_TRADE", "reason": "Invalid ATR value", "score": score}
+
         if direction == "BUY":
             # SL below last low with ATR buffer
             stop_loss = min(analysis["last_low"], current_price - (atr * 1.5))

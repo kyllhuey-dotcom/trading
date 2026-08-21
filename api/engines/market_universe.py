@@ -9,7 +9,7 @@ class MarketUniverse:
     and managing their operational status and constraints.
     """
     
-    ASSET_CLASSES = ["CRYPTO", "FOREX", "INDICES", "COMMODITIES", "STOCKS"]
+    ASSET_CLASSES = ["CRYPTO", "FOREX", "INDICES", "COMMODITIES", "STOCKS", "FUTURES", "BONDS", "ETFS"]
     
     def __init__(self):
         # Massive Institutional Universe Expansion (Lot 11)
@@ -88,7 +88,8 @@ class MarketUniverse:
             "live_cattle": {"display_symbol": "CATTLE", "asset_class": "COMMODITIES", "name": "Live Cattle", "providers": {"yahoo_commodities": "LE=F"}, "broker_symbols": {"gate": "CATTLE"}, "tick_size": 0.025, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "America/Chicago"},
             "aluminum": {"display_symbol": "ALUMINUM", "asset_class": "COMMODITIES", "name": "Aluminum", "providers": {"yahoo_commodities": "ALI=F"}, "broker_symbols": {"gate": "ALUM"}, "tick_size": 0.5, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "Europe/London"},
             "zinc": {"display_symbol": "ZINC", "asset_class": "COMMODITIES", "name": "Zinc", "providers": {"yahoo_commodities": "ZNC=F"}, "broker_symbols": {"gate": "ZINC"}, "tick_size": 0.5, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "Europe/London"},
-            "lumber": {"display_symbol": "LUMBER", "asset_class": "COMMODITIES", "name": "Lumber", "providers": {"yahoo_commodities": "LBS=F"}, "broker_symbols": {"gate": "LUMBER"}, "tick_size": 0.1, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "America/Chicago"},
+            # LUMBER (LBS=F) was delisted, replaced by LBR=F
+            "lumber": {"display_symbol": "LUMBER", "asset_class": "COMMODITIES", "name": "Lumber", "providers": {"yahoo_commodities": "LBR=F"}, "broker_symbols": {"gate": "LUMBER"}, "tick_size": 0.1, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "America/Chicago"},
             "orange_juice": {"display_symbol": "ORANGE JUICE", "asset_class": "COMMODITIES", "name": "Orange Juice", "providers": {"yahoo_commodities": "OJ=F"}, "broker_symbols": {"gate": "OJ"}, "tick_size": 0.05, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "America/New_York"},
             "lean_hogs": {"display_symbol": "HOGS", "asset_class": "COMMODITIES", "name": "Lean Hogs", "providers": {"yahoo_commodities": "HE=F"}, "broker_symbols": {"gate": "HOGS"}, "tick_size": 0.025, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "America/Chicago"},
             "feeder_cattle": {"display_symbol": "FEEDER CATTLE", "asset_class": "COMMODITIES", "name": "Feeder Cattle", "providers": {"yahoo_commodities": "GF=F"}, "broker_symbols": {"gate": "FCATTLE"}, "tick_size": 0.025, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "America/Chicago"},
@@ -127,7 +128,36 @@ class MarketUniverse:
             "asml": {"display_symbol": "ASML", "asset_class": "STOCKS", "name": "ASML Holding N.V.", "providers": {"yahoo_stocks": "ASML"}, "broker_symbols": {"gate": "ASML"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "Europe/Amsterdam"},
             "mc_pa": {"display_symbol": "LVMH", "asset_class": "STOCKS", "name": "LVMH", "providers": {"yahoo_stocks": "MC.PA"}, "broker_symbols": {"gate": "MC"}, "tick_size": 0.1, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "Europe/Paris"},
             "sap_de": {"display_symbol": "SAP", "asset_class": "STOCKS", "name": "SAP SE", "providers": {"yahoo_stocks": "SAP.DE"}, "broker_symbols": {"gate": "SAP"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "Europe/Berlin"},
-            "air_pa": {"display_symbol": "AIRBUS", "asset_class": "STOCKS", "name": "Airbus SE", "providers": {"yahoo_stocks": "AIR.PA"}, "broker_symbols": {"gate": "AIR"}, "tick_size": 0.02, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "Europe/Paris"}
+            "air_pa": {"display_symbol": "AIRBUS", "asset_class": "STOCKS", "name": "Airbus SE", "providers": {"yahoo_stocks": "AIR.PA"}, "broker_symbols": {"gate": "AIR"}, "tick_size": 0.02, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "Europe/Paris"},
+
+            # --- FUTURES (Continuous Contracts) ---
+            "es_f": {"display_symbol": "E-MINI S&P 500", "asset_class": "FUTURES", "name": "S&P 500 Futures", "providers": {"yahoo_futures": "ES=F"}, "broker_symbols": {"gate": "ES"}, "tick_size": 0.25, "lot_size": 1, "min_order": 1.0, "leverage_max": 50, "timezone": "America/New_York"},
+            "nq_f": {"display_symbol": "NASDAQ 100 FUT", "asset_class": "FUTURES", "name": "Nasdaq 100 Futures", "providers": {"yahoo_futures": "NQ=F"}, "broker_symbols": {"gate": "NQ"}, "tick_size": 0.25, "lot_size": 1, "min_order": 1.0, "leverage_max": 50, "timezone": "America/New_York"},
+            "ym_f": {"display_symbol": "DOW FUTURES", "asset_class": "FUTURES", "name": "Dow Jones Futures", "providers": {"yahoo_futures": "YM=F"}, "broker_symbols": {"gate": "YM"}, "tick_size": 1.0, "lot_size": 1, "min_order": 1.0, "leverage_max": 50, "timezone": "America/New_York"},
+            "cl_f": {"display_symbol": "CRUDE OIL FUT", "asset_class": "FUTURES", "name": "WTI Oil Futures", "providers": {"yahoo_futures": "CL=F"}, "broker_symbols": {"gate": "CL"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 20, "timezone": "America/New_York"},
+            "gc_f": {"display_symbol": "GOLD FUTURES", "asset_class": "FUTURES", "name": "Gold Futures", "providers": {"yahoo_futures": "GC=F"}, "broker_symbols": {"gate": "GC"}, "tick_size": 0.1, "lot_size": 1, "min_order": 0.1, "leverage_max": 20, "timezone": "UTC"},
+            "btc_f": {"display_symbol": "BTC PERP", "asset_class": "FUTURES", "name": "Bitcoin Perpetual", "providers": {"gate": "BTC_USDT"}, "broker_symbols": {"gate": "BTC_USDT"}, "tick_size": 0.1, "lot_size": 0.0001, "min_order": 10.0, "leverage_max": 100, "timezone": "UTC"},
+            "eth_f": {"display_symbol": "ETH PERP", "asset_class": "FUTURES", "name": "Ethereum Perpetual", "providers": {"gate": "ETH_USDT"}, "broker_symbols": {"gate": "ETH_USDT"}, "tick_size": 0.01, "lot_size": 0.001, "min_order": 10.0, "leverage_max": 100, "timezone": "UTC"},
+
+            # --- BONDS (Treasuries & Yields) ---
+            "tnx": {"display_symbol": "10Y TREASURY", "asset_class": "BONDS", "name": "US 10Y Yield", "providers": {"yahoo_bonds": "^TNX"}, "broker_symbols": {"gate": "TNX"}, "tick_size": 0.001, "lot_size": 1, "min_order": 1.0, "leverage_max": 1, "timezone": "America/New_York"},
+            "tyx": {"display_symbol": "30Y TREASURY", "asset_class": "BONDS", "name": "US 30Y Yield", "providers": {"yahoo_bonds": "^TYX"}, "broker_symbols": {"gate": "TYX"}, "tick_size": 0.001, "lot_size": 1, "min_order": 1.0, "leverage_max": 1, "timezone": "America/New_York"},
+            "fvx": {"display_symbol": "5Y TREASURY", "asset_class": "BONDS", "name": "US 5Y Yield", "providers": {"yahoo_bonds": "^FVX"}, "broker_symbols": {"gate": "FVX"}, "tick_size": 0.001, "lot_size": 1, "min_order": 1.0, "leverage_max": 1, "timezone": "America/New_York"},
+            "tlt": {"display_symbol": "TLT BOND ETF", "asset_class": "BONDS", "name": "iShares 20+ Year Treasury", "providers": {"yahoo_bonds": "TLT"}, "broker_symbols": {"gate": "TLT"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 10, "timezone": "America/New_York"},
+            "ief": {"display_symbol": "7-10Y BOND ETF", "asset_class": "BONDS", "name": "iShares 7-10 Year Treasury", "providers": {"yahoo_bonds": "IEF"}, "broker_symbols": {"gate": "IEF"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 10, "timezone": "America/New_York"},
+            "lqd": {"display_symbol": "CORP BOND ETF", "asset_class": "BONDS", "name": "iBoxx $ Invest Grade Corp Bond", "providers": {"yahoo_bonds": "LQD"}, "broker_symbols": {"gate": "LQD"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 10, "timezone": "America/New_York"},
+
+            # --- ETFS (Thematic & Sectoral) ---
+            "spy": {"display_symbol": "SPY", "asset_class": "ETFS", "name": "SPDR S&P 500 ETF Trust", "providers": {"yahoo_etfs": "SPY"}, "broker_symbols": {"gate": "SPY"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "America/New_York"},
+            "qqq": {"display_symbol": "QQQ", "asset_class": "ETFS", "name": "Invesco QQQ Trust", "providers": {"yahoo_etfs": "QQQ"}, "broker_symbols": {"gate": "QQQ"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "America/New_York"},
+            "smh": {"display_symbol": "SMH SEMI", "asset_class": "ETFS", "name": "VanEck Semiconductor ETF", "providers": {"yahoo_etfs": "SMH"}, "broker_symbols": {"gate": "SMH"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "America/New_York"},
+            "arkk": {"display_symbol": "ARKK", "asset_class": "ETFS", "name": "ARK Innovation ETF", "providers": {"yahoo_etfs": "ARKK"}, "broker_symbols": {"gate": "ARKK"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "America/New_York"},
+            "gld": {"display_symbol": "GLD GOLD ETF", "asset_class": "ETFS", "name": "SPDR Gold Shares", "providers": {"yahoo_etfs": "GLD"}, "broker_symbols": {"gate": "GLD"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "America/New_York"},
+            "uso": {"display_symbol": "USO OIL ETF", "asset_class": "ETFS", "name": "United States Oil Fund", "providers": {"yahoo_etfs": "USO"}, "broker_symbols": {"gate": "USO"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "America/New_York"},
+            "dia": {"display_symbol": "DIA DOW ETF", "asset_class": "ETFS", "name": "SPDR Dow Jones Industrial Average", "providers": {"yahoo_etfs": "DIA"}, "broker_symbols": {"gate": "DIA"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "America/New_York"},
+            "iwm": {"display_symbol": "IWM RUSSELL", "asset_class": "ETFS", "name": "iShares Russell 2000 ETF", "providers": {"yahoo_etfs": "IWM"}, "broker_symbols": {"gate": "IWM"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "America/New_York"},
+            "xle": {"display_symbol": "XLE ENERGY", "asset_class": "ETFS", "name": "Energy Select Sector SPDR", "providers": {"yahoo_etfs": "XLE"}, "broker_symbols": {"gate": "XLE"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "America/New_York"},
+            "xlf": {"display_symbol": "XLF FIN", "asset_class": "ETFS", "name": "Financial Select Sector SPDR", "providers": {"yahoo_etfs": "XLF"}, "broker_symbols": {"gate": "XLF"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "America/New_York"}
         }
 
     def get_all_ids(self) -> List[str]:

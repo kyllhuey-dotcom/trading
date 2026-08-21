@@ -43,9 +43,15 @@ def test_trend_detection():
 # 3. TEST SIGNAL ENGINE
 def test_signal_block_on_range():
     signal = SignalEngine(min_score=75)
-    analysis = {"market_state": "RANGE", "trend": "BULLISH", "status": "VALID"}
+    analysis = {"market_state": "RANGE", "trend": "BULLISH", "status": "VALID", "last_low": 90, "last_high": 110}
     news = {"trading_allowed": True}
-    df = pd.DataFrame({'Close': [100, 101], 'Volume': [10, 10]})
+    # Provide enough rows and required columns for ATR calculation (Lot 1 fix)
+    df = pd.DataFrame({
+        'High': [110]*20,
+        'Low': [90]*20,
+        'Close': [100]*20, 
+        'Volume': [10]*20
+    })
     res = signal.generate_signal(analysis, news, df)
     assert res["status"] == "NO_TRADE"
-    assert "RANGE" in res["reason"]
+    assert "Range" in res["reason"]

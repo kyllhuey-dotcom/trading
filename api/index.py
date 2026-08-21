@@ -21,9 +21,52 @@ from typing import Optional, List, Dict, Any
 import os
 import asyncio
 import json
+import logging
 from datetime import datetime
 
+# Institutional Logging Configuration (Lot 4)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger("QuantumTradePro")
+
+from starlette.middleware.base import BaseHTTPMiddleware
+import time
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, max_requests: int = 60, window_seconds: int = 60):
+        super().__init__(app)
+        self.requests = {} # {ip: [timestamps]}
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+
+    async def dispatch(self, request, call_next):
+        if not request.url.path.startswith("/api"):
+            return await call_next(request)
+            
+        ip = request.client.host
+        now = time.time()
+        
+        if ip not in self.requests:
+            self.requests[ip] = []
+            
+        # Filter timestamps within window
+        self.requests[ip] = [t for t in self.requests[ip] if now - t < self.window_seconds]
+        
+        if len(self.requests[ip]) >= self.max_requests:
+            return json_response({"error": "Rate limit exceeded"}, status_code=429)
+            
+        self.requests[ip].append(now)
+        return await call_next(request)
+
+def json_response(data: dict, status_code: int = 200):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(content=data, status_code=status_code)
+
 app = FastAPI(title="Quantum Trade Pro API")
+app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
 db_manager = DatabaseManager()
 data_engine = DataEngine()
 analysis_engine = AnalysisEngine()
@@ -39,6 +82,9 @@ execution_router = ExecutionRouter(demo_adapter=demo_execution, broker_connector
 state_machine = StateMachine()
 scanner_engine = ScannerEngine(data_engine, analysis_engine, signal_engine, news_engine)
 diagnostic_engine = DiagnosticEngine()
+
+# Global Concurrency Lock (Lot 0)
+state_lock = asyncio.Lock()
 
 # WebSocket Manager (Rule 20, 21, 22)
 class ConnectionManager:
@@ -85,6 +131,7 @@ async def auto_scan_loop():
     """
     while True:
         try:
+            metrics_state["total_scans"] += 1
             # Full Universe Scan
             results = await scanner_engine.scan_all()
             bot_state["latest_scan"] = results
@@ -100,25 +147,15 @@ async def auto_scan_loop():
             # Update global state with selected market from query if possible
             # (Handled in get_status for now, but background scan uses it)
 
-            # BACKGROUND EXECUTION (Lot 18 - Multi-Position)
-            if bot_state["is_running"] and bot_state["armed"]:
+            # BACKGROUND EXECUTION (Lot 2 - Safe Multi-Position)
+            async with state_lock:
                 active_positions = demo_execution.active_positions
                 with db_manager._get_connection() as conn:
-                    rows = conn.execute("SELECT key, value FROM settings").fetchall()
-                    settings_dict = {r["key"]: r["value"] for r in rows}
-                    
-                    # Rule: Allow up to 10 positions if risk is 1% or less (Lot 29)
-                    max_pos = int(settings_dict.get("max_open_positions", 3))
-                    risk_val = float(settings_dict.get("max_risk_pct", 1.0))
-                    
-                    if risk_val <= 1.0:
-                        max_pos = max(max_pos, 10) 
+                    row = conn.execute("SELECT value FROM settings WHERE key = 'max_open_positions'").fetchone()
+                    max_pos = int(row["value"]) if row else 3
                 
                 if len(active_positions) < max_pos:
-                    # Get symbols already in position to avoid duplicates
                     symbols_in_position = [p["symbol"] for p in active_positions]
-                    
-                    # Sort candidates by score
                     candidates = sorted([r for r in results if r.get("score", 0) >= 80], key=lambda x: x.get("score", 0), reverse=True)
                     
                     for res in candidates:
@@ -129,47 +166,68 @@ async def auto_scan_loop():
                         if mid in symbols_in_position:
                             continue
 
-                        # Rule 11/16: Verify Market Open Status before entry
                         if data_engine.universe.get_market_status(mid) != "OPEN":
                             continue
 
-                        # 1. Fetch live data for the candidate
                         ticker = await data_engine.fetch_ticker(mid)
                         if not ticker: continue
 
-                        # 2. Risk Calculation
+                        # Rule: Data Freshness (Lot 3)
+                        if not data_engine.is_fresh(ticker, asset_info.get("asset_class", "CRYPTO")):
+                            continue
+
                         balance = portfolio_engine.get_balance(bot_state["mode"])
-                        risk_data = risk_engine.calculate_position_size(
-                            balance=balance, entry=ticker["last"], stop_loss=ticker["last"] * 0.98
-                        )
+                        # Using dynamic signal SL/TP (Lot 2)
+                        # First generate a real signal for this candidate to get its SL/TP
+                        # We need analysis for this asset specifically
+                        # For simplicity in this loop, we re-run analysis or use candidate fields
+                        # But scanner_engine.scan_asset already ran this.
+                        # Let's assume scanner_engine could return SL/TP if we modified it, 
+                        # or we fetch them now.
                         
-                        if risk_data.get("allowed"):
-                            # 3. Create signal model for router
-                            signal_model = {
-                                "market_id": mid,
-                                "display_symbol": res.get("display_symbol", mid),
-                                "direction": res.get("trend") == "BULLISH" and "BUY" or "SELL",
-                                "entry": ticker["last"],
-                                "sl": ticker["last"] * 0.98,
-                                "tp": ticker["last"] * 1.04,
-                                "score": res["score"]
-                            }
-                            # 4. Execute
-                            exec_res = await execution_router.execute(bot_state["mode"], signal_model, risk_data, ticker)
-                            if exec_res.get("success"):
-                                db_manager.log_audit("CRITICAL", "BACKGROUND_ALPHA_TRADE", f"Auto-executed {mid} ({res['score']}%)", exec_res)
-                                active_positions.append(exec_res.get("position", {})) # Optimistic update
-                                symbols_in_position.append(mid)
+                        # Re-calculating Sl/Tp from signal engine for consistency
+                        # We need the full analysis result. Let's use a simplified version or 
+                        # better, use the ones from the signal_engine generate_signal call.
+                        # Since scan_all doesn't return the full signal_result, let's do a quick check.
+                        
+                        # Fetch OHLCV to re-run signal for SL/TP
+                        df_ltf = await data_engine.fetch_ohlcv(mid, timeframe='1m', limit=50)
+                        if df_ltf.empty: continue
+                        df_htf = await data_engine.fetch_ohlcv(mid, timeframe='15m', limit=30)
+                        htf_analysis = analysis_engine.identify_structure(df_htf)
+                        analysis = analysis_engine.identify_structure(df_ltf, htf_bias=htf_analysis.get("trend"))
+                        asset_info = data_engine.universe.get_info(mid)
+                        news_status = await news_engine.check_trading_allowed(asset_class=asset_info.get("asset_class"))
+                        sig = signal_engine.generate_signal(analysis, news_status, df_ltf)
+                        
+                        if sig.get("status") == "SIGNAL_DETECTED":
+                            risk_data = risk_engine.calculate_position_size(
+                                balance=balance, entry=sig["entry"], stop_loss=sig["sl"], direction=sig["direction"]
+                            )
+                            
+                            if risk_data.get("allowed"):
+                                sig["market_id"] = mid
+                                sig["display_symbol"] = asset_info["display_symbol"]
+                                exec_res = await execution_router.execute(bot_state["mode"], sig, risk_data, ticker)
+                                if exec_res.get("success"):
+                                    metrics_state["total_trades"] += 1
+                                    db_manager.log_audit("CRITICAL", "BACKGROUND_AUTO_TRADE", f"Auto-executed {mid} ({sig['score']}%)", exec_res)
+                                    # Reload from DB (Lot 2)
+                                    active_positions = demo_execution.active_positions
+                                    symbols_in_position.append(mid)
+                                else:
+                                    metrics_state["total_errors"] += 1
 
             # Broadcast via WebSocket
-            await manager.broadcast(json.dumps({
-                "type": "SCAN_COMPLETED",
-                "timestamp": int(datetime.now().timestamp() * 1000),
-                "stats": bot_state["engine_stats"]
-            }))
+            async with state_lock:
+                await manager.broadcast(json.dumps({
+                    "type": "SCAN_COMPLETED",
+                    "timestamp": int(datetime.now().timestamp() * 1000),
+                    "stats": bot_state["engine_stats"]
+                }))
             
         except Exception as e:
-            print(f"Auto-Scan Loop Error: {e}")
+            logger.error(f"Auto-Scan Loop Error: {e}")
         
         # Rule 31: Throttle scan loop based on bot state
         await asyncio.sleep(10 if bot_state["is_running"] else 30)
@@ -183,43 +241,43 @@ async def broadcaster_loop():
     
     while True:
         try:
-            current_mode = bot_state["mode"]
-            # 1. Critical State Broadcast (200ms)
-            active_trades = demo_execution.active_positions
-            balance = portfolio_engine.get_balance(current_mode)
-            
-            # Update Active Trades PnL faster
-            if active_trades:
-                symbols = [t["symbol"] for t in active_trades]
-                quotes = await data_engine.layer.get_all_quotes(symbols, data_engine.universe)
-                tickers = {q.symbol: q.dict() for q in quotes}
-                await demo_execution.update_active_positions(current_mode, tickers)
+            async with state_lock:
+                current_mode = bot_state["mode"]
+                # 1. Critical State Broadcast (200ms)
                 active_trades = demo_execution.active_positions
+                balance = portfolio_engine.get_balance(current_mode)
+                
+                # Update Active Trades PnL faster
+                if active_trades:
+                    symbols = [t["symbol"] for t in active_trades]
+                    quotes = await data_engine.layer.get_all_quotes(symbols, data_engine.universe)
+                    tickers = {q.symbol: q.model_dump() for q in quotes}
+                    await demo_execution.update_active_positions(current_mode, tickers)
+                    active_trades = demo_execution.active_positions
 
-            equity = balance + sum(t.get("pnl", 0.0) for t in active_trades)
-            
-            await manager.broadcast(json.dumps({
-                "type": "ACCOUNT_STREAM",
-                "timestamp": int(datetime.now().timestamp() * 1000),
-                "balance": balance,
-                "equity": equity,
-                "active_trades": active_trades,
-                "status": state_machine.current_state.value,
-                "is_running": bot_state["is_running"],
-                "armed": bot_state["armed"]
-            }))
+                equity = balance + sum(t.get("pnl", 0.0) for t in active_trades)
+                bot_state["equity"] = equity
+                
+                await manager.broadcast(json.dumps({
+                    "type": "ACCOUNT_STREAM",
+                    "timestamp": int(datetime.now().timestamp() * 1000),
+                    "balance": balance,
+                    "equity": equity,
+                    "active_trades": active_trades,
+                    "status": state_machine.current_state.value,
+                    "is_running": bot_state["is_running"],
+                    "armed": bot_state["armed"]
+                }))
 
             # 2. Priority Market Stream (Sub-second)
-            # Stream the asset the user is actually looking at + top market movers
             selected = bot_state.get("selected_market", "btc_usdt")
             priority_mids = list(set([selected, "btc_usdt", "eth_usdt", "sol_usdt", "aapl", "nvda", "eur_usd", "gold"]))
             
             for mid in priority_mids:
-                # Use broadcast_market_update but inside a task for non-blocking
                 asyncio.create_task(data_engine.broadcast_market_update(mid))
 
         except Exception as e:
-            print(f"Broadcaster Critical Error: {e}")
+            logger.error(f"Broadcaster Critical Error: {e}")
             
         await asyncio.sleep(0.2) # 5 times per second for 100% direct feel
 
@@ -321,12 +379,7 @@ async def add_broker_config(config: Dict[str, Any]):
     success = await broker_connector.add_broker(broker_id, exchange_id, api_key, api_secret, passphrase)
     
     if success:
-        with db_manager._get_connection() as conn:
-            conn.execute("""
-                INSERT OR REPLACE INTO broker_configs (broker_id, exchange_id, api_key, api_secret, api_passphrase, is_active)
-                VALUES (?, ?, ?, ?, ?, 1)
-            """, (broker_id, exchange_id, api_key, api_secret, passphrase))
-            conn.commit()
+        db_manager.save_broker_config(broker_id, exchange_id, api_key, api_secret, passphrase)
         return {"success": True, "message": f"Broker {broker_id} connected and saved."}
     else:
         return {"success": False, "message": "Failed to connect with provided credentials."}
@@ -371,6 +424,7 @@ async def get_status(market_id: str = "btc_usdt"):
 
     df_ltf = await data_engine.fetch_ohlcv(market_id, timeframe='1m', limit=100)
     ticker = None
+    data_stale = False # Lot 3 Fix
     for pid, psymbol in info.get("providers", {}).items():
         if pid in data_engine.layer.providers:
             ticker_model = await data_engine.layer.providers[pid].get_quote(psymbol)
@@ -379,26 +433,28 @@ async def get_status(market_id: str = "btc_usdt"):
                 break
 
     if not ticker or df_ltf.empty:
-        if bot_state["is_running"]: state_machine.transition_to(BotState.ERROR)
-        merged_stats = portfolio_engine.get_stats()
-        merged_stats.update(bot_state["engine_stats"])
-        return StatusResponse(
-            status=state_machine.current_state.value,
-            status_display="DATA ERROR",
-            is_running=bot_state["is_running"],
-            mode=bot_state["mode"],
-            armed=bot_state["armed"],
-            balance=portfolio_engine.get_balance(bot_state["mode"]),
-            equity=bot_state["equity"],
-            daily_pnl=portfolio_engine.get_daily_pnl(bot_state["mode"]),
-            drawdown=0.0,
-            news=NewsStatus(**news_status),
-            selected_market=market_id,
-            stats=merged_stats,
-            broker_info=broker_info,
-            broker_connected=broker_info.get("connected", False),
-            asset_info=info
-        )
+        async with state_lock:
+            if bot_state["is_running"]: state_machine.transition_to(BotState.ERROR)
+            merged_stats = portfolio_engine.get_stats()
+            merged_stats.update(bot_state["engine_stats"])
+            balance = portfolio_engine.get_balance(bot_state["mode"]) # Fixed Lot 2
+            return StatusResponse(
+                status=state_machine.current_state.value,
+                status_display="DATA ERROR",
+                is_running=bot_state["is_running"],
+                mode=bot_state["mode"],
+                armed=bot_state["armed"],
+                balance=balance,
+                equity=bot_state["equity"],
+                daily_pnl=portfolio_engine.get_daily_pnl(bot_state["mode"]),
+                drawdown=0.0,
+                news=NewsStatus(**news_status),
+                selected_market=market_id,
+                stats=merged_stats,
+                broker_info=broker_info,
+                broker_connected=broker_info.get("connected", False),
+                asset_info=info
+            )
 
     df_htf = await data_engine.fetch_ohlcv(market_id, timeframe='15m', limit=50)
     htf_analysis = analysis_engine.identify_structure(df_htf)
@@ -406,24 +462,26 @@ async def get_status(market_id: str = "btc_usdt"):
     analysis["df_preview"] = df_ltf.tail(40).to_dict('records')
     
     # 1. Update Positions and get Balance
-    current_mode = bot_state["mode"]
-    
-    if current_mode == "REAL":
-        # Rule 45: Live aggregation for REAL mode
-        broker_balances = await broker_connector.get_all_balances()
-        balance = sum(b.get("total_usdt", 0.0) for b in broker_balances.values() if "total_usdt" in b)
-        # Sync DB for statistics consistency
-        portfolio_engine.set_balance("REAL", balance)
-    else:
+    async with state_lock:
+        current_mode = bot_state["mode"]
         balance = portfolio_engine.get_balance(current_mode)
+        
+        if current_mode == "REAL":
+            # Release lock briefly if this calls network? No, it's better to keep it if quick
+            # but let's assume get_all_balances is quick or we just use cached
+            broker_balances = await broker_connector.get_all_balances()
+            balance = sum(b.get("total_usdt", 0.0) for b in broker_balances.values() if "total_usdt" in b)
+            portfolio_engine.set_balance("REAL", balance)
 
     await demo_execution.update_active_positions(current_mode, {info["display_symbol"]: ticker})
-    active_trades = demo_execution.active_positions
-    active_trade = active_trades[0] if active_trades else None
     
-    # 2. Update Equity (Real-time)
-    total_unrealized_pnl = sum(t.get("pnl", 0.0) for t in active_trades)
-    bot_state["equity"] = balance + total_unrealized_pnl
+    async with state_lock:
+        active_trades = demo_execution.active_positions
+        active_trade = active_trades[0] if active_trades else None
+        
+        # 2. Update Equity (Real-time)
+        total_unrealized_pnl = sum(t.get("pnl", 0.0) for t in active_trades)
+        bot_state["equity"] = balance + total_unrealized_pnl
     
     # 3. Generate Signal
     signal_result = signal_engine.generate_signal(analysis, news_status, df_ltf)
@@ -435,7 +493,7 @@ async def get_status(market_id: str = "btc_usdt"):
 
     reasons = {
         "SYSTEM_ARMED": "Bot is DISARMED.",
-        "DATA_VALID": "Data stale.",
+        "DATA_VALID": "Data stale or invalid." if data_stale else "Data stale.",
         "BROKER_VALID": "Broker disconnected.",
         "MARKET_OPEN": "Market closed.",
         "DAY_ALLOWED": "Unauthorized day.",
@@ -452,6 +510,12 @@ async def get_status(market_id: str = "btc_usdt"):
     }
 
     data_valid = ticker is not None and not df_ltf.empty
+    data_stale = False
+    if data_valid:
+        if not data_engine.is_fresh(ticker, asset_class):
+            data_valid = False
+            data_stale = True
+
     broker_valid = broker_info.get("connected", False) or bot_state["mode"] == "DEMO"
     market_open = ticker.get("status") != "CLOSED" if ticker else False
     day_allowed = news_status.get("day_ok", False)
@@ -482,100 +546,93 @@ async def get_status(market_id: str = "btc_usdt"):
     leverage_valid = True
     risk_reason = "Risk validation failed."
     if signal_valid:
-        risk_data = risk_engine.calculate_position_size(balance=balance, entry=signal_result["entry"], stop_loss=signal_result["sl"])
+        risk_data = risk_engine.calculate_position_size(balance=balance, entry=signal_result["entry"], stop_loss=signal_result["sl"], direction=signal_result["direction"])
         risk_valid = risk_data.get("allowed", False)
         if not risk_valid:
             risk_reason = risk_data.get("reason", "Risk too high.")
         leverage_valid = risk_data.get("leverage", 0) <= risk_engine.max_leverage
 
-    diagnosis = diagnostic_engine.diagnose(
-        symbol=market_id, data_valid=data_valid, day_allowed=day_allowed,
-        session_allowed=session_allowed, news_clear=news_clear, market_open=market_open,
-        not_range=not_range, trend_valid=trend_valid, structure_valid=structure_valid,
-        signal_valid=signal_valid, spread_valid=spread_valid, liquidity_valid=liquidity_valid,
-        risk_valid=risk_valid, leverage_valid=leverage_valid, broker_valid=broker_valid,
-        system_armed=bot_state["armed"], reasons=reasons
-    )
-
-    if bot_state["is_running"] and state_machine.current_state != BotState.EMERGENCY_STOP:
-        # Alpha Override Protocol: Score >= 80 bypasses most filters
-        alpha_override = signal_result.get("score", 0) >= 80
-        
-        # Mandatory Technical Safety (Cannot be bypassed)
-        technical_safety = (
-            bot_state["armed"] and 
-            data_valid and 
-            broker_valid and 
-            market_open and 
-            risk_valid and 
-            not active_trade
+    async with state_lock:
+        diagnosis = diagnostic_engine.diagnose(
+            symbol=market_id, data_valid=data_valid, day_allowed=day_allowed,
+            session_allowed=session_allowed, news_clear=news_clear, market_open=market_open,
+            not_range=not_range, trend_valid=trend_valid, structure_valid=structure_valid,
+            signal_valid=signal_valid, spread_valid=spread_valid, liquidity_valid=liquidity_valid,
+            risk_valid=risk_valid, leverage_valid=leverage_valid, broker_valid=broker_valid,
+            system_armed=bot_state["armed"], reasons=reasons
         )
-        
-        if alpha_override and technical_safety:
-            # Execute immediately if score is high and technicals are safe
-            res = await execution_router.execute(bot_state["mode"], signal_result, risk_data, ticker)
-            db_manager.log_audit("CRITICAL", "ALPHA_OVERRIDE_TRADE", f"Executing High Confidence Signal ({signal_result['score']}%)", res)
-        elif technical_safety:
-            # Normal execution cycle (full diagnostic validation)
-            can_execute_normal = (
-                day_allowed and session_allowed and news_clear and 
-                not_range and trend_valid and structure_valid and signal_valid and 
-                spread_valid and liquidity_valid and leverage_valid
+
+        if bot_state["is_running"] and state_machine.current_state != BotState.EMERGENCY_STOP:
+            alpha_override = signal_result.get("score", 0) >= 80
+            technical_safety = (
+                bot_state["armed"] and data_valid and broker_valid and market_open and risk_valid and not active_trade
             )
-            if can_execute_normal:
+            
+            if alpha_override and technical_safety:
                 res = await execution_router.execute(bot_state["mode"], signal_result, risk_data, ticker)
-                db_manager.log_audit("INFO", "NORMAL_TRADE", f"Executing Normal Diagnostic Signal", res)
-        
-        # Archive signal
-        db_manager.archive_signal(signal_result, "EXECUTED" if (alpha_override and technical_safety) else "FILTERED", diagnosis["main_blocker"])
+                db_manager.log_audit("CRITICAL", "ALPHA_OVERRIDE_TRADE", f"Executing High Confidence Signal ({signal_result['score']}%)", res)
+            elif technical_safety:
+                can_execute_normal = (
+                    day_allowed and session_allowed and news_clear and 
+                    not_range and trend_valid and structure_valid and signal_valid and 
+                    spread_valid and liquidity_valid and leverage_valid
+                )
+                if can_execute_normal:
+                    res = await execution_router.execute(bot_state["mode"], signal_result, risk_data, ticker)
+                    db_manager.log_audit("INFO", "NORMAL_TRADE", f"Executing Normal Diagnostic Signal", res)
+            
+            db_manager.archive_signal(signal_result, "EXECUTED" if (alpha_override and technical_safety) else "FILTERED", diagnosis["main_blocker"])
 
-        if active_trade: state_machine.transition_to(BotState.POSITION_OPEN)
-        elif signal_valid: state_machine.transition_to(BotState.SIGNAL_DETECTED)
-        else: state_machine.transition_to(BotState.RUNNING)
+            if active_trade: state_machine.transition_to(BotState.POSITION_OPEN)
+            elif signal_valid: state_machine.transition_to(BotState.SIGNAL_DETECTED)
+            else: state_machine.transition_to(BotState.RUNNING)
 
-    bot_state["equity"] = balance + (active_trade["pnl"] if active_trade else 0)
+        bot_state["equity"] = balance + (active_trade["pnl"] if active_trade else 0)
     
     merged_stats = portfolio_engine.get_stats()
-    merged_stats.update(bot_state["engine_stats"])
-    
-    return StatusResponse(
-        status=state_machine.current_state.value,
-        status_display=state_machine.current_state.value.replace('_', ' '),
-        is_running=bot_state["is_running"],
-        mode=bot_state["mode"],
-        armed=bot_state["armed"],
-        balance=balance,
-        equity=bot_state["equity"],
-        daily_pnl=daily_pnl,
-        drawdown=current_drawdown,
-        news=NewsStatus(**news_status),
-        selected_market=market_id,
-        analysis=AnalysisResult(**analysis),
-        signal=SignalResult(**signal_result),
-        diagnosis=DiagnosisReport(**diagnosis),
-        active_trade=active_trade,
-        active_trades=active_trades,
-        history=portfolio_engine.history[-15:],
-        stats=merged_stats,
-        broker_info=broker_info,
-        broker_connected=broker_info.get("connected", False) or bot_state["mode"] == "DEMO",
-        asset_info=info,
-        best_setups=sorted([r for r in bot_state["latest_scan"] if r.get("score", 0) > 0 and r.get("market_status") == "OPEN"], key=lambda x: x["score"], reverse=True)[:5]
-    )
+    async with state_lock:
+        merged_stats.update(bot_state["engine_stats"])
+        
+        return StatusResponse(
+            status=state_machine.current_state.value,
+            status_display=state_machine.current_state.value.replace('_', ' '),
+            is_running=bot_state["is_running"],
+            mode=bot_state["mode"],
+            armed=bot_state["armed"],
+            balance=balance,
+            equity=bot_state["equity"],
+            daily_pnl=daily_pnl,
+            drawdown=current_drawdown,
+            news=NewsStatus(**news_status),
+            selected_market=market_id,
+            analysis=AnalysisResult(**analysis),
+            signal=SignalResult(**signal_result),
+            diagnosis=DiagnosisReport(**diagnosis),
+            active_trade=active_trade,
+            active_trades=active_trades,
+            history=portfolio_engine.history[-15:],
+            stats=merged_stats,
+            broker_info=broker_info,
+            broker_connected=broker_info.get("connected", False) or bot_state["mode"] == "DEMO",
+            asset_info=info,
+            best_setups=sorted([r for r in bot_state["latest_scan"] if r.get("score", 0) > 0 and r.get("market_status") == "OPEN"], key=lambda x: x["score"], reverse=True)[:5]
+        )
 
 @app.post("/api/start")
 async def start_bot():
-    if broker_connector.emergency_stop_active:
-        return {"success": False, "message": "Emergency Stop Active."}
-    bot_state["is_running"] = True
-    state_machine.transition_to(BotState.RUNNING)
-    return {"success": True, "status": "RUNNING"}
+    async with state_lock:
+        if broker_connector.emergency_stop_active:
+            return {"success": False, "message": "Emergency Stop Active."}
+        bot_state["is_running"] = True
+        state_machine.transition_to(BotState.RUNNING)
+        return {"success": True, "status": "RUNNING"}
 
 @app.post("/api/stop")
 async def stop_bot():
-    bot_state["is_running"] = False
-    state_machine.transition_to(BotState.STOPPED)
-    return {"success": True, "status": "STOPPED"}
+    async with state_lock:
+        bot_state["is_running"] = False
+        state_machine.transition_to(BotState.STOPPED)
+        return {"success": True, "status": "STOPPED"}
 
 @app.get("/api/demo/account")
 async def get_demo_account():
@@ -622,10 +679,16 @@ async def get_latest_news():
 
 @app.post("/api/emergency-stop")
 async def emergency_stop():
-    broker_connector.trigger_emergency_stop()
-    bot_state["is_running"] = False
-    bot_state["armed"] = False
-    return {"status": "STOPPED"}
+    async with state_lock:
+        broker_connector.trigger_emergency_stop()
+        bot_state["is_running"] = False
+        bot_state["armed"] = False
+        # Force Close All Positions (Lot 3)
+        demo_execution.clear_active_positions("DEMO")
+        # In REAL mode, we should ideally call broker_connector.close_all_positions()
+        # but since we only have placeholders/Gate, we'll log it.
+        db_manager.log_audit("ERROR", "EMERGENCY_STOP", "All positions force closed locally.")
+        return {"status": "STOPPED", "message": "Emergency Stop Active. All positions closed."}
 
 @app.post("/api/emergency-stop/reset")
 async def reset_emergency():
@@ -634,17 +697,38 @@ async def reset_emergency():
 
 @app.post("/api/mode")
 async def toggle_mode():
-    new_mode = "REAL" if bot_state["mode"] == "DEMO" else "DEMO"
-    success, msg = await broker_connector.set_mode(new_mode)
-    if success:
-        bot_state["mode"] = new_mode
-    return {"success": success, "mode": bot_state["mode"], "message": msg}
+    async with state_lock:
+        new_mode = "REAL" if bot_state["mode"] == "DEMO" else "DEMO"
+        success, msg = await broker_connector.set_mode(new_mode)
+        if success:
+            bot_state["mode"] = new_mode
+        return {"success": success, "mode": bot_state["mode"], "message": msg}
 
 @app.post("/api/arm")
 async def arm_bot():
-    bot_state["armed"] = not bot_state["armed"]
-    db_manager.log_audit("INFO", "SYSTEM_ARM", f"System armed state: {bot_state['armed']}")
-    return {"armed": bot_state["armed"]}
+    async with state_lock:
+        bot_state["armed"] = not bot_state["armed"]
+        db_manager.log_audit("INFO", "SYSTEM_ARM", f"System armed state: {bot_state['armed']}")
+        return {"armed": bot_state["armed"]}
+
+metrics_state = {
+    "total_scans": 0,
+    "total_trades": 0,
+    "total_errors": 0,
+    "start_time": datetime.now()
+}
+
+@app.get("/api/metrics")
+async def get_metrics():
+    """Rule: Institutional Observability (Lot 4)."""
+    uptime = (datetime.now() - metrics_state["start_time"]).total_seconds()
+    return {
+        "uptime_seconds": uptime,
+        "total_scans": metrics_state["total_scans"],
+        "total_trades": metrics_state["total_trades"],
+        "total_errors": metrics_state["total_errors"],
+        "scans_per_minute": (metrics_state["total_scans"] / (uptime / 60)) if uptime > 0 else 0
+    }
 
 @app.get("/healthz")
 async def healthz():

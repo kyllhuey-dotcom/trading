@@ -24,7 +24,7 @@ class RiskEngine:
         self.last_loss_time: Optional[datetime] = None
         self.cool_down_mins = 30
 
-    def calculate_position_size(self, balance: float, entry: float, stop_loss: float, fee_pct: float = 0.05) -> Dict[str, Any]:
+    def calculate_position_size(self, balance: float, entry: float, stop_loss: float, direction: str = "BUY", fee_pct: float = 0.05) -> Dict[str, Any]:
         """
         Calculates position size and leverage with advanced safety checks.
         """
@@ -54,7 +54,12 @@ class RiskEngine:
         # 4. CALCULATE CASH RISK
         risk_amount = balance * (self.max_risk_pct / 100)
         
-        # 5. STOP LOSS DISTANCE
+        # 5. STOP LOSS DISTANCE & SIDE VALIDATION (Lot 3)
+        if direction == "BUY" and stop_loss >= entry:
+            return {"allowed": False, "reason": "Invalid SL for BUY (must be < entry)"}
+        if direction == "SELL" and stop_loss <= entry:
+            return {"allowed": False, "reason": "Invalid SL for SELL (must be > entry)"}
+
         price_risk_per_unit = abs(entry - stop_loss)
         if price_risk_per_unit == 0:
             return {"allowed": False, "reason": "Invalid Stop Loss distance (Zero)"}

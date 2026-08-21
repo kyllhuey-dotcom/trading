@@ -409,6 +409,9 @@
                             <div onclick="setMarketFilter('ALL')" class="switch-option active">ALL</div>
                             <div onclick="setMarketFilter('CRYPTO')" class="switch-option">CRYPTO</div>
                             <div onclick="setMarketFilter('STOCKS')" class="switch-option">STOCKS</div>
+                            <div onclick="setMarketFilter('FUTURES')" class="switch-option">FUTURES</div>
+                            <div onclick="setMarketFilter('ETFS')" class="switch-option">ETFS</div>
+                            <div onclick="setMarketFilter('BONDS')" class="switch-option">BONDS</div>
                             <div onclick="setMarketFilter('FOREX')" class="switch-option">FOREX</div>
                             <div onclick="setMarketFilter('INDICES')" class="switch-option">INDICES</div>
                             <div onclick="setMarketFilter('COMMODITIES')" class="switch-option">COMMODITIES</div>
@@ -1387,6 +1390,9 @@
             const displaySymbol = s.selected_market.toUpperCase().replace('_', '/');
             document.getElementById('active-symbol-header').innerText = displaySymbol;
             document.getElementById('bot-mode-display').innerText = `${s.mode} MODE ACTIVE`;
+            if (s.mode === 'REAL') {
+                document.getElementById('bot-mode-display').innerHTML += ' <span class="text-[7px] text-accent-red font-black">(BETA - NOT PROD READY)</span>';
+            }
             
             if (document.getElementById('trading-active-symbol')) {
                 document.getElementById('trading-active-symbol').innerText = displaySymbol;
@@ -1698,8 +1704,8 @@
             const res = await fetchAPI('/markets');
             if (res && !res.detail) {
                 let html = '';
-                // Rule: Ensure we only iterate over valid categories (All 5)
-                const categories = ["CRYPTO", "STOCKS", "FOREX", "INDICES", "COMMODITIES"];
+                // Rule: Ensure we only iterate over valid categories (All 8)
+                const categories = ["CRYPTO", "STOCKS", "FUTURES", "ETFS", "BONDS", "FOREX", "INDICES", "COMMODITIES"];
                 
                 categories.forEach(cat => {
                     if (currentFilter !== 'ALL' && cat !== currentFilter) return;

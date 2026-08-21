@@ -3,6 +3,7 @@ import os
 import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from cryptography.fernet import Fernet
 
 class DatabaseManager:
     """
@@ -12,11 +13,33 @@ class DatabaseManager:
     def __init__(self, db_path: str = "data/quantum_trade.db"):
         self.db_path = db_path
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        # Initialize encryption (Lot 4)
+        self.key = os.getenv("FERNET_KEY")
+        if not self.key:
+            # Fallback for dev/demo if key is missing, 
+            # but institutional standard requires a real key.
+            self.cipher = None
+        else:
+            self.cipher = Fernet(self.key.encode())
         self._init_db()
+
+    def encrypt(self, value: Optional[str]) -> Optional[str]:
+        if not value or not self.cipher: return value
+        return self.cipher.encrypt(value.encode()).decode()
+
+    def decrypt(self, value: Optional[str]) -> Optional[str]:
+        if not value or not self.cipher: return value
+        try:
+            return self.cipher.decrypt(value.encode()).decode()
+        except Exception:
+            return value # Fallback to plaintext if decryption fails
 
     def _get_connection(self):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        # Enable WAL mode + busy timeout for institutional robustness (Lot 0)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
     def _init_db(self):
@@ -224,6 +247,33 @@ class DatabaseManager:
         with self._get_connection() as conn:
             conn.execute("DELETE FROM trades WHERE mode = ? AND status = 'CLOSED'", (mode,))
             conn.commit()
+
+    # Broker Configs with Encryption (Lot 4)
+    def save_broker_config(self, broker_id: str, exchange_id: str, api_key: str, api_secret: str, passphrase: Optional[str] = None):
+        with self._get_connection() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO broker_configs (broker_id, exchange_id, api_key, api_secret, api_passphrase, is_active)
+                VALUES (?, ?, ?, ?, ?, 1)
+            """, (
+                broker_id, 
+                exchange_id, 
+                self.encrypt(api_key), 
+                self.encrypt(api_secret), 
+                self.encrypt(passphrase)
+            ))
+            conn.commit()
+
+    def get_active_broker_configs(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM broker_configs WHERE is_active = 1").fetchall()
+            configs = []
+            for row in rows:
+                d = dict(row)
+                d["api_key"] = self.decrypt(d["api_key"])
+                d["api_secret"] = self.decrypt(d["api_secret"])
+                d["api_passphrase"] = self.decrypt(d["api_passphrase"])
+                configs.append(d)
+            return configs
 
     def _row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
         d = dict(row)

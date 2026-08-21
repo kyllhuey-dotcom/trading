@@ -16,10 +16,10 @@ if grep -rE "api_key\s*=\s*\"[a-zA-Z0-9]{10,}\"" api/ | grep -v "os.getenv"; the
 fi
 echo "  - No hardcoded secrets found."
 
-# 3. Run Test Suite
-echo "[3/4] Running automated tests..."
+# 3. Run Test Suite with Coverage Gate (50%)
+echo "[3/4] Running automated tests with coverage gate..."
 export TESTING=true
-pytest tests/ -v
+pytest tests/ --cov=api --cov-fail-under=50 -v
 
 # 4. Mock Build check (Check if app starts)
 echo "[4/4] Checking application entry point..."
