@@ -321,7 +321,7 @@
             <section id="tab-dashboard" class="tab-content active">
                 <div class="max-w-7xl mx-auto">
                     <header class="mb-4">
-                        <h2 class="text-2xl font-black tracking-tight mb-0.5">Command Center</h2>
+                        <h2 class="font-black text-sm uppercase tracking-widest mb-0.5">Command Center</h2>
                         <p class="text-xs text-secondary font-medium">Real-time performance and system diagnostic.</p>
                     </header>
                     
@@ -402,7 +402,7 @@
                 <div class="max-w-7xl mx-auto">
                     <header class="flex justify-between items-center mb-6">
                         <div>
-                            <h2 class="text-2xl font-black tracking-tight mb-1">Market Hub</h2>
+                            <h2 class="font-black text-sm uppercase tracking-widest mb-1">Market Hub</h2>
                             <p class="text-xs text-secondary font-medium">Global assets across 5 classes.</p>
                         </div>
                         <div class="switch-container p-1" id="market-filters">
@@ -424,7 +424,7 @@
             <section id="tab-scanner" class="tab-content">
                 <div class="max-w-7xl mx-auto">
                     <header class="mb-6">
-                        <h2 class="text-2xl font-black tracking-tight mb-1">Global Radar</h2>
+                        <h2 class="font-black text-sm uppercase tracking-widest mb-1">Global Radar</h2>
                         <p class="text-xs text-secondary font-medium">Unified scanning of all tracked instruments.</p>
                     </header>
                     <div class="card-premium !p-0 overflow-hidden border border-black/5 dark:border-white/5">
@@ -448,7 +448,7 @@
             <section id="tab-brokers" class="tab-content">
                 <div class="max-w-7xl mx-auto">
                     <header class="mb-6">
-                        <h2 class="text-2xl font-black tracking-tight mb-1">Brokers & Wallets</h2>
+                        <h2 class="font-black text-sm uppercase tracking-widest mb-1">Brokers & Wallets</h2>
                         <p class="text-xs text-secondary font-medium">Connect institutional exchanges.</p>
                     </header>
 
@@ -705,7 +705,7 @@
             <section id="tab-positions" class="tab-content">
                 <div class="max-w-4xl mx-auto">
                     <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-2xl font-black tracking-tight">Exposure</h2>
+                        <h2 class="font-black text-sm uppercase tracking-widest">Exposure</h2>
                         <button onclick="fetchAPI('/demo/reset', 'POST').then(update)" class="btn-premium bg-red-500/10 text-red-500 text-[9px] font-black uppercase tracking-widest px-4 hover:bg-red-500/20 transition-colors">Exit All</button>
                     </div>
                     <div id="active-pos-list" class="space-y-4"></div>
@@ -714,7 +714,7 @@
 
             <section id="tab-history" class="tab-content">
                 <div class="max-w-5xl mx-auto">
-                    <h2 class="text-2xl font-black tracking-tight mb-6">Trade Journal</h2>
+                    <h2 class="font-black text-sm uppercase tracking-widest mb-6">Trade Journal</h2>
                     <div class="card-premium !p-0 overflow-hidden border border-black/5 dark:border-white/5">
                          <table class="w-full text-xs text-left">
                             <thead class="bg-black/[0.02] dark:bg-white/[0.02] text-[9px] text-secondary font-black uppercase tracking-widest">
@@ -967,7 +967,7 @@
                                     <p class="text-[9px] font-bold text-secondary uppercase tracking-widest">${p.direction} • ${p.quantity.toFixed(4)} UNITS</p>
                                 </div>
                                 <div class="text-right">
-                                    <p class="text-2xl font-black tracking-tighter ${p.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">${p.pnl >= 0 ? '+' : ''}${p.pnl.toFixed(2)} ${currency}</p>
+                                    <p class="font-black text-sm uppercase tracking-widester ${p.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">${p.pnl >= 0 ? '+' : ''}${p.pnl.toFixed(2)} ${currency}</p>
                                 </div>
                             </div>
                             <div class="grid grid-cols-3 gap-4 pt-3 border-t border-black/5 dark:border-white/5">
