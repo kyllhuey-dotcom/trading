@@ -399,6 +399,11 @@ async def arm_bot():
     bot_state["armed"] = not bot_state["armed"]
     return {"armed": bot_state["armed"]}
 
+@app.get("/healthz")
+async def healthz():
+    """Simple immediate health check (Rule 39)."""
+    return {"status": "OK"}
+
 @app.get("/api/health")
 async def health_check():
     """
@@ -428,4 +433,6 @@ app.mount("/", StaticFiles(directory="public"), name="public")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8005)
+    import os
+    port = int(os.getenv("PORT", 8005))
+    uvicorn.run(app, host="0.0.0.0", port=port)

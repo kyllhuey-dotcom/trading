@@ -16,7 +16,8 @@ L'application est désormais robuste, testée et redondante. Elle suit les stand
 - **Persistence** : Migration SQLite terminée et fonctionnelle.
 
 ### Infrastructure (Lot 3)
-- **Healthcheck** : Configuré sur `/api/health` pour Railway.
+- **Healthcheck** : Configuré sur `/healthz` (immédiat) et `/api/health` (détaillé) pour Railway.
+- **Port Binding** : Utilisation dynamique de la variable d'environnement `PORT`.
 - **Validation** : Script `scripts/validate.sh` prêt pour intégration CI.
 - **Changelog** : Historique des modifications documenté.
 
