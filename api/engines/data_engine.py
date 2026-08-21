@@ -1,6 +1,6 @@
 from .data_layer import DataLayer
 from .market_universe import MarketUniverse
-from .data_providers.binance_provider import BinanceProvider
+from .data_providers.bybit_provider import BybitProvider
 from .data_providers.gate_provider import GateProvider
 from .data_providers.yahoo_provider import YahooProvider
 from .data_health import DataHealthMonitor
@@ -20,13 +20,15 @@ class DataEngine:
         self.universe = MarketUniverse()
         
         # Initialize Providers (Rule 10)
-        self.crypto_provider = GateProvider() 
+        self.crypto_primary = GateProvider() 
+        self.crypto_backup = BybitProvider()
         self.forex_provider = YahooProvider("FOREX")
         self.index_provider = YahooProvider("INDICES")
         self.commodity_provider = YahooProvider("COMMODITIES")
         
         # Register in Layer
-        self.layer.register_provider("gate", self.crypto_provider)
+        self.layer.register_provider("gate", self.crypto_primary)
+        self.layer.register_provider("bybit", self.crypto_backup)
         self.layer.register_provider("yahoo_forex", self.forex_provider)
         self.layer.register_provider("yahoo_indices", self.index_provider)
         self.layer.register_provider("yahoo_commodities", self.commodity_provider)
@@ -101,14 +103,8 @@ class DataEngine:
         return overview
 
     async def fetch_ohlcv(self, market_id: str, timeframe: str = '1m', limit: int = 100):
-        # Map market_id to its provider and fetch (Rule 25)
-        info = self.universe.get_info(market_id)
-        if not info: return pd.DataFrame()
-        
-        for pid, psymbol in info.get("providers", {}).items():
-            if pid in self.layer.providers:
-                return await self.layer.providers[pid].get_ohlcv(psymbol, timeframe, limit)
-        return pd.DataFrame()
+        # Rule 25: Map market_id to its providers and fetch with fallback
+        return await self.layer.get_ohlcv(market_id, timeframe, limit, self.universe)
 
     async def fetch_ticker(self, market_id: str):
         quotes = await self.layer.get_all_quotes([market_id], self.universe)
@@ -122,4 +118,5 @@ class DataEngine:
         return await self.fetch_ticker(symbol)
         
     async def shutdown(self):
-        await self.crypto_provider.close()
+        await self.crypto_primary.close()
+        await self.crypto_backup.close()

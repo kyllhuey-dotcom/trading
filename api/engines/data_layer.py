@@ -26,25 +26,53 @@ class DataLayer:
                 await sub.broadcast(json.dumps(update_data))
 
     async def get_all_quotes(self, market_ids: List[str], catalog: Any) -> List[TickerModel]:
-        tasks = []
+        """
+        Fetches quotes with automatic fallback logic (Lot 2 Redundancy).
+        """
+        results = []
         for mid in market_ids:
-            # Rule 14: Try to find which provider has this symbol
             info = catalog.get_info(mid)
             if not info: continue
             
-            for pid, psymbol in info.get("providers", {}).items():
+            # Sorted providers list: we try them in order
+            provider_list = list(info.get("providers", {}).items())
+            
+            quote = None
+            for pid, psymbol in provider_list:
                 if pid in self.providers:
-                    # We create a task for the first available provider found
-                    tasks.append(self.providers[pid].get_quote(psymbol))
-                    break
+                    try:
+                        quote = await self.providers[pid].get_quote(psymbol)
+                        if quote:
+                            # Successfully fetched from this provider
+                            break
+                        else:
+                            print(f"Fallback: Provider {pid} returned no data for {psymbol}. Trying next...")
+                    except Exception as e:
+                        print(f"Fallback: Provider {pid} failed for {psymbol}: {e}. Trying next...")
+            
+            if quote:
+                results.append(quote)
         
-        results = await asyncio.gather(*tasks)
-        return [r for r in results if r is not None]
+        return results
 
-    async def get_ohlcv(self, symbol_id: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
-        provider_id = self.symbol_map.get(symbol_id)
-        if provider_id and provider_id in self.providers:
-            return await self.providers[provider_id].get_ohlcv(symbol_id, timeframe, limit)
+    async def get_ohlcv(self, symbol_id: str, timeframe: str, limit: int = 100, catalog: Any = None) -> pd.DataFrame:
+        """
+        Fetches OHLCV with fallback logic.
+        """
+        if not catalog: return pd.DataFrame()
+        
+        info = catalog.get_info(symbol_id)
+        if not info: return pd.DataFrame()
+
+        for pid, psymbol in info.get("providers", {}).items():
+            if pid in self.providers:
+                try:
+                    df = await self.providers[pid].get_ohlcv(psymbol, timeframe, limit)
+                    if not df.empty:
+                        return df
+                except Exception as e:
+                    print(f"OHLCV Fallback: {pid} failed: {e}")
+        
         return pd.DataFrame()
 
     async def get_health(self) -> List[Dict[str, Any]]:

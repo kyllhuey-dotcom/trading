@@ -141,8 +141,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(auto_scan_loop())
-    asyncio.create_task(broadcaster_loop())
+    if os.getenv("TESTING") != "true":
+        asyncio.create_task(auto_scan_loop())
+        asyncio.create_task(broadcaster_loop())
 
 @app.get("/api/status", response_model=StatusResponse)
 async def get_status(market_id: str = "btc_usdt"):
@@ -207,7 +208,8 @@ async def get_status(market_id: str = "btc_usdt"):
     
     balance = portfolio_engine.get_balance(bot_state["mode"])
     risk_data = {"allowed": False}
-    
+    risk_reason = "Risk validation not performed (no signal)." # Default value defined before usage
+
     reasons = {
         "SYSTEM_ARMED": "Bot is DISARMED.",
         "DATA_VALID": "Data stale.",
@@ -280,8 +282,12 @@ async def get_status(market_id: str = "btc_usdt"):
             spread_valid and liquidity_valid and leverage_valid and not active_trade
         )
         if can_execute:
-            await execution_router.execute(bot_state["mode"], signal_result, risk_data, ticker)
+            res = await execution_router.execute(bot_state["mode"], signal_result, risk_data, ticker)
+            db_manager.log_audit("INFO", "TRADE_EXECUTION", f"Order sent for {market_id}", res)
         
+        # Archive signal for quant analysis
+        db_manager.archive_signal(signal_result, "EXECUTED" if can_execute else "FILTERED", diagnosis["main_blocker"])
+
         if active_trade: state_machine.transition_to(BotState.POSITION_OPEN)
         elif signal_valid: state_machine.transition_to(BotState.SIGNAL_DETECTED)
         else: state_machine.transition_to(BotState.RUNNING)
@@ -392,6 +398,27 @@ async def toggle_mode():
 async def arm_bot():
     bot_state["armed"] = not bot_state["armed"]
     return {"armed": bot_state["armed"]}
+
+@app.get("/api/health")
+async def health_check():
+    """
+    Rule 39: Applicative Health Check.
+    Checks connectivity to providers and internal engine state.
+    """
+    data_health = await data_engine.health_monitor.get_health_report()
+    db_status = "ONLINE"
+    try:
+        db_manager.get_balance("DEMO")
+    except:
+        db_status = "ERROR"
+        
+    return {
+        "status": "UP",
+        "timestamp": datetime.now().isoformat(),
+        "database": db_status,
+        "providers": data_health,
+        "bot_running": bot_state["is_running"]
+    }
 
 @app.get("/")
 async def read_index():

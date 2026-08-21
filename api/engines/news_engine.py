@@ -144,9 +144,8 @@ class EventRiskEngine:
 class SessionFilter:
     def __init__(self, timezone: str = 'Europe/Paris'):
         self.tz = pytz.timezone(timezone)
-        # Rule 19: Automated entry ONLY on Tuesday, Wednesday, and Thursday
-        # Python weekday: Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
-        self.allowed_days = [1, 2, 3] 
+        # MISSION: Authorized to trade ALL DAYS (0-6) whenever the market is open
+        self.allowed_days = [0, 1, 2, 3, 4, 5, 6] 
 
     def is_trading_allowed(self, asset_class: str = "CRYPTO") -> Dict[str, Any]:
         now = datetime.now(self.tz)

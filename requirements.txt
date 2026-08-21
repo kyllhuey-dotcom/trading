@@ -10,3 +10,5 @@ beautifulsoup4
 lxml
 feedparser
 httpx
+pytest
+pytest-asyncio

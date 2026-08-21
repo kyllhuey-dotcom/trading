@@ -30,12 +30,6 @@ class DatabaseManager:
                 )
             """)
             
-            # Initial seed for accounts if empty
-            cursor = conn.execute("SELECT COUNT(*) FROM accounts")
-            if cursor.fetchone()[0] == 0:
-                conn.execute("INSERT INTO accounts (mode, balance, currency) VALUES (?, ?, ?)", ("DEMO", 10000.0, "EUR"))
-                conn.execute("INSERT INTO accounts (mode, balance, currency) VALUES (?, ?, ?)", ("REAL", 0.0, "EUR"))
-
             # Trades Table (Rule 38)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS trades (
@@ -58,6 +52,58 @@ class DatabaseManager:
                     metadata TEXT
                 )
             """)
+
+            # Audit Logs (Institutional Compliance)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                    level TEXT,
+                    action TEXT,
+                    message TEXT,
+                    metadata TEXT
+                )
+            """)
+
+            # Signals Archive (Quant Analysis)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS signals_archive (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                    market_id TEXT,
+                    direction TEXT,
+                    score INTEGER,
+                    price REAL,
+                    setup_type TEXT,
+                    decision TEXT, -- EXECUTED, BLOCKED, LOW_SCORE
+                    reason TEXT
+                )
+            """)
+            
+            # Initial seed for accounts if empty
+            cursor = conn.execute("SELECT COUNT(*) FROM accounts")
+            if cursor.fetchone()[0] == 0:
+                conn.execute("INSERT INTO accounts (mode, balance, currency) VALUES (?, ?, ?)", ("DEMO", 10000.0, "EUR"))
+                conn.execute("INSERT INTO accounts (mode, balance, currency) VALUES (?, ?, ?)", ("REAL", 0.0, "EUR"))
+
+            conn.commit()
+
+    def log_audit(self, level: str, action: str, message: str, metadata: Dict = None):
+        with self._get_connection() as conn:
+            conn.execute("INSERT INTO audit_logs (level, action, message, metadata) VALUES (?, ?, ?, ?)",
+                        (level, action, message, json.dumps(metadata or {})))
+            conn.commit()
+
+    def archive_signal(self, signal_data: Dict[str, Any], decision: str, reason: str):
+        with self._get_connection() as conn:
+            conn.execute("""
+                INSERT INTO signals_archive (market_id, direction, score, price, setup_type, decision, reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                signal_data.get("market_id"), signal_data.get("direction"), 
+                signal_data.get("score"), signal_data.get("entry"),
+                signal_data.get("setup_type"), decision, reason
+            ))
             conn.commit()
 
     # Account Operations
