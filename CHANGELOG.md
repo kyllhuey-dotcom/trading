@@ -1,5 +1,19 @@
 # Changelog - Quantum Trade Pro
 
+## [1.4.0] - 2026-08-21
+### Added
+- **Advanced Position Management**: Dynamic Trailing Stop, Partial Take-Profit (50%), and automatic Break-even.
+- **Correlation Filtering**: RiskEngine now blocks highly correlated trades to prevent over-exposure.
+- **Notification System**: Real-time Telegram and Discord alerts for signals and trade events.
+- **Performance Dashboard**: New `/api/performance` endpoint with detailed strategy metrics (Winrate, PF, Expectancy).
+- **Backtesting Engine**: Historical validation framework for strategies.
+- **Realistic Paper Trading**: Simulated latency, slippage, and order rejections in DEMO mode.
+- **Graceful Shutdown**: Proper closure of all broker connections and data streams.
+
+### Improved
+- Structured logging with automatic file rotation.
+- Enhanced API metrics and observability.
+
 ## [1.3.0] - 2026-08-21
 ### Added
 - **Multi-Strategy Core**: Implemented a modular framework supporting "multi" mode.

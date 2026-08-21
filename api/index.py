@@ -15,6 +15,8 @@ from api.engines.broker_connector import BrokerConnector
 from api.engines.scanner_engine import ScannerEngine
 from api.engines.diagnostic_engine import DiagnosticEngine
 from api.engines.news_aggregator import NewsAggregator
+from api.engines.backtest_engine import BacktestEngine
+from api.engines.notification_engine import NotificationEngine
 from api.models import StatusResponse, NewsStatus, AnalysisResult, SignalResult, DiagnosisReport
 
 from typing import Optional, List, Dict, Any
@@ -24,11 +26,22 @@ import json
 import logging
 from datetime import datetime
 
-# Institutional Logging Configuration (Lot 4)
+from logging.handlers import RotatingFileHandler
+
+# Institutional Logging Configuration (Lot 4 & 14)
+log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+log_file = "data/trading_bot.log"
+os.makedirs("data", exist_ok=True)
+
+file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=5)
+file_handler.setFormatter(log_formatter)
+
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_formatter)
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    handlers=[file_handler, console_handler]
 )
 logger = logging.getLogger("QuantumTradePro")
 
@@ -74,15 +87,16 @@ news_engine = NewsEngine()
 news_aggregator = NewsAggregator()
 signal_engine = SignalEngine()
 risk_engine = RiskEngine(max_risk_pct=1.0)
+notification_engine = NotificationEngine()
 portfolio_engine = PortfolioEngine(db_manager=db_manager)
-demo_execution = ExecutionEngine(portfolio=portfolio_engine, db_manager=db_manager, risk_engine=risk_engine, universe=data_engine.universe)
+demo_execution = ExecutionEngine(portfolio=portfolio_engine, db_manager=db_manager, risk_engine=risk_engine, universe=data_engine.universe, notification_engine=notification_engine)
 broker_connector = BrokerConnector()
 broker_connector.universe = data_engine.universe # Share the same universe
 execution_router = ExecutionRouter(demo_adapter=demo_execution, broker_connector=broker_connector)
 state_machine = StateMachine()
 scanner_engine = ScannerEngine(data_engine, analysis_engine, signal_engine, news_engine)
 diagnostic_engine = DiagnosticEngine()
-
+backtest_engine = BacktestEngine(analysis_engine, signal_engine, risk_engine)
 # Global Concurrency Lock (Lot 0)
 state_lock = asyncio.Lock()
 
@@ -193,7 +207,12 @@ async def auto_scan_loop():
                              continue
                         
                         risk_data = risk_engine.calculate_position_size(
-                            balance=balance, entry=sig["entry"], stop_loss=sig["sl"], direction=sig["direction"]
+                            balance=balance, 
+                            entry=sig["entry"], 
+                            stop_loss=sig["sl"], 
+                            direction=sig["direction"],
+                            symbol=mid,
+                            active_positions=active_positions
                         )
                         
                         if risk_data.get("allowed"):
@@ -208,6 +227,14 @@ async def auto_scan_loop():
                                     metrics_state["signals_by_strategy"][strat] += 1
                                     
                                 db_manager.log_audit("CRITICAL", "BACKGROUND_AUTO_TRADE", f"Auto-executed {mid} ({sig['score']}%)", exec_res)
+                                
+                                # Notification (Lot 10)
+                                asyncio.create_task(notification_engine.notify("ORDER_OPEN", {
+                                    "symbol": mid,
+                                    "entry_price": sig["entry"],
+                                    "quantity": risk_data["quantity"]
+                                }))
+                                
                                 # Reload from DB (Lot 2)
                                 active_positions = demo_execution.active_positions
                                 symbols_in_position.append(mid)
@@ -282,6 +309,36 @@ async def broadcaster_loop():
             
         await asyncio.sleep(0.2) # 5 times per second for 100% direct feel
 
+async def daily_report_loop():
+    """
+    Sends a daily summary of performance (Lot 11).
+    Runs once every 24 hours.
+    """
+    while True:
+        try:
+            # Wait for 24h (approximate check every hour)
+            now = datetime.now()
+            # If it's around midnight (00:00 to 01:00)
+            if now.hour == 0:
+                report = portfolio_engine.get_performance_report(bot_state["mode"])
+                if report["overall"]["total_trades"] > 0:
+                    msg = (
+                        f"📊 <b>DAILY PERFORMANCE REPORT</b>\n"
+                        f"Mode: {report['mode']}\n"
+                        f"PnL Today: {report['daily_pnl']:.2f}€\n"
+                        f"Win Rate: {report['overall']['win_rate']}%\n"
+                        f"Profit Factor: {report['overall']['profit_factor']}\n"
+                        f"Total Trades: {report['overall']['total_trades']}"
+                    )
+                    await notification_engine.send_telegram(msg)
+                
+                # Sleep to avoid sending multiple reports in the same hour
+                await asyncio.sleep(3601)
+        except Exception as e:
+            logger.error(f"Daily Report Loop Error: {e}")
+            
+        await asyncio.sleep(3600) # Check every hour
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -294,7 +351,19 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.on_event("startup")
 async def startup_event():
     db_manager.log_audit("INFO", "SYSTEM_STARTUP", "Quantum Trade Pro Institutional Core Active.")
-    db_manager.log_audit("INFO", "DATA_INTEGRITY", "Data Authenticity Verified: Connected to Gate.io (LIVE) and Yahoo Finance (DELAYED).")
+    
+    # Validation des Settings (Lot 15)
+    with db_manager._get_connection() as conn:
+        rows = conn.execute("SELECT * FROM settings").fetchall()
+        settings = {row["key"]: row["value"] for row in rows}
+        
+        # Check Critical Ranges
+        if float(settings.get("max_risk_pct", 0)) > 5.0:
+            logger.warning("CRITICAL: max_risk_pct is set > 5%. Resetting to 1.0% for safety.")
+            conn.execute("UPDATE settings SET value = '1.0' WHERE key = 'max_risk_pct'")
+            conn.commit()
+            
+    db_manager.log_audit("INFO", "DATA_INTEGRITY", "Data Authenticity Verified: Connected to Gate.io (LIVE).")
     
     # Load settings from DB (Lot 8)
     with db_manager._get_connection() as conn:
@@ -305,11 +374,25 @@ async def startup_event():
             signal_engine.set_active_strategies(strategies)
         if "min_signal_score" in settings:
             signal_engine.min_score = int(settings["min_signal_score"])
+        if "telegram_token" in settings and "telegram_chat_id" in settings:
+            notification_engine.update_config(settings["telegram_token"], settings["telegram_chat_id"])
             
     if os.getenv("TESTING") != "true":
         await broker_connector.initialize_from_db(db_manager)
         asyncio.create_task(auto_scan_loop())
         asyncio.create_task(broadcaster_loop())
+        asyncio.create_task(daily_report_loop())
+
+@app.get("/api/performance")
+async def get_performance(mode: str = "DEMO"):
+    """Rule: Institutional Reporting (Lot 11)."""
+    return portfolio_engine.get_performance_report(mode)
+
+@app.post("/api/backtest")
+async def run_backtest(symbol: str = "btc_usdt", timeframe: str = "1m", limit: int = 500, strategy: str = "structure"):
+    """Rule: Strategy Validation (Lot 12)."""
+    df = await data_engine.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+    return await backtest_engine.run_backtest(symbol, df, strategy_mode=strategy)
 
 @app.get("/api/settings")
 async def get_settings():
@@ -333,6 +416,9 @@ async def save_settings(new_settings: Dict[str, str]):
     if "active_strategies" in new_settings:
         strategies = [s.strip() for s in new_settings["active_strategies"].split(',')]
         signal_engine.set_active_strategies(strategies)
+    
+    if "telegram_token" in new_settings and "telegram_chat_id" in new_settings:
+        notification_engine.update_config(new_settings["telegram_token"], new_settings["telegram_chat_id"])
     
     db_manager.log_audit("INFO", "SETTINGS_UPDATED", "System parameters deployed to live engines.")
     return {"success": True}
@@ -562,11 +648,16 @@ async def get_status(market_id: str = "btc_usdt"):
     if ticker and ticker.get("volume") is not None:
         liquidity_valid = ticker["volume"] > 0
         
-    risk_valid = False
-    leverage_valid = True
     risk_reason = "Risk validation failed."
     if signal_valid:
-        risk_data = risk_engine.calculate_position_size(balance=balance, entry=signal_result["entry"], stop_loss=signal_result["sl"], direction=signal_result["direction"])
+        risk_data = risk_engine.calculate_position_size(
+            balance=balance, 
+            entry=signal_result["entry"], 
+            stop_loss=signal_result["sl"], 
+            direction=signal_result["direction"],
+            symbol=market_id,
+            active_positions=active_positions
+        )
         risk_valid = risk_data.get("allowed", False)
         if not risk_valid:
             risk_reason = risk_data.get("reason", "Risk too high.")
@@ -592,6 +683,13 @@ async def get_status(market_id: str = "btc_usdt"):
             if alpha_override and technical_safety:
                 res = await execution_router.execute(bot_state["mode"], signal_result, risk_data, ticker)
                 db_manager.log_audit("CRITICAL", "ALPHA_OVERRIDE_TRADE", f"Executing High Confidence Signal ({signal_result['score']}%)", res)
+                
+                # Notification (Lot 10)
+                asyncio.create_task(notification_engine.notify("ORDER_OPEN", {
+                    "symbol": market_id,
+                    "entry_price": signal_result["entry"],
+                    "quantity": risk_data["quantity"]
+                }))
             elif technical_safety:
                 can_execute_normal = (
                     day_allowed and session_allowed and news_clear and 
@@ -709,6 +807,10 @@ async def emergency_stop():
         # In REAL mode, we call broker_connector to close everything
         await broker_connector.close_all_positions()
         db_manager.log_audit("ERROR", "EMERGENCY_STOP", "All positions force closed locally and on brokers.")
+        
+        # Notification (Lot 10)
+        asyncio.create_task(notification_engine.notify("EMERGENCY_STOP", {"reason": "User Triggered"}))
+        
         return {"status": "STOPPED", "message": "Emergency Stop Active. All positions closed."}
 
 @app.post("/api/emergency-stop/reset")
@@ -745,17 +847,51 @@ metrics_state = {
     "start_time": datetime.now()
 }
 
+import signal
+import sys
+
+async def graceful_shutdown():
+    """Rule: Graceful Shutdown (Lot 14)."""
+    logger.info("System shutting down...")
+    
+    # 1. Trigger Emergency Stop locally
+    broker_connector.trigger_emergency_stop()
+    
+    # 2. Close Broker Connections
+    for bid, adapter in broker_connector.active_adapters.items():
+        try:
+            if hasattr(adapter, 'exchange'):
+                await adapter.exchange.close()
+            logger.info(f"Closed broker connection: {bid}")
+        except:
+            pass
+            
+    # 3. Shutdown Data Engine
+    await data_engine.shutdown()
+    
+    logger.info("Shutdown complete. Bye.")
+    os._exit(0)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await graceful_shutdown()
+
 @app.get("/api/metrics")
 async def get_metrics():
-    """Rule: Institutional Observability (Lot 4)."""
+    """Rule: Institutional Observability (Lot 14)."""
     uptime = (datetime.now() - metrics_state["start_time"]).total_seconds()
+    
+    # Calculate Latencies
+    avg_scan_time = scanner_engine.last_scan_duration
+    
     return {
-        "uptime_seconds": uptime,
+        "uptime_seconds": round(uptime, 0),
         "total_scans": metrics_state["total_scans"],
         "total_trades": metrics_state["total_trades"],
         "total_errors": metrics_state["total_errors"],
         "signals_by_strategy": metrics_state["signals_by_strategy"],
-        "scans_per_minute": (metrics_state["total_scans"] / (uptime / 60)) if uptime > 0 else 0
+        "avg_scan_duration": round(avg_scan_time, 3),
+        "scans_per_minute": round((metrics_state["total_scans"] / (uptime / 60)) if uptime > 0 else 0, 2)
     }
 
 @app.get("/healthz")

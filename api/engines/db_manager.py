@@ -125,7 +125,11 @@ class DatabaseManager:
                     "emergency_stop_drawdown_pct": "10.0",
                     "auto_arm_on_startup": "false",
                     "slippage_tolerance_pct": "0.1",
-                    "active_strategies": "structure,arbitrage,tape,liquidity"
+                    "active_strategies": "structure,arbitrage,tape,liquidity",
+                    "sim_latency_ms": "100",
+                    "sim_slippage_pct": "0.05",
+                    "sim_rejection_prob": "0.01",
+                    "partial_tp_ratio": "1.0"
                 }
                 for k, v in defaults.items():
                     conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))

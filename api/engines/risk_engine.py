@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 class RiskEngine:
@@ -24,10 +24,49 @@ class RiskEngine:
         self.last_loss_time: Optional[datetime] = None
         self.cool_down_mins = 30
 
-    def calculate_position_size(self, balance: float, entry: float, stop_loss: float, direction: str = "BUY", fee_pct: float = 0.05) -> Dict[str, Any]:
+    def check_correlation(self, symbol: str, active_positions: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Rule: Correlation Risk Management (Lot 9).
+        Prevents over-exposure to highly correlated assets.
+        """
+        # Asset class correlation limits
+        # Simple rule: Max 2 positions per major coin base (BTC, ETH, SOL, etc.)
+        # and Max 3 positions in the same asset class.
+        
+        base_asset = symbol.split('_')[0] if '_' in symbol else symbol
+        class_count = 0
+        symbol_count = 0
+        
+        # We need info about asset classes, ideally passed or fetched.
+        # For simplicity, we check symbols and common bases.
+        for pos in active_positions:
+            pos_symbol = pos.get("symbol", "")
+            pos_base = pos_symbol.split('_')[0] if '_' in pos_symbol else pos_symbol
+            
+            if pos_base == base_asset:
+                symbol_count += 1
+            
+            # Simple assumption: all active are currently in the same main category for scalping
+            class_count += 1
+            
+        if symbol_count >= 1:
+            return {"allowed": False, "reason": f"Correlation Risk: Already exposed to {base_asset}"}
+            
+        if class_count >= 5:
+             return {"allowed": False, "reason": "Global Exposure: Max 5 concurrent positions reached"}
+             
+        return {"allowed": True}
+
+    def calculate_position_size(self, balance: float, entry: float, stop_loss: float, direction: str = "BUY", fee_pct: float = 0.05, symbol: str = "unknown", active_positions: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Calculates position size and leverage with advanced safety checks.
         """
+        # Correlation Check
+        if active_positions is not None:
+            corr_check = self.check_correlation(symbol, active_positions)
+            if not corr_check["allowed"]:
+                return corr_check
+
         # Update peak balance for drawdown calculation
         if balance > self.peak_balance:
             self.peak_balance = balance

@@ -34,8 +34,66 @@ class PortfolioEngine:
     def get_daily_pnl(self, mode: str) -> float:
         history = self.db.get_history(mode=mode, limit=100)
         today = datetime.now().strftime("%Y-%m-%d")
-        daily_trades = [t for t in history if t.get("close_time", "").startswith(today)]
+        daily_trades = [t for t in history if (t.get("close_time") or "").startswith(today)]
         return sum(t.get("pnl", 0.0) for t in daily_trades)
+
+    def get_stats_by_strategy(self, mode: str = "DEMO") -> Dict[str, Any]:
+        """
+        Calcule les statistiques détaillées par stratégie (Lot 11).
+        """
+        history = self.db.get_history(mode=mode, limit=1000)
+        stats = {}
+        
+        for trade in history:
+            meta = trade.get("metadata") or {}
+            strat = meta.get("strategy", "unknown")
+            
+            if strat not in stats:
+                stats[strat] = {"wins": 0, "losses": 0, "pnl": 0.0, "total": 0}
+                
+            stats[strat]["total"] += 1
+            stats[strat]["pnl"] += trade["pnl"]
+            if trade["pnl"] > 0:
+                stats[strat]["wins"] += 1
+            else:
+                stats[strat]["losses"] += 1
+                
+        # Format results
+        results = {}
+        for strat, data in stats.items():
+            wr = (data["wins"] / data["total"] * 100) if data["total"] > 0 else 0
+            results[strat] = {
+                "total_trades": data["total"],
+                "win_rate": round(wr, 2),
+                "net_pnl": round(data["pnl"], 2),
+                "avg_pnl": round(data["pnl"] / data["total"], 2) if data["total"] > 0 else 0
+            }
+        return results
+
+    def get_performance_report(self, mode: str = "DEMO") -> Dict[str, Any]:
+        """
+        Rapport de performance complet pour le dashboard et notifications (Lot 11).
+        """
+        history = self.db.get_history(mode=mode, limit=500)
+        overall = self.get_stats()
+        by_strategy = self.get_stats_by_strategy(mode)
+        
+        # Calculate Expectancy
+        expectancy = 0
+        if overall["total_trades"] > 0:
+            avg_win = overall.get("avg_win", 0)
+            avg_loss = overall.get("avg_loss", 0)
+            wr = overall["win_rate"] / 100
+            expectancy = (wr * avg_win) - ((1 - wr) * abs(avg_loss))
+            
+        return {
+            "mode": mode,
+            "overall": overall,
+            "expectancy": round(expectancy, 2),
+            "by_strategy": by_strategy,
+            "daily_pnl": self.get_daily_pnl(mode),
+            "timestamp": datetime.now().isoformat()
+        }
 
     def get_stats(self) -> Dict[str, Any]:
         """
