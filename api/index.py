@@ -379,7 +379,7 @@ async def startup_event():
             
     if os.getenv("TESTING") != "true":
         await broker_connector.initialize_from_db(db_manager)
-        asyncio.create_task(auto_scan_loop())
+        results = await scanner_engine.scan_all(); bot_state["latest_scan"] = results; asyncio.create_task(auto_scan_loop())
         asyncio.create_task(broadcaster_loop())
         asyncio.create_task(daily_report_loop())
 
@@ -489,6 +489,10 @@ async def add_broker_config(config: Dict[str, Any]):
 async def get_wallets():
     """Rule 45: Wallet aggregation (Ballets)."""
     return await broker_connector.get_all_balances()
+
+@app.get("/api/history")
+async def get_trade_history(mode: Optional[str] = None, limit: int = 50):
+    return db_manager.get_history(mode=mode, limit=limit)
 
 @app.get("/api/audit")
 async def get_audit_logs(limit: int = 20):

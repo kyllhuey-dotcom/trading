@@ -741,6 +741,34 @@
                     </header>
                     
                     <div class="space-y-8">
+                        <!-- Localization -->
+                        <div class="card-premium">
+                            <div class="flex items-center gap-3 mb-8 border-b border-black/5 dark:border-white/5 pb-4">
+                                <i data-lucide="globe" class="text-accent-blue w-5 h-5"></i>
+                                <h4 class="text-sm font-black uppercase tracking-widest">Localization & Preferences</h4>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
+                                <div class="space-y-2">
+                                    <label class="text-[10px] font-black text-secondary uppercase">Interface Language</label>
+                                    <select id="set-language" class="w-full bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-bold">
+                                        <option value="en">English (US)</option>
+                                        <option value="fr">Français (FR)</option>
+                                        <option value="es">Español</option>
+                                        <option value="de">Deutsch</option>
+                                    </select>
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="text-[10px] font-black text-secondary uppercase">Timezone</label>
+                                    <select id="set-timezone" class="w-full bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-bold">
+                                        <option value="UTC">UTC</option>
+                                        <option value="Europe/Paris">Europe/Paris</option>
+                                        <option value="America/New_York">America/New_York</option>
+                                        <option value="Asia/Tokyo">Asia/Tokyo</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Risk Profile -->
                         <div class="card-premium">
                             <div class="flex items-center gap-3 mb-8 border-b border-black/5 dark:border-white/5 pb-4">
@@ -873,6 +901,22 @@
     <script>
         lucide.createIcons();
         
+        let selectedSymbol = 'btc_usdt';
+        let ws;
+        let currentFilter = 'ALL';
+        let activeTab = 'dashboard';
+        let botIsMode = 'DEMO';
+        let botIsRunning = false;
+        let botIsArmed = false;
+
+        const LOGOS = {
+            'GATE': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>',
+            'BINANCE': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="#F3BA2F"><path d="M16.624 13.9202l2.711 2.71172.7117-2.7117-2.7117-2.7117zm-4.624-4.624l2.7117 2.7117 2.7117-2.7117-2.7117-2.7117zm-4.624 4.624l2.7117 2.7117 2.7117-2.7117-2.7117-2.7117zm4.624 4.624l2.7117 2.7117 2.7117-2.7117-2.7117-2.7117z"/></svg>',
+            'BYBIT': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="#F7A600"><path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm0-18.182c-4.418 0-8 3.582-8 8s3.582 8 8 8 8-3.582 8-8-3.582-8-8-8z"/></svg>',
+            'METAMASK': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="#E2761B"><path d="M22.05 3.63L12.55 2.13L12.28 2.09C12.1 2.03 11.9 2.03 11.72 2.09L11.45 2.13L1.95 3.63L1.31 10.37L12 22L22.69 10.37L22.05 3.63Z"/></svg>',
+            'PHANTOM': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="#AB9FF2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>'
+        };
+
         function updateThemeUI() {
             const isDark = document.body.classList.contains('dark');
             const icon = document.querySelector('#theme-toggle i');
@@ -881,51 +925,37 @@
                 lucide.createIcons();
             }
         }
-
-        // Set initial icon based on applied class
         updateThemeUI();
-
-        let selectedSymbol = 'btc_usdt';
-        let ws;
-        let currentFilter = 'ALL';
 
         function connectWS() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-            
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                if (data.type === 'ACCOUNT_UPDATE' || data.type === 'ACCOUNT_STREAM') {
+                if (data.type === 'ACCOUNT_STREAM') {
                     updateStatus(data);
                     updateAccountUI(data);
                 } else if (data.type === 'MARKET_UPDATE') {
                     handleMarketUpdate(data);
                 } else if (data.type === 'SCAN_COMPLETED') {
-                    update(); 
+                    if (activeTab === 'scanner') updateScanner();
+                    if (activeTab === 'dashboard') update();
                 }
             };
-
             ws.onclose = () => setTimeout(connectWS, 2000);
         }
 
         function updateAccountUI(s) {
-            // Live Capital Sync
             const hBal = document.getElementById('header-balance');
             const dBal = document.getElementById('dash-balance');
             const dEq = document.getElementById('dash-equity');
-            
-            if (hBal) {
-                const newBal = `${s.balance.toLocaleString()} ${s.mode === 'REAL' ? '$' : '€'}`;
-                if (hBal.innerText !== newBal) {
-                    hBal.innerText = newBal;
-                    hBal.style.color = 'var(--accent-blue)';
-                    setTimeout(() => hBal.style.color = '', 300);
-                }
-            }
-            if (dBal) dBal.innerText = `${s.balance.toLocaleString()} €`;
-            if (dEq) dEq.innerText = `${s.equity.toLocaleString()} €`;
+            const mode = s.mode || 'DEMO';
+            const currency = mode === 'REAL' ? '$' : '€';
 
-            // Live Positions Update
+            if (hBal) hBal.innerText = `${s.balance.toLocaleString()} ${currency}`;
+            if (dBal) dBal.innerText = `${s.balance.toLocaleString()} ${currency}`;
+            if (dEq) dEq.innerText = `${s.equity.toLocaleString()} ${currency}`;
+
             const activePos = document.getElementById('active-pos-list');
             if (activePos && s.active_trades) {
                 if (s.active_trades.length > 0) {
@@ -933,11 +963,11 @@
                         <div class="card-premium border-2 border-accent-blue/30 shadow-lg transition-all">
                             <div class="flex justify-between items-start mb-4">
                                 <div>
-                                    <h3 class="text-xl font-black tracking-tighter mb-0.5">${p.display_symbol || p.symbol}</h3>
+                                    <h3 class="font-black text-sm tracking-tight mb-0.5">${(p.display_symbol || p.symbol).toUpperCase()}</h3>
                                     <p class="text-[9px] font-bold text-secondary uppercase tracking-widest">${p.direction} • ${p.quantity.toFixed(4)} UNITS</p>
                                 </div>
                                 <div class="text-right">
-                                    <p class="text-2xl font-black tracking-tighter ${p.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">${p.pnl >= 0 ? '+' : ''}${p.pnl.toFixed(2)} €</p>
+                                    <p class="text-2xl font-black tracking-tighter ${p.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">${p.pnl >= 0 ? '+' : ''}${p.pnl.toFixed(2)} ${currency}</p>
                                 </div>
                             </div>
                             <div class="grid grid-cols-3 gap-4 pt-3 border-t border-black/5 dark:border-white/5">
@@ -952,24 +982,14 @@
                     lucide.createIcons();
                 }
             }
-
-            // Update Provisioning Cards if visible
-            const provDemo = document.getElementById('prov-demo-val');
-            if (provDemo) provDemo.innerText = `${s.balance.toLocaleString()} €`;
         }
 
         function updateStatus(data) {
             const stText = document.getElementById('system-status-text');
             if (stText) stText.innerText = data.status.replace(/_/g, ' ');
-            
             const dot = document.getElementById('status-dot');
             if (dot) {
-                dot.className = 'w-2.5 h-2.5 rounded-full shadow-lg transition-all duration-500';
-                if (data.is_running) {
-                    dot.classList.add('bg-green-500', 'animate-pulse', 'shadow-green-500/50');
-                } else {
-                    dot.classList.add('bg-slate-400');
-                }
+                dot.className = 'w-2.5 h-2.5 rounded-full shadow-lg transition-all duration-500 ' + (data.is_running ? 'bg-green-500 animate-pulse' : 'bg-slate-400');
             }
         }
 
@@ -977,297 +997,95 @@
             if (data.market_id === selectedSymbol) {
                 const priceEl = document.getElementById('trading-live-price');
                 if (priceEl) {
-                    const currentPrice = parseFloat(priceEl.innerText.replace(/,/g, '') || 0);
                     priceEl.innerText = data.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4});
-                    if (data.price !== currentPrice && currentPrice !== 0) {
-                        priceEl.style.color = data.price > currentPrice ? 'var(--accent-green)' : 'var(--accent-red)';
-                        setTimeout(() => priceEl.style.color = '', 300);
-                    }
                 }
             }
-            
-            const priceElements = document.querySelectorAll(`[data-price-id="${data.market_id}"]`);
-            priceElements.forEach(el => {
-                const prev = parseFloat(el.getAttribute('data-last-val') || 0);
+            document.querySelectorAll(`[data-price-id="${data.market_id}"]`).forEach(el => {
                 el.innerText = data.price.toLocaleString(undefined, {minimumFractionDigits: 2});
-                if (data.price !== prev && prev !== 0) {
-                    el.style.color = data.price > prev ? 'var(--accent-green)' : 'var(--accent-red)';
-                    el.setAttribute('data-last-val', data.price);
-                    setTimeout(() => el.style.color = '', 400);
-                } else {
-                    el.setAttribute('data-last-val', data.price);
-                }
             });
         }
 
-        connectWS();
+        async function updateHistory() {
+            const h = await fetchAPI("/history?mode=" + botIsMode);
+            const histBody = document.getElementById('history-table-body');
+            if (histBody && h) {
+                histBody.innerHTML = h.map(t => `
+                    <tr class="hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors">
+                        <td class="py-5 px-8 flex flex-col">
+                            <span class="font-black text-sm">${(t.display_symbol || t.symbol).toUpperCase()}</span>
+                            <span class="text-[9px] text-secondary font-bold uppercase">${t.close_time ? new Date(t.close_time).toLocaleString() : '--'}</span>
+                        </td>
+                        <td class="py-5 text-center">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-black ${t.direction === 'BUY' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">${t.direction}</span>
+                        </td>
+                        <td class="py-5 text-right font-black tabular-nums">${t.entry_price.toLocaleString()}</td>
+                        <td class="py-5 text-right font-black tabular-nums">${t.exit_price.toLocaleString()}</td>
+                        <td class="py-5 pr-8 text-right font-black tabular-nums ${t.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">${t.pnl.toLocaleString()} €</td>
+                    </tr>
+                `).join('');
+            }
+        }
 
-        // Navigation
+        async function updateScanner() {
+            const data = await fetchAPI('/scanner');
+            const scannerBody = document.getElementById('scanner-table-body');
+            if (scannerBody && data && data.assets) {
+                scannerBody.innerHTML = data.assets.map(a => `
+                    <tr class="group hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer" onclick="selectMarket('${a.symbol}')">
+                        <td class="py-5 px-8 flex flex-col">
+                            <span class="font-black text-sm">${a.symbol.toUpperCase().replace('_', '/')}</span>
+                            <span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${a.name || '--'}</span>
+                        </td>
+                        <td class="py-5 text-right font-black tabular-nums">${a.price ? a.price.toLocaleString() : '--'}</td>
+                        <td class="py-5 text-right font-bold ${a.change >= 0 ? 'text-green-500' : 'text-red-500'}">${a.change ? (a.change >= 0 ? '+' : '') + a.change.toFixed(2) + '%' : '0.00%'}</td>
+                        <td class="py-5 text-center">
+                            <span class="text-[10px] font-black uppercase tracking-widest ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}">${a.trend || '--'}</span>
+                        </td>
+                        <td class="py-5 text-center"><span class="status-badge bg-black/5 dark:bg-white/5 text-secondary text-[8px]">${a.status || 'LIVE'}</span></td>
+                        <td class="py-5 pr-8 text-right"><div class="flex items-center justify-end gap-3"><span class="font-black text-sm">${a.score || 0}</span><div class="w-12 h-1 bg-black/5 rounded-full overflow-hidden"><div class="h-full bg-accent-blue" style="width: ${a.score || 0}%"></div></div></div></td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        async function update() {
+            const s = await fetchAPI("/status?market_id=" + selectedSymbol);
+            if (!s) return;
+            botIsRunning = s.is_running;
+            botIsArmed = s.armed;
+            botIsMode = s.mode;
+            
+            updateStatus(s);
+            updateAccountUI(s);
+            if (activeTab === 'history') updateHistory();
+            if (activeTab === 'scanner') updateScanner();
+
+            document.getElementById('header-balance').innerText = `${s.balance.toLocaleString()} ${s.mode === 'REAL' ? '$' : '€'}`;
+            document.getElementById('bot-mode-display').innerText = `${s.mode} MODE ACTIVE` + (s.mode === 'REAL' ? ' (BETA)' : '');
+            
+            if (s.analysis) {
+                const a = s.analysis;
+                document.getElementById('ana-trend').innerText = a.trend || 'NEUTRAL';
+                document.getElementById('ana-trend').className = `font-black text-sm ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}`;
+                document.getElementById('ana-struct').innerText = (a.is_hh ? 'HH/HL' : (a.is_ll ? 'LH/LL' : 'CONSOLIDATION'));
+                document.getElementById('ana-mom').innerText = `${(a.momentum || 0).toFixed(4)}%`;
+                document.getElementById('ana-vol').innerText = a.volatility || 'LOW';
+            }
+        }
+
         function showTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
             document.getElementById(`tab-${tabId}`).classList.add('active');
-            document.querySelector(`.sidebar-item[onclick*="${tabId}"]`).classList.add('active');
-            if (tabId === 'scanner') update();
+            activeTab = tabId;
+            const sidebarItem = document.querySelector(`.sidebar-item[onclick*="${tabId}"]`);
+            if (sidebarItem) sidebarItem.classList.add('active');
+            if (tabId === 'history') updateHistory();
+            if (tabId === 'scanner') updateScanner();
             if (tabId === 'brokers') updateBrokers();
             if (tabId === 'settings') loadSettings();
         }
 
-        async function updateBrokers() {
-            const brokers = await fetchAPI('/brokers');
-            const wallets = await fetchAPI('/wallets');
-            
-            const table = document.getElementById('broker-status-table');
-            if (table && brokers) {
-                table.innerHTML = brokers.map(b => `
-                    <tr class="border-b border-black/5 dark:border-white/5 group hover:bg-black/[0.01]">
-                        <td class="py-4 px-6">
-                            <div class="flex items-center gap-3">
-                                <div class="w-2 h-2 rounded-full ${b.is_active ? 'bg-green-500 shadow-sm shadow-green-500/50' : 'bg-slate-300'}"></div>
-                                <span class="font-black">${b.broker_id}</span>
-                            </div>
-                        </td>
-                        <td class="py-4 px-6 font-bold text-secondary uppercase">${b.exchange_id}</td>
-                        <td class="py-4 px-6">
-                            <span class="status-badge ${b.is_active ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">
-                                ${b.is_active ? 'READY' : 'INACTIVE'}
-                            </span>
-                        </td>
-                        <td class="py-4 px-6 text-right space-x-4">
-                             <button onclick="toggleBroker('${b.broker_id}', ${!b.is_active})" class="text-accent-blue font-black text-[9px] uppercase tracking-widest hover:underline">${b.is_active ? 'Disable' : 'Enable'}</button>
-                             <button onclick="deleteBroker('${b.broker_id}')" class="text-accent-red font-black text-[9px] uppercase tracking-widest hover:underline">Remove</button>
-                        </td>
-                    </tr>
-                `).join('');
-            }
-
-            const walletList = document.getElementById('wallet-list');
-            if (walletList && wallets) {
-                const bids = Object.keys(wallets);
-                if (bids.length > 0) {
-                    walletList.innerHTML = bids.map(bid => {
-                        const w = wallets[bid];
-                        if (w.error) return '';
-                        
-                        const assetsHtml = w.assets ? w.assets.map(a => `
-                            <div class="flex justify-between text-[8px] font-bold opacity-60">
-                                <span>${a.asset}</span>
-                                <span>${a.total.toFixed(4)}</span>
-                            </div>
-                        `).join('') : '';
-
-                        return `
-                        <div class="p-6 bg-black/[0.03] dark:bg-white/[0.03] rounded-[28px] border border-black/5 dark:border-white/5 hover:border-accent-blue/30 transition-all">
-                            <div class="flex justify-between items-start mb-6">
-                                <div>
-                                    <span class="text-[10px] font-black text-secondary uppercase tracking-[0.1em]">${bid}</span>
-                                    <p class="text-[8px] font-bold opacity-40 uppercase">${w.exchange}</p>
-                                </div>
-                                <div class="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center">
-                                    <i data-lucide="shield-check" class="w-4 h-4 text-green-500"></i>
-                                </div>
-                            </div>
-                            <p class="text-3xl font-black tracking-tighter mb-4">${w.total_usdt.toLocaleString(undefined, {minimumFractionDigits: 2})} <span class="text-xs text-secondary font-medium">USDT</span></p>
-                            <div class="space-y-1 pt-4 border-t border-black/5 dark:border-white/5">
-                                ${assetsHtml}
-                            </div>
-                        </div>
-                    `}).join('');
-                    lucide.createIcons();
-                } else {
-                    walletList.innerHTML = `
-                        <div class="col-span-full py-12 text-center border-2 border-dashed border-black/5 rounded-[32px]">
-                            <p class="text-secondary font-medium text-xs">No institutional wallets synchronized.</p>
-                        </div>
-                    `;
-                }
-            }
-        }
-
-        async function toggleBroker(bid, active) {
-            const res = await fetchAPI(`/brokers/toggle?broker_id=${bid}&active=${active}`, 'POST');
-            if (res.success) updateBrokers();
-        }
-
-        async function deleteBroker(bid) {
-            if (confirm(`Completely remove broker connection "${bid}"?`)) {
-                const res = await fetchAPI(`/brokers/delete?broker_id=${bid}`, 'POST');
-                if (res.success) updateBrokers();
-            }
-        }
-
-        document.getElementById('broker-form').onsubmit = async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData.entries());
-            const btn = e.target.querySelector('button');
-            const originalText = btn.innerText;
-            
-            btn.innerText = 'AUTHENTICATING...';
-            btn.disabled = true;
-            
-            const res = await fetchAPI('/brokers', 'POST', data);
-            alert(res.message);
-            
-            btn.innerText = originalText;
-            btn.disabled = false;
-            if (res.success) {
-                e.target.reset();
-                updateBrokers();
-            }
-        };
-
-        document.getElementById('wallet-form').onsubmit = async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData.entries());
-            const btn = e.target.querySelector('button');
-            
-            btn.innerText = 'SYNCING...';
-            btn.disabled = true;
-            
-            const res = await fetchAPI('/wallets/add', 'POST', data);
-            alert(res.message);
-            
-            btn.innerText = 'Sync Wallet';
-            btn.disabled = false;
-            if (res.success) {
-                e.target.reset();
-                updateBrokers();
-            }
-        };
-
-        function setWalletProvider(p) {
-            document.getElementById('selected-provider').value = p;
-            document.querySelectorAll('.w-provider').forEach(btn => btn.classList.remove('border-accent-blue', 'bg-accent-blue/5'));
-            document.getElementById(`p-${p}`).classList.add('border-accent-blue', 'bg-accent-blue/5');
-        }
-
-        async function loadSettings() {
-            const settings = await fetchAPI('/settings');
-            if (settings) {
-                Object.keys(settings).forEach(key => {
-                    const el = document.getElementById(`set-${key}`);
-                    if (el) el.value = settings[key];
-                });
-            }
-        }
-
-        async function saveBotSettings() {
-            const keys = [
-                "max_risk_pct", "max_leverage", "max_daily_loss_pct", "cool_down_mins", 
-                "max_open_positions", "min_signal_score", "risk_reward_ratio", 
-                "max_spread_pct", "trailing_stop_active"
-            ];
-            const data = {};
-            keys.forEach(k => {
-                const el = document.getElementById(`set-${k}`);
-                if (el) {
-                    if (el.type === 'checkbox') {
-                        data[k] = el.checked ? 'true' : 'false';
-                    } else {
-                        data[k] = el.value;
-                    }
-                }
-            });
-            
-            const res = await fetchAPI('/settings', 'POST', data);
-            if (res && res.success) {
-                alert("Institutional parameters deployed to neural engine.");
-                update();
-            }
-        }
-
-        async function loadSettings() {
-            const settings = await fetchAPI('/settings');
-            if (settings) {
-                Object.keys(settings).forEach(key => {
-                    const el = document.getElementById(`set-${key}`);
-                    const valDisplay = document.getElementById(`val-${key}`);
-                    if (el) {
-                        if (el.type === 'checkbox') {
-                            el.checked = settings[key] === 'true';
-                        } else {
-                            el.value = settings[key];
-                            // Update labels
-                            if (valDisplay) {
-                                if (key.includes('pct')) valDisplay.innerText = el.value + '%';
-                                else if (key.includes('leverage')) valDisplay.innerText = el.value + 'x';
-                                else if (key.includes('mins')) valDisplay.innerText = el.value + 'm';
-                                else valDisplay.innerText = el.value;
-                            }
-                        }
-                    }
-                });
-            }
-        }
-
-        // Calculate risk real-time for manual entries
-        function updateManualRisk() {
-            const qty = parseFloat(document.getElementById('trade-qty')?.value || 0);
-            const sl = parseFloat(document.getElementById('trade-sl')?.value || 0);
-            const currentPrice = parseFloat(document.getElementById('trading-live-price')?.innerText.replace(/,/g, '') || 0);
-            const riskEl = document.getElementById('manual-risk-calc');
-            
-            if (qty > 0 && sl > 0 && currentPrice > 0 && riskEl) {
-                const riskPerUnit = Math.abs(currentPrice - sl);
-                const totalRisk = riskPerUnit * qty;
-                riskEl.innerText = `${totalRisk.toFixed(2)} €`;
-                riskEl.style.color = totalRisk > 0 ? 'var(--accent-red)' : '';
-            } else if (riskEl) {
-                riskEl.innerText = '0.00 €';
-                riskEl.style.color = '';
-            }
-        }
-
-        // Attach listeners
-        document.addEventListener('input', (e) => {
-            if (['trade-qty', 'trade-sl'].includes(e.target.id)) updateManualRisk();
-        });
-
-        async function manualTrade(direction) {
-            const qty = document.getElementById('trade-qty').value;
-            const sl = document.getElementById('trade-sl').value;
-            const tp = document.getElementById('trade-tp').value;
-
-            if (confirm(`Execute Manual ${direction} on ${selectedSymbol.toUpperCase()}?`)) {
-                const res = await fetchAPI('/trade/manual', 'POST', {
-                    market_id: selectedSymbol,
-                    direction: direction,
-                    quantity: parseFloat(qty),
-                    sl: sl ? parseFloat(sl) : null,
-                    tp: tp ? parseFloat(tp) : null
-                });
-                if (res && res.success) {
-                    alert("Manual order sent to gateway.");
-                    update();
-                }
-            }
-        }
-
-        function selectMarket(market_id) {
-            selectedSymbol = market_id;
-            showTab('trading');
-            update();
-        }
-
-        function setMarketFilter(filter) {
-            currentFilter = filter;
-            document.querySelectorAll('#market-filters .switch-option').forEach(opt => {
-                opt.classList.toggle('active', opt.innerText === filter);
-            });
-            initMarkets();
-        }
-
-        // Theme Toggle
-        document.getElementById('theme-toggle').onclick = () => {
-            document.body.classList.toggle('dark');
-            const isDark = document.body.classList.contains('dark');
-            localStorage.setItem('quantum-theme', isDark ? 'dark' : 'light');
-            updateThemeUI();
-        };
-
-        // API
         async function fetchAPI(endpoint, method = 'GET', body = null) {
             try {
                 const url = `/api${endpoint}`;
@@ -1281,559 +1099,92 @@
             } catch (e) { return null; }
         }
 
-        // Checklist Rendering (15 Rules)
-        const RULES_ORDER = [
-            "SYSTEM_ARMED", "DATA_VALID", "BROKER_VALID", "MARKET_OPEN",
-            "DAY_ALLOWED", "SESSION_ALLOWED", "NEWS_CLEAR", "RISK_VALID",
-            "LEVERAGE_VALID", "NOT_RANGE", "TREND_VALID", "STRUCTURE_VALID",
-            "SPREAD_VALID", "LIQUIDITY_VALID", "SIGNAL_VALID"
-        ];
-
-        function renderChecklist(checks) {
-            const container = document.getElementById('diag-checklist');
-            if (!container) return;
-            
-            container.innerHTML = RULES_ORDER.map(rule => {
-                const status = checks[rule] || 'WAIT';
-                let colorClass = 'bg-slate-200 text-slate-400';
-                if (status === 'PASS') colorClass = 'bg-green-500 text-white';
-                if (status === 'FAIL') colorClass = 'bg-red-500 text-white';
-                
-                return `
-                    <div class="flex flex-col items-center gap-1 group">
-                        <div class="w-full h-1.5 rounded-full ${colorClass} transition-colors duration-500"></div>
-                        <span class="text-[7px] font-black uppercase opacity-40 group-hover:opacity-100 transition-opacity">${rule.split('_')[0]}</span>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        // Core Update Loop
-        let botIsRunning = false;
-        let botIsArmed = false;
-
-        async function update() {
-            const s = await fetchAPI(`/status?market_id=${selectedSymbol}`);
-            if (!s) return;
-            
-            botIsRunning = s.is_running;
-            botIsArmed = s.armed;
-
-            // Update Provisioning Cards
-            const demoVal = document.getElementById('prov-demo-val');
-            const realVal = document.getElementById('prov-real-val');
-            if (demoVal) demoVal.innerText = `${s.balance.toLocaleString()} €`;
-            
-            const bPower = document.getElementById('prov-demo-power');
-            if (bPower && s.stats) {
-                const maxLev = parseInt(document.getElementById('set-max_leverage')?.value || 20);
-                bPower.innerText = `${(s.balance * maxLev).toLocaleString()} €`;
-            }
-
-            // Real-time Capital Sync (Lot 28 - Real Mode Aggregation)
-            const brokerCount = document.getElementById('prov-broker-count');
-            if (brokerCount) {
-                const wallets = await fetchAPI('/wallets');
-                if (wallets) {
-                    const bids = Object.keys(wallets);
-                    brokerCount.innerText = bids.length;
-                    let totalReal = 0;
-                    bids.forEach(b => {
-                        const w = wallets[b];
-                        if (w.total_usdt) totalReal += w.total_usdt;
-                    });
-                    
-                    if (realVal) {
-                        const currentReal = parseFloat(realVal.innerText.replace(/[^0-9.-]+/g,"") || 0);
-                        realVal.innerText = `${totalReal.toLocaleString(undefined, {minimumFractionDigits: 2})} $`;
-                        if (totalReal !== currentReal && currentReal !== 0) {
-                            realVal.style.color = totalReal > currentReal ? 'var(--accent-green)' : 'var(--accent-red)';
-                            setTimeout(() => realVal.style.color = '', 1000);
-                        }
-                    }
-
-                    // Also update Global Header balance if in REAL mode
-                    if (s.mode === 'REAL') {
-                        const hBal = document.getElementById('header-balance');
-                        if (hBal) {
-                            const newBal = `${totalReal.toLocaleString(undefined, {minimumFractionDigits: 2})} $`;
-                            if (hBal.innerText !== newBal) {
-                                hBal.innerText = newBal;
-                                hBal.style.color = 'var(--accent-green)';
-                                setTimeout(() => hBal.style.color = '', 500);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Technical Indicators
-            if (s.analysis && s.analysis.indicators) {
-                const ind = s.analysis.indicators;
-                document.getElementById('ind-rsi').innerText = ind.rsi.toFixed(2);
-                document.getElementById('ind-rsi').className = `text-[10px] font-black ${ind.rsi > 70 ? 'text-accent-red' : (ind.rsi < 30 ? 'text-accent-green' : '')}`;
-                document.getElementById('ind-ema').innerText = `${ind.ema_cross}`;
-                document.getElementById('ind-ema').className = `text-[10px] font-black ${ind.ema_cross === 'BULLISH' ? 'text-accent-green' : 'text-accent-red'}`;
-                document.getElementById('ind-atr').innerText = s.analysis.atr ? s.analysis.atr.toFixed(s.selected_market.includes('usd') ? 5 : 2) : '--';
-            }
-
-            // Global State
-            const hBal = document.getElementById('header-balance');
-            if (hBal) {
-                const newBal = `${s.balance.toLocaleString()} ${s.mode === 'REAL' ? '$' : '€'}`;
-                if (hBal.innerText !== newBal) {
-                    hBal.innerText = newBal;
-                    hBal.style.color = 'var(--accent-blue)';
-                    setTimeout(() => hBal.style.color = '', 500);
-                }
-            }
-            const displaySymbol = s.selected_market.toUpperCase().replace('_', '/');
-            document.getElementById('active-symbol-header').innerText = displaySymbol;
-            document.getElementById('bot-mode-display').innerText = `${s.mode} MODE ACTIVE`;
-            if (s.mode === 'REAL') {
-                document.getElementById('bot-mode-display').innerHTML += ' <span class="text-[7px] text-accent-red font-black">(BETA - NOT PROD READY)</span>';
-            }
-            
-            if (document.getElementById('trading-active-symbol')) {
-                document.getElementById('trading-active-symbol').innerText = displaySymbol;
-            }
-            if (document.getElementById('trading-asset-class') && s.asset_info) {
-                document.getElementById('trading-asset-class').innerText = `${s.asset_info.asset_class} • ${s.asset_info.name}`;
-            }
-            if (s.asset_info) {
-                document.getElementById('market-status-tag').innerText = s.asset_info.market_status || 'CLOSED';
-                document.getElementById('market-status-tag').className = `text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${s.asset_info.market_status === 'OPEN' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`;
-            }
-            
-            const toggleBtn = document.getElementById('main-toggle-btn');
-            if (s.is_running) {
-                toggleBtn.innerHTML = '<i data-lucide="square" class="w-4 h-4 fill-current"></i><span>STOP SYSTEM</span>';
-                toggleBtn.className = 'btn-premium bg-red-500 text-white shadow-lg shadow-red-500/20';
-            } else {
-                toggleBtn.innerHTML = '<i data-lucide="play" class="w-4 h-4 fill-current"></i><span>START SYSTEM</span>';
-                toggleBtn.className = 'btn-premium bg-black text-white dark:bg-white dark:text-black shadow-lg';
-            }
-            lucide.createIcons();
-            
-            // Audit Logs (Real-time execution logs)
-            const audit = await fetchAPI('/audit?limit=10');
-            if (audit && document.getElementById('terminal-audit-logs')) {
-                document.getElementById('terminal-audit-logs').innerHTML = audit.map(log => `
-                    <div class="flex gap-2 border-l-2 ${log.level === 'ERROR' ? 'border-red-500' : 'border-blue-500'} pl-2 py-0.5">
-                        <span class="opacity-30 min-w-[50px]">${log.timestamp.split(' ')[1]}</span>
-                        <span class="text-accent-blue">${log.action}</span>
-                        <span class="text-primary truncate">${log.message}</span>
-                    </div>
-                `).join('');
-            }
-
-            // Portfolio
-            document.getElementById('dash-balance').innerText = `${s.balance.toLocaleString()} €`;
-            document.getElementById('dash-equity').innerText = `${s.equity.toLocaleString()} €`;
-            document.getElementById('dash-daily-pnl').innerText = `${s.daily_pnl >= 0 ? '+' : ''}${s.daily_pnl.toLocaleString()} €`;
-            document.getElementById('dash-daily-pnl').className = `metric-value mt-1 ${s.daily_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`;
-            document.getElementById('dash-drawdown').innerText = `${s.drawdown.toFixed(2)}%`;
-
-            // Engine Stats
-            document.getElementById('eng-status').innerText = s.is_running ? 'ACTIVE' : 'OFFLINE';
-            document.getElementById('eng-status').className = `status-badge ${s.is_running ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`;
-            document.getElementById('eng-markets').innerText = s.stats.markets || '--';
-            document.getElementById('eng-scanned').innerText = s.stats.scanned || '--';
-            document.getElementById('eng-analyzing').innerText = s.stats.analyzing || '--';
-            document.getElementById('eng-signals').innerText = s.stats.signals || '--';
-            document.getElementById('eng-tradable').innerText = s.stats.tradable || '0';
-            if (document.getElementById('eng-duration')) {
-                document.getElementById('eng-duration').innerText = `${(s.stats.scan_duration || 0).toFixed(2)}s`;
-            }
-
-            // Diagnostic
-            if (s.diagnosis) {
-                const d = s.diagnosis;
-                renderChecklist(d.checks);
-                
-                const card = document.getElementById('blocker-card');
-                if (d.main_blocker === 'NONE') {
-                    document.getElementById('diag-main-blocker').innerText = 'READY FOR ENTRY';
-                    document.getElementById('diag-main-blocker').className = 'text-lg font-black leading-tight mb-2 text-green-500';
-                    document.getElementById('diag-reason').innerText = '"All proprietary algorithms aligned. Monitoring for execution trigger."';
-                    document.getElementById('diag-icon').className = 'w-12 h-12 rounded-2xl bg-green-500/10 flex items-center justify-center shrink-0';
-                    document.getElementById('diag-icon').innerHTML = '<i data-lucide="shield-check" class="w-6 h-6 text-green-500"></i>';
-                    if (card) card.style.borderColor = 'var(--accent-green)';
-                } else {
-                    document.getElementById('diag-main-blocker').innerText = d.main_blocker.replace(/_/g, ' ');
-                    document.getElementById('diag-main-blocker').className = 'text-lg font-black leading-tight mb-2 text-accent-red';
-                    document.getElementById('diag-reason').innerText = `"${d.main_reason}"`;
-                    document.getElementById('diag-icon').className = 'w-12 h-12 rounded-2xl bg-red-500/10 flex items-center justify-center shrink-0';
-                    document.getElementById('diag-icon').innerHTML = '<i data-lucide="shield-x" class="w-6 h-6 text-accent-red"></i>';
-                    if (card) card.style.borderColor = 'transparent';
-                }
-                
-                // Detailed Blockers in terminal
-                const blockersList = document.getElementById('terminal-blockers');
-                const fails = Object.entries(d.checks).filter(([k,v]) => v === 'FAIL');
-                if (fails.length > 0) {
-                    blockersList.innerHTML = fails.map(([k,v]) => `
-                        <div class="flex items-center gap-3">
-                            <div class="w-1.5 h-1.5 rounded-full bg-red-500 shadow-sm shadow-red-500/50"></div>
-                            <span class="text-[10px] font-black text-secondary uppercase tracking-widest">${k.replace(/_/g, ' ')}</span>
-                        </div>
-                    `).join('');
-                } else {
-                    blockersList.innerHTML = '<div class="flex items-center gap-3"><div class="w-1.5 h-1.5 rounded-full bg-green-500"></div><span class="text-[10px] font-black text-green-500 uppercase tracking-widest">SECURITY CLEARED</span></div>';
-                }
-            }
-
-            // Analysis
-            if (s.analysis) {
-                const a = s.analysis;
-                const trendEl = document.getElementById('ana-trend');
-                trendEl.innerText = a.trend || 'NEUTRAL';
-                trendEl.className = `font-black text-sm ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}`;
-                
-                document.getElementById('ana-struct').innerText = (a.is_hh ? 'HH/HL' : (a.is_ll ? 'LH/LL' : 'CONSOLIDATION'));
-                document.getElementById('ana-mom').innerText = `${(a.momentum || 0).toFixed(4)}%`;
-                document.getElementById('ana-vol').innerText = a.volatility || 'LOW';
-                
-                if (a.df_preview) {
-                    const chart = document.getElementById('main-chart-bars');
-                    const prices = a.df_preview.map(p => p.Close);
-                    const min = Math.min(...prices);
-                    const max = Math.max(...prices);
-                    const range = (max - min) || 1;
-                    chart.innerHTML = a.df_preview.map(p => {
-                        const h = ((p.Close - min) / range) * 70 + 15;
-                        return `<div class="bar ${p.Close >= p.Open ? 'up' : 'down'}" style="height: ${h}%"></div>`;
-                    }).join('');
-                }
-            }
-
-            // Signal
-            const sigBox = document.getElementById('trading-signal-box');
-            if (s.signal && s.signal.status === 'SIGNAL_DETECTED') {
-                const sig = s.signal;
-                sigBox.innerHTML = `
-                    <div class="w-full p-6 bg-accent-blue/5 border border-accent-blue/10 rounded-3xl animate-pulse">
-                        <div class="flex justify-between items-center mb-4">
-                            <span class="text-2xl font-black ${sig.direction === 'BUY' ? 'text-green-500' : 'text-accent-red'}">${sig.direction}</span>
-                            <span class="bg-black text-white px-3 py-1 rounded-full text-[10px] font-black">${sig.score}/100</span>
-                        </div>
-                        <div class="space-y-2">
-                            <div class="flex justify-between text-[10px] font-black"><span class="text-secondary">TARGET</span><span class="text-green-500">${sig.tp.toFixed(4)}</span></div>
-                            <div class="flex justify-between text-[10px] font-black"><span class="text-secondary">STOP</span><span class="text-red-500">${sig.sl.toFixed(4)}</span></div>
-                        </div>
-                    </div>
-                `;
-            } else {
-                sigBox.innerHTML = `<p class="text-secondary font-medium text-xs italic">${s.signal?.reason || 'Monitoring neural pathways...'}</p>`;
-            }
-
-            // Arm Button
-            const armBtn = document.getElementById('arm-toggle-btn');
-            armBtn.innerText = s.armed ? 'DISARM EXECUTION ENGINE' : 'ARM EXECUTION ENGINE';
-            armBtn.className = `w-full py-5 ${s.armed ? 'bg-red-500' : 'bg-black dark:bg-white'} text-white dark:text-black rounded-2xl font-black text-sm active:scale-95 transition-all shadow-xl`;
-            document.getElementById('arm-label').innerText = s.armed ? 'ARMED' : 'DISARMED';
-            document.getElementById('arm-label').className = `text-[10px] font-black ${s.armed ? 'text-green-500' : 'text-red-500'} uppercase tracking-widest`;
-            document.getElementById('arm-status-indicator').className = `w-1.5 h-1.5 rounded-full ${s.armed ? 'bg-green-500 shadow-sm shadow-green-500/50' : 'bg-red-500'}`;
-
-            // Terminal News (Global Data Stream)
-            const newsRes = await fetchAPI('/news/latest');
-            if (newsRes && document.getElementById('terminal-news-list')) {
-                const newsList = document.getElementById('terminal-news-list');
-                newsList.innerHTML = newsRes.map(n => `
-                    <div class="flex items-start justify-between p-3 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl border border-black/5 dark:border-white/5 group hover:border-accent-blue/20 transition-all">
-                        <div class="flex items-start gap-4">
-                            <div class="flex flex-col items-center min-w-[40px] pt-1">
-                                <span class="text-[7px] font-black text-secondary opacity-50 uppercase">${n.source}</span>
-                                <div class="w-1.5 h-1.5 rounded-full mt-1 ${n.impact === 'CRITICAL' ? 'bg-red-600 animate-ping' : (n.impact === 'HIGH' ? 'bg-red-500' : (n.impact === 'MEDIUM' ? 'bg-yellow-500' : 'bg-blue-500'))}"></div>
-                            </div>
-                            <div>
-                                <p class="text-[10px] font-black leading-snug group-hover:text-accent-blue transition-colors">${n.title}</p>
-                                <div class="flex items-center gap-2 mt-1.5">
-                                    <span class="text-[8px] font-bold text-secondary uppercase tracking-tighter">${n.category}</span>
-                                    <span class="w-1 h-1 rounded-full bg-black/10 dark:bg-white/10"></span>
-                                    <span class="text-[8px] font-medium text-secondary opacity-60 uppercase">${n.timestamp.split(' ').slice(0,4).join(' ')}</span>
-                                </div>
-                            </div>
-                        </div>
-                        <a href="${n.url}" target="_blank" class="opacity-0 group-hover:opacity-100 transition-opacity">
-                            <i data-lucide="external-link" class="w-3 h-3 text-secondary"></i>
-                        </a>
-                    </div>
-                `).join('');
-                lucide.createIcons();
-            }
-
-            // Economic Calendar (Dashboard)
-            const calBox = document.getElementById('dashboard-calendar');
-            if (calBox && s.news && s.news.next_events) {
-                if (s.news.next_events.length > 0) {
-                    calBox.innerHTML = s.news.next_events.map(e => `
-                        <div class="p-3 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl border border-black/5 dark:border-white/5">
-                            <div class="flex justify-between items-center mb-1">
-                                <span class="text-[8px] font-black text-secondary uppercase opacity-50">${e.currency}</span>
-                                <span class="text-[8px] font-black text-red-500 uppercase tracking-widest">High Impact</span>
-                            </div>
-                            <p class="text-[10px] font-bold leading-tight">${e.event}</p>
-                            <p class="text-[8px] text-secondary font-medium mt-1 uppercase">${e.time || 'All Day'}</p>
-                        </div>
-                    `).join('');
-                } else {
-                    calBox.innerHTML = '<p class="text-secondary opacity-50 text-[10px] italic text-center py-4">No high impact events today.</p>';
-                }
-            }
-
-            // Scanner Table
-            if (s.best_setups) {
-                const setupsList = document.getElementById('best-setups-list');
-                setupsList.innerHTML = s.best_setups.map(setup => `
-                    <div onclick="selectMarket('${setup.symbol}')" class="flex justify-between items-center p-3 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl border border-black/5 dark:border-white/5 cursor-pointer hover:border-accent-blue/40 transition-all group">
-                        <div class="flex flex-col">
-                            <span class="text-[10px] font-black uppercase tracking-widest group-hover:text-accent-blue transition-colors">${setup.symbol.replace('_', '/')}</span>
-                            <span class="text-[8px] font-bold text-secondary uppercase">${setup.trend || 'NEUTRAL'}</span>
-                        </div>
-                        <div class="flex items-center gap-3">
-                             <span class="text-xs font-black">${setup.score}</span>
-                             <div class="w-8 h-1 rounded-full bg-black/5 dark:bg-white/5 overflow-hidden">
-                                <div class="h-full bg-accent-blue" style="width: ${setup.score}%"></div>
-                             </div>
-                        </div>
-                    </div>
-                `).join('');
-            }
-            
-            // Scanner Tab Table
-            const scannerBody = document.getElementById('scanner-table-body');
-            const scannerData = await fetchAPI('/scanner');
-            if (scannerBody && scannerData && scannerData.assets) {
-                scannerBody.innerHTML = scannerData.assets.map(a => `
-                    <tr class="group hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer" onclick="selectMarket('${a.symbol}')">
-                        <td class="py-5 px-8">
-                            <div class="flex flex-col">
-                                <span class="font-black text-sm">${a.symbol.toUpperCase().replace('_', '/')}</span>
-                                <span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${a.name || '---'}</span>
-                            </div>
-                        </td>
-                        <td class="py-5 text-right font-black tabular-nums">${a.price ? a.price.toLocaleString(undefined, {minimumFractionDigits: 2}) : '--'}</td>
-                        <td class="py-5 text-right font-bold ${a.change >= 0 ? 'text-green-500' : 'text-red-500'} tabular-nums">
-                            ${a.change >= 0 ? '+' : ''}${(a.change || 0).toFixed(2)}%
-                        </td>
-                        <td class="py-5 text-center">
-                            <span class="text-[10px] font-black uppercase tracking-widest ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}">
-                                ${a.trend || '---'}
-                            </span>
-                        </td>
-                        <td class="py-5 text-center">
-                            <span class="status-badge bg-black/5 dark:bg-white/5 text-secondary text-[8px]">${a.status || 'DELAYED'}</span>
-                        </td>
-                        <td class="py-5 pr-8 text-right">
-                            <div class="flex items-center justify-end gap-3">
-                                <span class="font-black text-sm">${a.score || 0}</span>
-                                <div class="w-12 h-1 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
-                                    <div class="h-full bg-accent-blue" style="width: ${a.score || 0}%"></div>
-                                </div>
-                            </div>
-                        </td>
+        async function updateBrokers() {
+            const brokers = await fetchAPI('/brokers');
+            const wallets = await fetchAPI('/wallets');
+            const table = document.getElementById('broker-status-table');
+            if (table && brokers) {
+                table.innerHTML = brokers.map(b => `
+                    <tr class="border-b border-black/5 dark:border-white/5 group hover:bg-black/[0.01]">
+                        <td class="py-4 px-6"><div class="flex items-center gap-3">${LOGOS[b.exchange_id.toUpperCase()] || ''}<span class="font-black">${b.broker_id}</span></div></td>
+                        <td class="py-4 px-6 font-bold text-secondary uppercase">${b.exchange_id}</td>
+                        <td class="py-4 px-6"><span class="status-badge ${b.is_active ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">${b.is_active ? 'READY' : 'INACTIVE'}</span></td>
+                        <td class="py-4 px-6 text-right"><button onclick="toggleBroker('${b.broker_id}', ${!b.is_active})" class="text-accent-blue font-black text-[9px] uppercase tracking-widest hover:underline">${b.is_active ? 'Disable' : 'Enable'}</button></td>
                     </tr>
                 `).join('');
             }
-
-            // History
-            const histBody = document.getElementById('history-table-body');
-            if (histBody && s.history) {
-                histBody.innerHTML = s.history.slice().reverse().map(h => `
-                    <tr class="hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors">
-                        <td class="py-5 px-8 flex flex-col">
-                            <span class="font-black text-sm">${h.symbol}</span>
-                            <span class="text-[9px] text-secondary font-bold uppercase">${h.timestamp ? new Date(h.timestamp).toLocaleString() : '--'}</span>
-                        </td>
-                        <td class="py-5 text-center">
-                            <span class="px-2 py-0.5 rounded text-[10px] font-black ${h.direction === 'BUY' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">
-                                ${h.direction}
-                            </span>
-                        </td>
-                        <td class="py-5 text-right font-black tabular-nums">${h.entry_price ? h.entry_price.toLocaleString() : '--'}</td>
-                        <td class="py-5 text-right font-black tabular-nums">${h.exit_price ? h.exit_price.toLocaleString() : '--'}</td>
-                        <td class="py-5 pr-8 text-right font-black tabular-nums ${h.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">
-                            ${h.pnl >= 0 ? '+' : ''}${h.pnl.toLocaleString()} €
-                        </td>
-                    </tr>
-                `).join('');
-            }
-
-            // Active Positions
-            const activePos = document.getElementById('active-pos-list');
-            if (s.active_trades && s.active_trades.length > 0) {
-                activePos.innerHTML = s.active_trades.map(p => `
-                    <div class="card-premium border-2 border-accent-blue/30 shadow-2xl shadow-accent-blue/10">
-                        <div class="flex justify-between items-start mb-8">
-                            <div>
-                                <h3 class="text-3xl font-black tracking-tighter mb-1">${p.display_symbol || p.symbol}</h3>
-                                <p class="text-xs font-bold text-secondary uppercase tracking-widest">${p.direction} • ${p.quantity.toFixed(4)} UNITS • ${p.leverage}X LEVERAGE</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-4xl font-black tracking-tighter ${p.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">${p.pnl >= 0 ? '+' : ''}${p.pnl.toFixed(2)} €</p>
-                                <p class="text-[10px] font-black text-secondary uppercase tracking-widest mt-1">Unrealized P&L</p>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-3 gap-8 pt-8 border-t border-black/5 dark:border-white/5">
-                            <div>
-                                <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-1">Entry Price</p>
-                                <p class="font-black text-lg">${p.entry_price.toLocaleString()}</p>
-                            </div>
-                            <div>
-                                <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-1">Take Profit</p>
-                                <p class="font-black text-lg text-green-500">${p.tp ? p.tp.toLocaleString() : '--'}</p>
-                            </div>
-                            <div>
-                                <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-1">Stop Loss</p>
-                                <p class="font-black text-lg text-red-500">${p.sl ? p.sl.toLocaleString() : '--'}</p>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-            } else {
-                activePos.innerHTML = '<div class="py-20 text-center opacity-30 flex flex-col items-center gap-4"><i data-lucide="box" class="w-10 h-10"></i><p class="font-black text-xs uppercase tracking-widest">No Active Market Exposure</p></div>';
-                lucide.createIcons();
-            }
         }
 
-        async function initMarkets() {
-            const grid = document.getElementById('markets-full-grid');
-            if (!grid) return;
-
-            const res = await fetchAPI('/markets');
-            if (res && !res.detail) {
-                let html = '';
-                // Rule: Ensure we only iterate over valid categories (All 8)
-                const categories = ["CRYPTO", "STOCKS", "FUTURES", "ETFS", "BONDS", "FOREX", "INDICES", "COMMODITIES"];
-                
-                categories.forEach(cat => {
-                    if (currentFilter !== 'ALL' && cat !== currentFilter) return;
-                    if (!res[cat] || res[cat].length === 0) return;
-                    
-                    // Group Header
-                    html += `
-                        <div class="col-span-full mt-8 mb-4">
-                            <h3 class="text-xs font-black text-secondary uppercase tracking-[0.2em] border-b border-black/5 dark:border-white/5 pb-2">${cat}</h3>
-                        </div>
-                    `;
-
-                    html += res[cat].map(m => {
-                        if (!m) return '';
-                        const symbolDisplay = (m.display_symbol || m.symbol || 'Unknown').toUpperCase().replace('_', '/');
-                        const assetName = m.name || '---';
-                        const assetClass = m.asset_class || cat;
-                        const price = m.price ? m.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4}) : '--';
-                        const change = m.change !== undefined ? m.change : 0;
-                        const status = m.market_status || 'CLOSED';
-
-                        return `
-                        <div class="market-card" onclick="selectMarket('${m.market_id || m.symbol}')">
-                            <div class="flex justify-between items-start mb-4">
-                                <span class="text-[9px] font-black text-secondary uppercase tracking-widest opacity-60">${assetClass}</span>
-                                <span class="status-badge bg-black/5 dark:bg-white/5 text-[7px]">${status}</span>
-                            </div>
-                            <div class="flex flex-col mb-4">
-                                <span class="font-black text-sm">${symbolDisplay}</span>
-                                <span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${assetName}</span>
-                            </div>
-                            <p class="font-black text-sm tabular-nums mb-1" data-price-id="${m.market_id || m.symbol}" data-last-val="${m.price || 0}">${price}</p>
-                            <div class="flex justify-between items-center pt-4 border-t border-black/5 dark:border-white/5">
-                                <span class="text-[10px] font-bold text-secondary uppercase">24h Chg</span>
-                                <span class="text-[10px] font-black ${change >= 0 ? 'text-green-500' : 'text-red-500'}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</span>
-                            </div>
-                        </div>
-                    `}).join('');
+        async function loadSettings() {
+            const s = await fetchAPI('/settings');
+            if (s) {
+                Object.keys(s).forEach(k => {
+                    const el = document.getElementById(`set-${k}`);
+                    if (el) {
+                        if (el.type === 'checkbox') el.checked = s[k] === 'true';
+                        else el.value = s[k];
+                    }
                 });
-                grid.innerHTML = html || '<div class="col-span-full py-20 text-center text-secondary font-medium">No assets matching filter.</div>';
             }
         }
 
-        function quickProvision(amount) {
-            document.getElementById('demo-bal-input').value = amount;
+        async function saveBotSettings() {
+            const data = {};
+            document.querySelectorAll('[id^="set-"]').forEach(el => {
+                const key = el.id.replace('set-', '');
+                data[key] = el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value;
+            });
+            const res = await fetchAPI('/settings', 'POST', data);
+            if (res && res.success) alert("Settings saved successfully.");
         }
 
-        async function setBalance() {
-            const val = document.getElementById('demo-bal-input').value;
-            if (!val) return;
-            
-            if (confirm(`Confirm setting Demo Capital to ${parseFloat(val).toLocaleString()} €? This will affect risk calculations.`)) {
-                const res = await fetchAPI(`/demo/account?amount=${val}`, 'POST');
-                if (res && res.success) {
-                    alert(`Capital updated: ${res.balance.toLocaleString()} €`);
-                    update();
-                }
-            }
-        }
-
-        async function resetAccount() {
-            if(confirm("Confirm Journal Wipe?")) {
-                await fetchAPI('/demo/reset', 'POST');
-                update();
-            }
-        }
-
-        async function resetEmergency() {
-            await fetchAPI('/emergency-stop/reset', 'POST');
+        async function selectMarket(mid) {
+            selectedSymbol = mid;
+            showTab('trading');
             update();
         }
 
-        // Global Actions & Handlers
-        document.getElementById('main-toggle-btn').onclick = async () => {
-            const btn = document.getElementById('main-toggle-btn');
-            const targetState = !botIsRunning;
-            const endpoint = targetState ? '/start' : '/stop';
-            
-            btn.style.opacity = '0.5';
-            btn.disabled = true;
-            
-            try {
-                const res = await fetchAPI(endpoint, 'POST');
-                if (res && res.success) {
-                    botIsRunning = targetState;
-                }
-            } catch (e) {
-                console.error("Action error:", e);
-            } finally {
-                btn.style.opacity = '1';
-                btn.disabled = false;
-                update();
-            }
-        };
-
-        document.getElementById('arm-toggle-btn').onclick = async () => {
-            const btn = document.getElementById('arm-toggle-btn');
-            btn.style.opacity = '0.5';
-            try {
-                const res = await fetchAPI('/arm', 'POST');
-                if (res) {
-                    botIsArmed = res.armed;
-                    console.log("Engine arm state:", botIsArmed);
-                }
-            } catch (e) {
-                console.error("Arm error:", e);
-            } finally {
-                btn.style.opacity = '1';
-                update();
-            }
+        document.getElementById('theme-toggle').onclick = () => {
+            document.body.classList.toggle('dark');
+            localStorage.setItem('quantum-theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+            updateThemeUI();
         };
 
         document.getElementById('mode-demo-btn').onclick = () => fetchAPI('/mode', 'POST').then(update);
-        document.getElementById('mode-live-btn').onclick = () => { 
-            if(confirm("DANGER: Switching to REAL mode will use actual broker API keys and REAL FUNDS. Proceed with caution?")) {
-                fetchAPI('/mode', 'POST').then(update); 
-            }
+        document.getElementById('mode-live-btn').onclick = () => { if(confirm("Warning: REAL FUNDS will be used. Proceed?")) fetchAPI('/mode', 'POST').then(update); };
+        document.getElementById('main-toggle-btn').onclick = async () => {
+            const target = !botIsRunning;
+            const res = await fetchAPI(target ? '/start' : '/stop', 'POST');
+            if (res && res.success) { botIsRunning = target; update(); }
         };
+        document.getElementById('arm-toggle-btn').onclick = () => fetchAPI('/arm', 'POST').then(update);
+        document.getElementById('emergency-stop-btn').onclick = () => { if(confirm("Stop all systems?")) fetchAPI('/emergency-stop', 'POST').then(update); };
 
-        document.getElementById('emergency-stop-btn').onclick = () => { 
-            if(confirm("EMERGENCY STOP: Halt all systems immediately and block all order entries?")) {
-                fetchAPI('/emergency-stop', 'POST').then(update); 
-            }
-        };
-
+        connectWS();
         initMarkets();
         update();
         setInterval(update, 2000);
+
+        async function initMarkets() {
+            const grid = document.getElementById('markets-full-grid');
+            const res = await fetchAPI('/markets');
+            if (grid && res) {
+                let html = '';
+                const categories = ['CRYPTO', 'FOREX', 'INDICES', 'COMMODITIES', 'STOCKS', 'FUTURES', 'BONDS', 'ETFS'];
+                categories.forEach(cat => {
+                    if (currentFilter !== 'ALL' && cat !== currentFilter) return;
+                    if (!res[cat] || res[cat].length === 0) return;
+                    html += `<div class="col-span-full mt-4 border-b border-black/5 pb-2 text-[10px] font-black uppercase tracking-widest">${cat}</div>`;
+                    html += res[cat].map(m => `
+                        <div class="market-card" onclick="selectMarket('${m.market_id || m.symbol}')">
+                            <div class="flex flex-col"><span class="font-black text-sm">${(m.display_symbol || m.symbol).toUpperCase()}</span><span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${m.name || '--'}</span></div>
+                            <p class="font-black text-sm mt-2">${m.price ? m.price.toLocaleString() : '--'}</p>
+                        </div>
+                    `).join('');
+                });
+                grid.innerHTML = html;
+            }
+        }
     </script>
 </body>
 </html>

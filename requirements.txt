@@ -13,3 +13,4 @@ httpx==0.28.1
 pytest==9.0.3
 pytest-asyncio==1.4.0
 cryptography>=50.0.0,<51.0.0
+requests==2.32.3
