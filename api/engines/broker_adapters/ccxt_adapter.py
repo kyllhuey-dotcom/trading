@@ -13,6 +13,7 @@ class CCXTAdapter(BrokerAdapter):
         self.client: Optional[ccxt.Exchange] = None
         self.api_key = os.getenv("BROKER_API_KEY")
         self.api_secret = os.getenv("BROKER_API_SECRET")
+        self.passphrase = None
 
     async def connect(self) -> bool:
         """Rule 43: Validate credentials and connectivity."""
@@ -20,11 +21,15 @@ class CCXTAdapter(BrokerAdapter):
             return False
         try:
             exchange_class = getattr(ccxt, self.exchange_id)
-            self.client = exchange_class({
+            config = {
                 'apiKey': self.api_key,
                 'secret': self.api_secret,
                 'enableRateLimit': True,
-            })
+            }
+            if self.passphrase:
+                config['password'] = self.passphrase
+                
+            self.client = exchange_class(config)
             # Test connectivity by fetching balance
             await self.client.fetch_balance()
             return True

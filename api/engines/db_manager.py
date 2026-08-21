@@ -30,7 +30,7 @@ class DatabaseManager:
                 )
             """)
             
-            # Trades Table (Rule 38)
+            # trades Table (Rule 38)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS trades (
                     id TEXT PRIMARY KEY,
@@ -52,6 +52,41 @@ class DatabaseManager:
                     metadata TEXT
                 )
             """)
+
+            # Bot Settings Table (Risk, Strategy)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+
+            # Broker Connections Table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS broker_configs (
+                    broker_id TEXT PRIMARY KEY,
+                    exchange_id TEXT, -- For CCXT
+                    api_key TEXT,
+                    api_secret TEXT,
+                    api_passphrase TEXT,
+                    is_active INTEGER DEFAULT 0,
+                    mode TEXT -- REAL or DEMO
+                )
+            """)
+            
+            # Seed default settings
+            cursor = conn.execute("SELECT COUNT(*) FROM settings")
+            if cursor.fetchone()[0] == 0:
+                defaults = {
+                    "max_risk_pct": "1.0",
+                    "max_leverage": "20",
+                    "max_daily_loss_pct": "3.0",
+                    "cool_down_mins": "30",
+                    "max_open_positions": "3",
+                    "trailing_stop_active": "true"
+                }
+                for k, v in defaults.items():
+                    conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))
 
             # Audit Logs (Institutional Compliance)
             conn.execute("""

@@ -243,6 +243,7 @@
                 <div class="sidebar-item" onclick="showTab('markets')"><i data-lucide="layers" class="w-5 h-5"></i> Market Hub</div>
                 <div class="sidebar-item" onclick="showTab('scanner')"><i data-lucide="radar" class="w-5 h-5"></i> Global Scanner</div>
                 <div class="sidebar-item" onclick="showTab('trading')"><i data-lucide="terminal" class="w-5 h-5"></i> Trade Terminal</div>
+                <div class="sidebar-item" onclick="showTab('brokers')"><i data-lucide="wallet-2" class="w-5 h-5"></i> Brokers & Wallets</div>
                 <div class="sidebar-item" onclick="showTab('positions')"><i data-lucide="briefcase" class="w-5 h-5"></i> Open Positions</div>
                 <div class="sidebar-item" onclick="showTab('history')"><i data-lucide="clock-rewind" class="w-5 h-5"></i> Trade Journal</div>
             </nav>
@@ -413,6 +414,81 @@
                 </div>
             </section>
 
+            <!-- BROKERS & WALLETS TAB -->
+            <section id="tab-brokers" class="tab-content">
+                <div class="max-w-7xl mx-auto">
+                    <header class="mb-10">
+                        <h2 class="text-4xl font-black tracking-tight mb-2">Brokers & Wallets</h2>
+                        <p class="text-secondary font-medium">Connect any institutional exchange and monitor your assets.</p>
+                    </header>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        <div class="lg:col-span-4 space-y-6">
+                            <div class="card-premium">
+                                <h4 class="text-sm font-black uppercase tracking-widest mb-6">Connect New Broker</h4>
+                                <form id="broker-form" class="space-y-4">
+                                    <div class="flex flex-col gap-2">
+                                        <label class="text-[9px] font-black text-secondary uppercase">Unique Alias</label>
+                                        <input type="text" name="broker_id" placeholder="My Main Binance" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-bold" required>
+                                    </div>
+                                    <div class="flex flex-col gap-2">
+                                        <label class="text-[9px] font-black text-secondary uppercase">Exchange (CCXT ID)</label>
+                                        <select name="exchange_id" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-bold" required>
+                                            <option value="gate">Gate.io</option>
+                                            <option value="binance">Binance</option>
+                                            <option value="bybit">Bybit</option>
+                                            <option value="kraken">Kraken</option>
+                                            <option value="kucoin">KuCoin</option>
+                                            <option value="okx">OKX</option>
+                                            <option value="coinbase">Coinbase</option>
+                                        </select>
+                                    </div>
+                                    <div class="flex flex-col gap-2">
+                                        <label class="text-[9px] font-black text-secondary uppercase">API Key</label>
+                                        <input type="text" name="api_key" placeholder="Paste your API key" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-mono" required>
+                                    </div>
+                                    <div class="flex flex-col gap-2">
+                                        <label class="text-[9px] font-black text-secondary uppercase">Secret Key</label>
+                                        <input type="password" name="api_secret" placeholder="••••••••••••••" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-mono" required>
+                                    </div>
+                                    <div class="flex flex-col gap-2">
+                                        <label class="text-[9px] font-black text-secondary uppercase">Passphrase (Optional)</label>
+                                        <input type="password" name="api_passphrase" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-mono">
+                                    </div>
+                                    <button type="submit" class="w-full btn-premium bg-accent-blue text-white py-3 mt-2">Connect Institutional API</button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div class="lg:col-span-8 space-y-8">
+                            <div class="card-premium">
+                                <h4 class="text-sm font-black uppercase tracking-widest mb-6">Active Institutional Wallets</h4>
+                                <div id="wallet-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <p class="text-secondary italic text-xs">No brokers connected yet.</p>
+                                </div>
+                            </div>
+
+                            <div class="card-premium">
+                                <h4 class="text-sm font-black uppercase tracking-widest mb-6">Connected Brokers Status</h4>
+                                <div class="overflow-hidden border border-black/5 dark:border-white/5 rounded-2xl">
+                                    <table class="w-full text-xs text-left">
+                                        <thead class="bg-black/5 dark:bg-white/5 text-[9px] text-secondary font-black uppercase tracking-widest">
+                                            <tr>
+                                                <th class="py-4 px-6">Alias</th>
+                                                <th class="py-4 px-6">Exchange</th>
+                                                <th class="py-4 px-6">Status</th>
+                                                <th class="py-4 px-6 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="broker-status-table"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- TRADING TERMINAL -->
             <section id="tab-trading" class="tab-content">
                 <div class="grid grid-cols-12 gap-8 h-full max-w-[1600px] mx-auto">
@@ -542,6 +618,33 @@
                     
                     <div class="space-y-8">
                         <div class="card-premium">
+                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Algorithmic Risk Parameters</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Risk per Trade (%)</label>
+                                    <input type="number" id="set-max_risk_pct" step="0.1" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-3 outline-none font-bold">
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Max Leverage</label>
+                                    <input type="number" id="set-max_leverage" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-3 outline-none font-bold">
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Daily Loss Limit (%)</label>
+                                    <input type="number" id="set-max_daily_loss_pct" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-3 outline-none font-bold">
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Cool Down (Minutes)</label>
+                                    <input type="number" id="set-cool_down_mins" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-3 outline-none font-bold">
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Max Concurrent Positions</label>
+                                    <input type="number" id="set-max_open_positions" class="bg-black/5 dark:bg-white/5 rounded-xl px-4 py-3 outline-none font-bold">
+                                </div>
+                            </div>
+                            <button onclick="saveBotSettings()" class="w-full btn-premium bg-black text-white dark:bg-white dark:text-black py-4 mt-8 font-black uppercase tracking-widest text-xs">Deploy Parameters</button>
+                        </div>
+
+                        <div class="card-premium">
                             <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Capital Provisioning</h4>
                             <div class="flex flex-col gap-4">
                                 <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Initial Demo Balance (€)</label>
@@ -628,6 +731,93 @@
             document.getElementById(`tab-${tabId}`).classList.add('active');
             document.querySelector(`.sidebar-item[onclick*="${tabId}"]`).classList.add('active');
             if (tabId === 'scanner') update();
+            if (tabId === 'brokers') updateBrokers();
+            if (tabId === 'settings') loadSettings();
+        }
+
+        async function updateBrokers() {
+            const brokers = await fetchAPI('/brokers');
+            const wallets = await fetchAPI('/wallets');
+            
+            const table = document.getElementById('broker-status-table');
+            if (table && brokers) {
+                table.innerHTML = brokers.map(b => `
+                    <tr class="border-b border-black/5 dark:border-white/5">
+                        <td class="py-4 px-6 font-black">${b.broker_id}</td>
+                        <td class="py-4 px-6 font-bold text-secondary uppercase">${b.exchange_id}</td>
+                        <td class="py-4 px-6">
+                            <span class="status-badge ${b.is_active ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">
+                                ${b.is_active ? 'ACTIVE' : 'INACTIVE'}
+                            </span>
+                        </td>
+                        <td class="py-4 px-6 text-right">
+                             <button class="text-accent-red font-black text-[9px] uppercase tracking-widest hover:underline">Disconnect</button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            const walletList = document.getElementById('wallet-list');
+            if (walletList && wallets) {
+                const bids = Object.keys(wallets);
+                if (bids.length > 0) {
+                    walletList.innerHTML = bids.map(bid => `
+                        <div class="p-5 bg-black/[0.03] dark:bg-white/[0.03] rounded-[24px] border border-black/5 dark:border-white/5">
+                            <div class="flex justify-between items-start mb-4">
+                                <span class="text-[9px] font-black text-secondary uppercase tracking-widest">${bid}</span>
+                                <i data-lucide="shield-check" class="w-4 h-4 text-green-500"></i>
+                            </div>
+                            <p class="text-2xl font-black tracking-tighter">${wallets[bid].toLocaleString()} <span class="text-xs text-secondary font-medium">USDT</span></p>
+                        </div>
+                    `).join('');
+                    lucide.createIcons();
+                } else {
+                    walletList.innerHTML = '<p class="text-secondary italic text-xs p-6">No wallets synchronized.</p>';
+                }
+            }
+        }
+
+        document.getElementById('broker-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            const btn = e.target.querySelector('button');
+            const originalText = btn.innerText;
+            
+            btn.innerText = 'AUTHENTICATING...';
+            btn.disabled = true;
+            
+            const res = await fetchAPI('/brokers', 'POST', data);
+            alert(res.message);
+            
+            btn.innerText = originalText;
+            btn.disabled = false;
+            if (res.success) {
+                e.target.reset();
+                updateBrokers();
+            }
+        };
+
+        async function loadSettings() {
+            const settings = await fetchAPI('/settings');
+            if (settings) {
+                Object.keys(settings).forEach(key => {
+                    const el = document.getElementById(`set-${key}`);
+                    if (el) el.value = settings[key];
+                });
+            }
+        }
+
+        async function saveBotSettings() {
+            const keys = ["max_risk_pct", "max_leverage", "max_daily_loss_pct", "cool_down_mins", "max_open_positions"];
+            const data = {};
+            keys.forEach(k => {
+                const el = document.getElementById(`set-${k}`);
+                if (el) data[k] = el.value;
+            });
+            
+            const res = await fetchAPI('/settings', 'POST', data);
+            if (res.success) alert("Settings saved and deployed to engine.");
         }
 
         function selectMarket(market_id) {
@@ -966,6 +1156,14 @@
                 let html = '';
                 Object.keys(res).forEach(cat => {
                     if (currentFilter !== 'ALL' && cat !== currentFilter) return;
+                    
+                    // Group Header
+                    html += `
+                        <div class="col-span-full mt-8 mb-4">
+                            <h3 class="text-xs font-black text-secondary uppercase tracking-[0.2em] border-b border-black/5 dark:border-white/5 pb-2">${cat}</h3>
+                        </div>
+                    `;
+
                     html += res[cat].map(m => `
                         <div class="market-card" onclick="selectMarket('${m.market_id}')">
                             <div class="flex justify-between items-start mb-4">
@@ -973,7 +1171,7 @@
                                 <span class="status-badge bg-black/5 dark:bg-white/5 text-[7px]">${m.market_status}</span>
                             </div>
                             <h4 class="font-black text-lg tracking-tighter mb-1">${m.display_symbol}</h4>
-                            <p class="font-black text-sm tabular-nums mb-4">${m.price ? m.price.toLocaleString() : '--'}</p>
+                            <p class="font-black text-sm tabular-nums mb-4">${m.price ? m.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4}) : '--'}</p>
                             <div class="flex justify-between items-center pt-4 border-t border-black/5 dark:border-white/5">
                                 <span class="text-[10px] font-bold text-secondary uppercase">24h Chg</span>
                                 <span class="text-[10px] font-black ${m.change >= 0 ? 'text-green-500' : 'text-red-500'}">${m.change >= 0 ? '+' : ''}${(m.change || 0).toFixed(2)}%</span>

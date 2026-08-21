@@ -91,7 +91,7 @@ class NewsFilter:
         self.safety_after = safety_after_mins
 
     def filter_high_impact(self, events: List[Dict[str, Any]], asset_currency: Optional[str] = None) -> List[Dict[str, Any]]:
-        # FF format impact levels: "High", "Medium", "Low"
+        # Mission: Filter ONLY for "High" impact news (Rule: majeure uniquement)
         high_impact = [e for e in events if e.get('impact') == 'High']
         
         # If asset_currency is provided (e.g., "USD"), filter for relevant news

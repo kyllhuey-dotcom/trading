@@ -17,7 +17,7 @@ from api.engines.diagnostic_engine import DiagnosticEngine
 from api.engines.news_aggregator import NewsAggregator
 from api.models import StatusResponse, NewsStatus, AnalysisResult, SignalResult, DiagnosisReport
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import os
 import asyncio
 import json
@@ -142,8 +142,59 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.on_event("startup")
 async def startup_event():
     if os.getenv("TESTING") != "true":
+        await broker_connector.initialize_from_db(db_manager)
         asyncio.create_task(auto_scan_loop())
         asyncio.create_task(broadcaster_loop())
+
+@app.get("/api/settings")
+async def get_settings():
+    with db_manager._get_connection() as conn:
+        rows = conn.execute("SELECT * FROM settings").fetchall()
+        return {row["key"]: row["value"] for row in rows}
+
+@app.post("/api/settings")
+async def save_settings(new_settings: Dict[str, str]):
+    with db_manager._get_connection() as conn:
+        for k, v in new_settings.items():
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, v))
+        conn.commit()
+    # Update local risk engine
+    if "max_risk_pct" in new_settings: risk_engine.max_risk_pct = float(new_settings["max_risk_pct"])
+    if "max_leverage" in new_settings: risk_engine.max_leverage = int(new_settings["max_leverage"])
+    return {"success": True}
+
+@app.get("/api/brokers")
+async def list_brokers():
+    with db_manager._get_connection() as conn:
+        rows = conn.execute("SELECT broker_id, exchange_id, is_active FROM broker_configs").fetchall()
+        return [dict(row) for row in rows]
+
+@app.post("/api/brokers")
+async def add_broker_config(config: Dict[str, Any]):
+    broker_id = config.get("broker_id")
+    exchange_id = config.get("exchange_id")
+    api_key = config.get("api_key")
+    api_secret = config.get("api_secret")
+    passphrase = config.get("api_passphrase")
+    
+    # Try to connect first
+    success = await broker_connector.add_broker(broker_id, exchange_id, api_key, api_secret, passphrase)
+    
+    if success:
+        with db_manager._get_connection() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO broker_configs (broker_id, exchange_id, api_key, api_secret, api_passphrase, is_active)
+                VALUES (?, ?, ?, ?, ?, 1)
+            """, (broker_id, exchange_id, api_key, api_secret, passphrase))
+            conn.commit()
+        return {"success": True, "message": f"Broker {broker_id} connected and saved."}
+    else:
+        return {"success": False, "message": "Failed to connect with provided credentials."}
+
+@app.get("/api/wallets")
+async def get_wallets():
+    """Rule 45: Wallet aggregation (Ballets)."""
+    return await broker_connector.get_all_balances()
 
 @app.get("/api/status", response_model=StatusResponse)
 async def get_status(market_id: str = "btc_usdt"):

@@ -5,69 +5,80 @@ from .market_universe import MarketUniverse
 
 class BrokerConnector:
     """
-    Broker Connection Orchestrator (Lot 8).
-    Manages multiple broker adapters and handles the transition to REAL mode.
+    Universal Broker Connector (Lot 12).
+    Dynamically initializes any CCXT-supported exchange or legacy broker adapter.
     """
     def __init__(self):
         self.universe = MarketUniverse()
-        self.adapters = {
-            "GATE": CCXTAdapter("gate"),
-            "PRIMEXBT": PrimeXBTAdapter()
-        }
-        self.active_broker = "GATE"
+        self.active_adapters = {}
         self.emergency_stop_active = False
 
+    async def initialize_from_db(self, db_manager: Any):
+        """Load and connect all active brokers from the database."""
+        with db_manager._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM broker_configs WHERE is_active = 1").fetchall()
+            for row in rows:
+                await self.add_broker(
+                    broker_id=row["broker_id"],
+                    exchange_id=row["exchange_id"],
+                    api_key=row["api_key"],
+                    api_secret=row["api_secret"],
+                    passphrase=row["api_passphrase"]
+                )
+
+    async def add_broker(self, broker_id: str, exchange_id: str, api_key: str, api_secret: str, passphrase: str = None):
+        """Initialize a new CCXT adapter dynamically."""
+        from .broker_adapters.ccxt_adapter import CCXTAdapter
+        
+        adapter = CCXTAdapter(exchange_id=exchange_id)
+        adapter.api_key = api_key
+        adapter.api_secret = api_secret
+        # Passphrase for exchanges like KuCoin/OKX
+        if hasattr(adapter, 'passphrase'): adapter.passphrase = passphrase
+        
+        success = await adapter.connect()
+        if success:
+            self.active_adapters[broker_id] = adapter
+        return success
+
+    async def get_all_balances(self) -> Dict[str, float]:
+        """Aggregate balances from all connected wallets (wallets/ballets)."""
+        balances = {}
+        for bid, adapter in self.active_adapters.items():
+            balances[bid] = await adapter.get_balance()
+        return balances
+
     def trigger_emergency_stop(self):
-        """Rule 32: Immediate halt and blocking of all order entries."""
         self.emergency_stop_active = True
         return True
 
     def reset_emergency_stop(self):
-        """Rule 32: Requires explicit user action to reset safety protocols."""
         self.emergency_stop_active = False
         return True
 
     async def set_mode(self, mode: str):
-        """Rule 28 & 43: Secure toggle between DEMO and REAL."""
         if mode == "REAL":
             if self.emergency_stop_active:
-                return False, "Emergency Stop is active. Reset required."
-            
-            # Check broker connection and credentials before allowing REAL mode
-            adapter = self.adapters.get(self.active_broker)
-            if not adapter:
-                return False, f"Broker {self.active_broker} not found."
-            
-            connected = await adapter.connect()
-            if not connected:
-                status = adapter.get_status()
-                reason = status.get("api_status", "Connection failed")
-                return False, f"Cannot enter LIVE: {self.active_broker} error ({reason})."
-                
-            return True, f"Entering LIVE MODE on {self.active_broker}. Real funds at risk."
-        
-        return True, "Mode DEMO Activated."
-
-    async def connect(self, broker_id: str) -> bool:
-        """Switch active broker and attempt connection."""
-        if broker_id in self.adapters:
-            self.active_broker = broker_id
-            return await self.adapters[broker_id].connect()
-        return False
+                return False, "Emergency Stop active."
+            if not self.active_adapters:
+                return False, "No active broker connected. Please add a broker in settings."
+            return True, "LIVE MODE active."
+        return True, "DEMO MODE active."
 
     async def execute(self, signal: Dict[str, Any], risk: Dict[str, Any]):
-        """
-        Rule 14: Map internal ID to broker-specific symbol before execution.
-        """
-        adapter = self.adapters.get(self.active_broker)
-        if not adapter:
-            return {"success": False, "reason": "No active adapter"}
-            
+        if not self.active_adapters:
+            return {"success": False, "reason": "NO_BROKER_CONNECTED"}
+        
+        # Strategy: Execute on the first available broker for now
+        # Institutional improvement: Could select broker based on liquidity or specific asset mapping
+        broker_id = list(self.active_adapters.keys())[0]
+        adapter = self.active_adapters[broker_id]
+        
         market_id = signal.get("market_id")
-        broker_symbol = self.universe.map_to_broker(market_id, self.active_broker.lower())
+        broker_symbol = self.universe.map_to_broker(market_id, adapter.exchange_id)
         
         if not broker_symbol:
-            return {"success": False, "reason": f"UNSUPPORTED_BROKER_SYMBOL: {market_id} on {self.active_broker}"}
+            return {"success": False, "reason": f"UNSUPPORTED_SYMBOL: {market_id}"}
             
         return await adapter.execute_order(
             symbol=broker_symbol,
@@ -78,9 +89,8 @@ class BrokerConnector:
         )
 
     def get_status(self) -> Dict[str, Any]:
-        adapter = self.adapters.get(self.active_broker)
-        status = adapter.get_status() if adapter else {"broker": "NONE", "connected": False}
-        status["emergency_stop"] = self.emergency_stop_active
-        status["active_broker"] = self.active_broker
-        status["broker_name"] = self.active_broker
-        return status
+        return {
+            "connected_brokers": list(self.active_adapters.keys()),
+            "broker_count": len(self.active_adapters),
+            "emergency_stop": self.emergency_stop_active
+        }
