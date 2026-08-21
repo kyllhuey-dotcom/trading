@@ -1381,7 +1381,8 @@
 
                     html += res[cat].map(m => {
                         if (!m) return '';
-                        const displayName = m.display_symbol || m.symbol || 'Unknown';
+                        const symbolDisplay = (m.display_symbol || m.symbol || 'Unknown').toUpperCase().replace('_', '/');
+                        const assetName = m.name || '---';
                         const assetClass = m.asset_class || cat;
                         const price = m.price ? m.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4}) : '--';
                         const change = m.change !== undefined ? m.change : 0;
@@ -1393,8 +1394,11 @@
                                 <span class="text-[9px] font-black text-secondary uppercase tracking-widest opacity-60">${assetClass}</span>
                                 <span class="status-badge bg-black/5 dark:bg-white/5 text-[7px]">${status}</span>
                             </div>
-                            <h4 class="font-black text-sm mb-1">${displayName}</h4>
-                            <p class="font-black text-xs tabular-nums mb-4 opacity-50">${price}</p>
+                            <div class="flex flex-col mb-4">
+                                <span class="font-black text-sm">${symbolDisplay}</span>
+                                <span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${assetName}</span>
+                            </div>
+                            <p class="font-black text-sm tabular-nums mb-1">${price}</p>
                             <div class="flex justify-between items-center pt-4 border-t border-black/5 dark:border-white/5">
                                 <span class="text-[10px] font-bold text-secondary uppercase">24h Chg</span>
                                 <span class="text-[10px] font-black ${change >= 0 ? 'text-green-500' : 'text-red-500'}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</span>

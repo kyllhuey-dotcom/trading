@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 
 class SignalEngine:
-    def __init__(self, min_score: int = 75):
+    def __init__(self, min_score: int = 80):
         self.min_score = min_score
 
     def generate_signal(self, analysis: Dict[str, Any], news_status: Dict[str, Any], df: pd.DataFrame) -> Dict[str, Any]:
