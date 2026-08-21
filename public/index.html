@@ -381,6 +381,7 @@
                         <div class="switch-container p-1" id="market-filters">
                             <div onclick="setMarketFilter('ALL')" class="switch-option active">ALL</div>
                             <div onclick="setMarketFilter('CRYPTO')" class="switch-option">CRYPTO</div>
+                            <div onclick="setMarketFilter('STOCKS')" class="switch-option">STOCKS</div>
                             <div onclick="setMarketFilter('FOREX')" class="switch-option">FOREX</div>
                             <div onclick="setMarketFilter('INDICES')" class="switch-option">INDICES</div>
                         </div>
@@ -673,8 +674,8 @@
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
                                 <div class="space-y-2">
                                     <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Risk Per Trade</label><span class="text-[10px] font-bold text-accent-blue" id="val-max_risk_pct">1.0%</span></div>
-                                    <input type="range" id="set-max_risk_pct" min="0.1" max="5.0" step="0.1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="document.getElementById('val-max_risk_pct').innerText=this.value+'%'">
-                                    <p class="text-[9px] text-secondary">Percentage of equity risked per single execution.</p>
+                                    <input type="range" id="set-max_risk_pct" min="0.1" max="10.0" step="0.1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="document.getElementById('val-max_risk_pct').innerText=this.value+'%'">
+                                    <p class="text-[9px] text-secondary">Percentage of equity risked per single execution (Max 10%).</p>
                                 </div>
                                 <div class="space-y-2">
                                     <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Max Leverage</label><span class="text-[10px] font-bold text-accent-blue" id="val-max_leverage">20x</span></div>
@@ -702,8 +703,8 @@
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Min AI Confidence Score</label><span class="text-[10px] font-bold text-accent-green" id="val-min_signal_score">75</span></div>
-                                    <input type="range" id="set-min_signal_score" min="50" max="95" step="1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-min_signal_score').innerText=this.value">
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Min AI Confidence Score</label><span class="text-[10px] font-bold text-accent-green" id="val-min_signal_score">80</span></div>
+                                    <input type="range" id="set-min_signal_score" min="50" max="95" step="1" value="80" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-min_signal_score').innerText=this.value">
                                 </div>
                                 <div class="space-y-2">
                                     <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Risk/Reward Ratio</label><span class="text-[10px] font-bold text-accent-green" id="val-risk_reward_ratio">2.0</span></div>
@@ -728,13 +729,45 @@
                         <div class="card-premium">
                             <div class="flex items-center gap-3 mb-8 border-b border-black/5 dark:border-white/5 pb-4">
                                 <i data-lucide="banknote" class="text-green-500 w-5 h-5"></i>
-                                <h4 class="text-sm font-black uppercase tracking-widest">Capital Provisioning</h4>
+                                <h4 class="text-sm font-black uppercase tracking-widest">Capital & Buying Power</h4>
                             </div>
-                            <div class="flex flex-col gap-4">
-                                <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Update Demo Balance (€)</label>
-                                <div class="flex gap-4">
-                                    <input type="number" id="demo-bal-input" placeholder="10,000.00" class="flex-1 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-accent-blue/40 font-black text-lg">
-                                    <button onclick="setBalance()" class="btn-premium bg-accent-blue text-white shadow-lg shadow-accent-blue/30 px-10">Set Capital</button>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                                <!-- Demo Wallet Card -->
+                                <div class="p-6 bg-black/[0.02] dark:bg-white/[0.02] rounded-[24px] border border-black/5 dark:border-white/5">
+                                    <div class="flex justify-between items-center mb-4">
+                                        <span class="text-[10px] font-black text-secondary uppercase">Demo Allocation</span>
+                                        <span class="status-badge bg-blue-500/10 text-blue-500">Paper Trading</span>
+                                    </div>
+                                    <p class="text-4xl font-black tracking-tighter mb-2" id="prov-demo-val">0.00 €</p>
+                                    <p class="text-[10px] font-bold text-secondary uppercase">Buying Power: <span class="text-primary" id="prov-demo-power">0 €</span></p>
+                                </div>
+
+                                <!-- Real Wallet Card -->
+                                <div class="p-6 bg-black/[0.02] dark:bg-white/[0.02] rounded-[24px] border border-black/5 dark:border-white/5">
+                                    <div class="flex justify-between items-center mb-4">
+                                        <span class="text-[10px] font-black text-secondary uppercase">Real Assets (Total)</span>
+                                        <span class="status-badge bg-green-500/10 text-green-500">Secured</span>
+                                    </div>
+                                    <p class="text-4xl font-black tracking-tighter mb-2" id="prov-real-val">0.00 €</p>
+                                    <p class="text-[10px] font-bold text-secondary uppercase">Connected Brokers: <span class="text-primary" id="prov-broker-count">0</span></p>
+                                </div>
+                            </div>
+
+                            <div class="space-y-6">
+                                <div class="flex flex-col gap-3">
+                                    <label class="text-[10px] font-black text-secondary uppercase tracking-widest">Provision Demo Capital</label>
+                                    <div class="flex gap-4">
+                                        <input type="number" id="demo-bal-input" placeholder="10,000.00" class="flex-1 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-accent-blue/40 font-black text-lg tabular-nums">
+                                        <button onclick="setBalance()" class="btn-premium bg-accent-blue text-white shadow-lg shadow-accent-blue/30 px-10 font-black uppercase text-xs tracking-widest">Update</button>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button onclick="quickProvision(1000)" class="px-3 py-1.5 bg-black/5 dark:bg-white/5 rounded-lg text-[9px] font-black hover:bg-black/10 transition-colors uppercase">1k</button>
+                                        <button onclick="quickProvision(5000)" class="px-3 py-1.5 bg-black/5 dark:bg-white/5 rounded-lg text-[9px] font-black hover:bg-black/10 transition-colors uppercase">5k</button>
+                                        <button onclick="quickProvision(10000)" class="px-3 py-1.5 bg-black/5 dark:bg-white/5 rounded-lg text-[9px] font-black hover:bg-black/10 transition-colors uppercase">10k</button>
+                                        <button onclick="quickProvision(50000)" class="px-3 py-1.5 bg-black/5 dark:bg-white/5 rounded-lg text-[9px] font-black hover:bg-black/10 transition-colors uppercase">50k</button>
+                                        <button onclick="quickProvision(100000)" class="px-3 py-1.5 bg-black/5 dark:bg-white/5 rounded-lg text-[9px] font-black hover:bg-black/10 transition-colors uppercase">100k</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1077,6 +1110,29 @@
             botIsRunning = s.is_running;
             botIsArmed = s.armed;
 
+            // Update Provisioning Cards
+            const demoVal = document.getElementById('prov-demo-val');
+            const realVal = document.getElementById('prov-real-val');
+            if (demoVal) demoVal.innerText = `${s.balance.toLocaleString()} €`;
+            
+            const bPower = document.getElementById('prov-demo-power');
+            if (bPower && s.stats) {
+                const maxLev = parseInt(document.getElementById('set-max_leverage')?.value || 20);
+                bPower.innerText = `${(s.balance * maxLev).toLocaleString()} €`;
+            }
+
+            const brokerCount = document.getElementById('prov-broker-count');
+            if (brokerCount) {
+                const wallets = await fetchAPI('/wallets');
+                if (wallets) {
+                    const bids = Object.keys(wallets);
+                    brokerCount.innerText = bids.length;
+                    let totalReal = 0;
+                    bids.forEach(b => totalReal += (wallets[b].total_usdt || 0));
+                    if (realVal) realVal.innerText = `${totalReal.toLocaleString()} $`;
+                }
+            }
+
             // Technical Indicators
             if (s.analysis && s.analysis.indicators) {
                 const ind = s.analysis.indicators;
@@ -1366,7 +1422,7 @@
             if (res && !res.detail) {
                 let html = '';
                 // Rule: Ensure we only iterate over valid categories
-                const categories = ["CRYPTO", "FOREX", "INDICES", "COMMODITIES"];
+                const categories = ["CRYPTO", "STOCKS", "FOREX", "INDICES", "COMMODITIES"];
                 
                 categories.forEach(cat => {
                     if (currentFilter !== 'ALL' && cat !== currentFilter) return;
@@ -1408,6 +1464,10 @@
                 });
                 grid.innerHTML = html || '<div class="col-span-full py-20 text-center text-secondary font-medium">No assets matching filter.</div>';
             }
+        }
+
+        function quickProvision(amount) {
+            document.getElementById('demo-bal-input').value = amount;
         }
 
         async function setBalance() {

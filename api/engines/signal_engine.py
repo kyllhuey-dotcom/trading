@@ -99,13 +99,20 @@ class SignalEngine:
 
         # --- 3. Final Filtering (Rules 15, 18, 19, 55, 56) ---
         
+        # Alpha Override Protocol (Lot 15)
+        # If score >= 80, we bypass structural and news filters
+        alpha_override = score >= 80
+        
         # Basic failure reasons
         reasons = []
         if score < self.min_score: reasons.append(f"Low score ({score}/{self.min_score})")
-        if analysis.get("market_state") == "RANGE": reasons.append("Market in Range")
-        if not news_status.get("trading_allowed"): reasons.append("News/Session restricted")
         
-        is_detected = len(reasons) == 0
+        # These are bypassed if alpha_override is active
+        if not alpha_override:
+            if analysis.get("market_state") == "RANGE": reasons.append("Market in Range")
+            if not news_status.get("trading_allowed"): reasons.append("News/Session restricted")
+        
+        is_detected = len(reasons) == 0 or alpha_override
         
         return {
             "status": "SIGNAL_DETECTED" if is_detected else "NO_TRADE",
@@ -114,9 +121,10 @@ class SignalEngine:
             "sl": float(stop_loss),
             "tp": float(take_profit),
             "score": int(score),
-            "setup_type": "BOS_REENTRANCE" if analysis.get("bos") else "STRUCTURE_FOLLOW",
-            "confidence": "HIGH" if score > 85 else ("MEDIUM" if score > 70 else "LOW"),
-            "reason": ", ".join(reasons) if not is_detected else f"{direction} signal confirmed (Score {score})",
+            "alpha_override": alpha_override,
+            "setup_type": "ALPHA_OVERRIDE" if alpha_override else ("BOS_REENTRANCE" if analysis.get("bos") else "STRUCTURE_FOLLOW"),
+            "confidence": "CRITICAL" if score >= 90 else ("HIGH" if score >= 80 else "MEDIUM"),
+            "reason": ", ".join(reasons) if (not is_detected and not alpha_override) else (f"ALPHA OVERRIDE: {direction} (Score {score})" if alpha_override else f"{direction} signal confirmed (Score {score})"),
             "timestamp": datetime.now().isoformat(),
             "atr": atr,
             "risk_reward": 2.0

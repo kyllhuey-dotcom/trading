@@ -25,6 +25,7 @@ class DataEngine:
         self.forex_provider = YahooProvider("FOREX")
         self.index_provider = YahooProvider("INDICES")
         self.commodity_provider = YahooProvider("COMMODITIES")
+        self.stock_provider = YahooProvider("STOCKS")
         
         # Register in Layer
         self.layer.register_provider("gate", self.crypto_primary)
@@ -32,6 +33,7 @@ class DataEngine:
         self.layer.register_provider("yahoo_forex", self.forex_provider)
         self.layer.register_provider("yahoo_indices", self.index_provider)
         self.layer.register_provider("yahoo_commodities", self.commodity_provider)
+        self.layer.register_provider("yahoo_stocks", self.stock_provider)
         
         # Initialize Health Monitor (Rule 39)
         self.health_monitor = DataHealthMonitor(self.layer.providers)

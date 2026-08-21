@@ -124,7 +124,7 @@ async def broadcaster_loop():
         await manager.broadcast(json.dumps(state))
         
         if bot_state["is_running"]:
-            hot_markets = ["btc_usdt", "eth_usdt", "sol_usdt", "eur_usd", "gold"] 
+            hot_markets = ["btc_usdt", "eth_usdt", "aapl", "nvda", "tsla", "eur_usd", "gold"] 
             for mid in hot_markets:
                 await data_engine.broadcast_market_update(mid)
             
@@ -363,18 +363,36 @@ async def get_status(market_id: str = "btc_usdt"):
     )
 
     if bot_state["is_running"] and state_machine.current_state != BotState.EMERGENCY_STOP:
-        can_execute = (
-            bot_state["armed"] and data_valid and broker_valid and market_open and
-            day_allowed and session_allowed and news_clear and risk_valid and
-            not_range and trend_valid and structure_valid and signal_valid and 
-            spread_valid and liquidity_valid and leverage_valid and not active_trade
-        )
-        if can_execute:
-            res = await execution_router.execute(bot_state["mode"], signal_result, risk_data, ticker)
-            db_manager.log_audit("INFO", "TRADE_EXECUTION", f"Order sent for {market_id}", res)
+        # Alpha Override Protocol: Score >= 80 bypasses most filters
+        alpha_override = signal_result.get("score", 0) >= 80
         
-        # Archive signal for quant analysis
-        db_manager.archive_signal(signal_result, "EXECUTED" if can_execute else "FILTERED", diagnosis["main_blocker"])
+        # Mandatory Technical Safety (Cannot be bypassed)
+        technical_safety = (
+            bot_state["armed"] and 
+            data_valid and 
+            broker_valid and 
+            market_open and 
+            risk_valid and 
+            not active_trade
+        )
+        
+        if alpha_override and technical_safety:
+            # Execute immediately if score is high and technicals are safe
+            res = await execution_router.execute(bot_state["mode"], signal_result, risk_data, ticker)
+            db_manager.log_audit("CRITICAL", "ALPHA_OVERRIDE_TRADE", f"Executing High Confidence Signal ({signal_result['score']}%)", res)
+        elif technical_safety:
+            # Normal execution cycle (full diagnostic validation)
+            can_execute_normal = (
+                day_allowed and session_allowed and news_clear and 
+                not_range and trend_valid and structure_valid and signal_valid and 
+                spread_valid and liquidity_valid and leverage_valid
+            )
+            if can_execute_normal:
+                res = await execution_router.execute(bot_state["mode"], signal_result, risk_data, ticker)
+                db_manager.log_audit("INFO", "NORMAL_TRADE", f"Executing Normal Diagnostic Signal", res)
+        
+        # Archive signal
+        db_manager.archive_signal(signal_result, "EXECUTED" if (alpha_override and technical_safety) else "FILTERED", diagnosis["main_blocker"])
 
         if active_trade: state_machine.transition_to(BotState.POSITION_OPEN)
         elif signal_valid: state_machine.transition_to(BotState.SIGNAL_DETECTED)

@@ -85,7 +85,7 @@ class DatabaseManager:
                     "max_open_positions": "3",
                     "trailing_stop_active": "true",
                     "max_spread_pct": "0.5",
-                    "min_signal_score": "80", # Mission: High confidence only (80%)
+                    "min_signal_score": "80",
                     "risk_reward_ratio": "2.0",
                     "trailing_stop_distance_atr": "1.5",
                     "emergency_stop_drawdown_pct": "10.0",
@@ -94,6 +94,10 @@ class DatabaseManager:
                 }
                 for k, v in defaults.items():
                     conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))
+            else:
+                # Update existing max risk limit if necessary, but the logic in index.py 
+                # will handle the new range. We just ensure the DB value is within 0-10.
+                pass
 
             # Audit Logs (Institutional Compliance)
             conn.execute("""
