@@ -396,6 +396,7 @@ async def get_demo_account():
 @app.post("/api/demo/account")
 async def set_demo_balance(amount: float):
     portfolio_engine.set_balance("DEMO", amount)
+    db_manager.log_audit("INFO", "BALANCE_UPDATE", f"Demo balance set to {amount}")
     return {"success": True, "balance": amount}
 
 @app.post("/api/demo/reset")
@@ -451,6 +452,7 @@ async def toggle_mode():
 @app.post("/api/arm")
 async def arm_bot():
     bot_state["armed"] = not bot_state["armed"]
+    db_manager.log_audit("INFO", "SYSTEM_ARM", f"System armed state: {bot_state['armed']}")
     return {"armed": bot_state["armed"]}
 
 @app.get("/healthz")

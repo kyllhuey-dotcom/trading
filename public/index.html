@@ -1225,6 +1225,57 @@
             update();
         }
 
+        // Global Actions & Handlers
+        document.getElementById('main-toggle-btn').onclick = async () => {
+            const btn = document.getElementById('main-toggle-btn');
+            const isStarting = btn.innerText.includes('START');
+            const endpoint = isStarting ? '/start' : '/stop';
+            
+            // Visual feedback
+            btn.style.opacity = '0.5';
+            btn.disabled = true;
+            
+            try {
+                const res = await fetchAPI(endpoint, 'POST');
+                if (res && res.success) {
+                    console.log(`System ${isStarting ? 'started' : 'stopped'} successfully`);
+                }
+            } catch (e) {
+                console.error("Action error:", e);
+            } finally {
+                btn.style.opacity = '1';
+                btn.disabled = false;
+                update();
+            }
+        };
+
+        document.getElementById('arm-toggle-btn').onclick = async () => {
+            const btn = document.getElementById('arm-toggle-btn');
+            btn.style.opacity = '0.5';
+            try {
+                const res = await fetchAPI('/arm', 'POST');
+                if (res) console.log("Engine arm state toggled");
+            } catch (e) {
+                console.error("Arm error:", e);
+            } finally {
+                btn.style.opacity = '1';
+                update();
+            }
+        };
+
+        document.getElementById('mode-demo-btn').onclick = () => fetchAPI('/mode', 'POST').then(update);
+        document.getElementById('mode-live-btn').onclick = () => { 
+            if(confirm("DANGER: Switching to REAL mode will use actual broker API keys and REAL FUNDS. Proceed with caution?")) {
+                fetchAPI('/mode', 'POST').then(update); 
+            }
+        };
+
+        document.getElementById('emergency-stop-btn').onclick = () => { 
+            if(confirm("EMERGENCY STOP: Halt all systems immediately and block all order entries?")) {
+                fetchAPI('/emergency-stop', 'POST').then(update); 
+            }
+        };
+
         initMarkets();
         update();
         setInterval(update, 2000);
