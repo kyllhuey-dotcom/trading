@@ -20,10 +20,12 @@ class ExecutionEngine:
         """
         Executes order using real Bid/Ask prices.
         """
-        if self.active_positions:
-            return {"success": False, "reason": "Already have an open position"}
+        active = self.active_positions
+        # Check if already in this symbol
+        if any(p["symbol"] == signal.get("market_id") for p in active):
+            return {"success": False, "reason": "Position already open for this asset"}
 
-        # Rule 27 : Simulated fill based on real bid/ask
+        # Simulated fill based on real bid/ask
         entry_price = ticker.get('ask') if signal["direction"] == "BUY" else ticker.get('bid')
         if not entry_price: entry_price = ticker.get('last')
 

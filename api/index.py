@@ -95,20 +95,40 @@ async def auto_scan_loop():
             bot_state["engine_stats"]["tradable"] = len([r for r in results if r.get("tradable")])
             bot_state["engine_stats"]["scan_duration"] = scanner_engine.last_scan_duration
 
-            # BACKGROUND EXECUTION (Lot 18)
+            # BACKGROUND EXECUTION (Lot 18 - Multi-Position)
             if bot_state["is_running"] and bot_state["armed"]:
-                # Check for high confidence signals in the scan results
-                for res in sorted(results, key=lambda x: x.get("score", 0), reverse=True):
-                    if res.get("score", 0) >= 80 and not demo_execution.active_positions:
-                        # 1. Fetch live data for the candidate
+                active_positions = demo_execution.active_positions
+                with db_manager._get_connection() as conn:
+                    row = conn.execute("SELECT value FROM settings WHERE key = 'max_open_positions'").fetchone()
+                    max_pos = int(row["value"]) if row else 3
+                
+                if len(active_positions) < max_pos:
+                    # Get symbols already in position to avoid duplicates
+                    symbols_in_position = [p["symbol"] for p in active_positions]
+                    
+                    # Sort candidates by score
+                    candidates = sorted([r for r in results if r.get("score", 0) >= 80], key=lambda x: x.get("score", 0), reverse=True)
+                    
+                    for res in candidates:
+                        if len(active_positions) >= max_pos:
+                            break
+                            
                         mid = res["symbol"]
+                        if mid in symbols_in_position:
+                            continue
+
+                        # Rule 11/16: Verify Market Open Status before entry
+                        if data_engine.universe.get_market_status(mid) != "OPEN":
+                            continue
+
+                        # 1. Fetch live data for the candidate
                         ticker = await data_engine.fetch_ticker(mid)
                         if not ticker: continue
 
                         # 2. Risk Calculation
                         balance = portfolio_engine.get_balance(bot_state["mode"])
                         risk_data = risk_engine.calculate_position_size(
-                            balance=balance, entry=ticker["last"], stop_loss=ticker["last"] * 0.98 # Default 2% SL if not provided
+                            balance=balance, entry=ticker["last"], stop_loss=ticker["last"] * 0.98
                         )
                         
                         if risk_data.get("allowed"):
@@ -124,8 +144,10 @@ async def auto_scan_loop():
                             }
                             # 4. Execute
                             exec_res = await execution_router.execute(bot_state["mode"], signal_model, risk_data, ticker)
-                            db_manager.log_audit("CRITICAL", "BACKGROUND_ALPHA_TRADE", f"Auto-executed {mid} ({res['score']}%)", exec_res)
-                            break # Only one position at a time for now
+                            if exec_res.get("success"):
+                                db_manager.log_audit("CRITICAL", "BACKGROUND_ALPHA_TRADE", f"Auto-executed {mid} ({res['score']}%)", exec_res)
+                                active_positions.append(exec_res.get("position", {})) # Optimistic update
+                                symbols_in_position.append(mid)
 
             # Broadcast via WebSocket
             await manager.broadcast(json.dumps({
@@ -319,17 +341,24 @@ async def get_status(market_id: str = "btc_usdt"):
     analysis = analysis_engine.identify_structure(df_ltf, htf_bias=htf_analysis.get("trend"))
     analysis["df_preview"] = df_ltf.tail(40).to_dict('records')
     
-    await demo_execution.update_active_positions(bot_state["mode"], {info["display_symbol"]: ticker})
+    # 1. Update Positions and get Balance
+    current_mode = bot_state["mode"]
+    balance = portfolio_engine.get_balance(current_mode)
+    await demo_execution.update_active_positions(current_mode, {info["display_symbol"]: ticker})
     active_trades = demo_execution.active_positions
     active_trade = active_trades[0] if active_trades else None
     
+    # 2. Update Equity (Real-time)
+    total_unrealized_pnl = sum(t.get("pnl", 0.0) for t in active_trades)
+    bot_state["equity"] = balance + total_unrealized_pnl
+    
+    # 3. Generate Signal
     signal_result = signal_engine.generate_signal(analysis, news_status, df_ltf)
     signal_result["market_id"] = market_id
     signal_result["display_symbol"] = info["display_symbol"]
     
-    balance = portfolio_engine.get_balance(bot_state["mode"])
     risk_data = {"allowed": False}
-    risk_reason = "Risk validation not performed (no signal)." # Default value defined before usage
+    risk_reason = "Risk validation not performed." 
 
     reasons = {
         "SYSTEM_ARMED": "Bot is DISARMED.",
@@ -452,6 +481,7 @@ async def get_status(market_id: str = "btc_usdt"):
         signal=SignalResult(**signal_result),
         diagnosis=DiagnosisReport(**diagnosis),
         active_trade=active_trade,
+        active_trades=active_trades,
         history=portfolio_engine.history[-15:],
         stats=merged_stats,
         broker_info=broker_info,

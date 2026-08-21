@@ -93,6 +93,7 @@ class StatusResponse(BaseModel):
     signal: Optional[SignalResult] = None
     diagnosis: Optional[DiagnosisReport] = None
     active_trade: Optional[Dict[str, Any]] = None
+    active_trades: List[Dict[str, Any]] = []
     history: List[Dict[str, Any]] = []
     stats: Dict[str, Any]
     broker_info: Dict[str, Any]

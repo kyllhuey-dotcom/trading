@@ -224,7 +224,13 @@
         }
     </style>
 </head>
-<body class="light">
+<body class="">
+    <script>
+        (function() {
+            const savedTheme = localStorage.getItem('quantum-theme') || 'light';
+            if (savedTheme === 'dark') document.body.classList.add('dark');
+        })();
+    </script>
     <div class="flex h-screen w-screen">
         <!-- SIDEBAR -->
         <aside class="w-[260px] h-full border-r border-black/5 flex flex-col p-6 glass z-50">
@@ -360,10 +366,15 @@
                             </div>
                         </div>
 
-                        <div class="lg:col-span-3 card-premium">
+                        <div class="lg:col-span-3 card-premium flex flex-col">
                             <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Top Opportunities</h4>
-                            <div id="best-setups-list" class="space-y-3">
+                            <div id="best-setups-list" class="space-y-3 flex-1 mb-6">
                                 <p class="text-secondary font-medium text-xs italic">Awaiting scanner data...</p>
+                            </div>
+                            
+                            <h4 class="text-sm font-black uppercase tracking-widest mb-6 border-b border-black/5 dark:border-white/5 pb-4">Economic Calendar</h4>
+                            <div id="dashboard-calendar" class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                <p class="text-secondary font-medium text-[10px] italic">Loading high impact events...</p>
                             </div>
                         </div>
                     </div>
@@ -384,6 +395,7 @@
                             <div onclick="setMarketFilter('STOCKS')" class="switch-option">STOCKS</div>
                             <div onclick="setMarketFilter('FOREX')" class="switch-option">FOREX</div>
                             <div onclick="setMarketFilter('INDICES')" class="switch-option">INDICES</div>
+                            <div onclick="setMarketFilter('COMMODITIES')" class="switch-option">COMMODITIES</div>
                         </div>
                     </header>
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6" id="markets-full-grid"></div>
@@ -541,25 +553,48 @@
 
                         <!-- Manual Order Entry -->
                         <div class="grid grid-cols-2 gap-6">
-                            <div class="card-premium">
-                                <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4">Institutional Order Entry</h4>
-                                <div class="flex flex-col gap-4">
-                                    <div class="flex gap-4">
-                                        <button onclick="manualTrade('BUY')" class="flex-1 py-4 bg-green-500 text-white rounded-2xl font-black text-sm active:scale-95 transition-all shadow-lg shadow-green-500/20">BUY / LONG</button>
-                                        <button onclick="manualTrade('SELL')" class="flex-1 py-4 bg-red-500 text-white rounded-2xl font-black text-sm active:scale-95 transition-all shadow-lg shadow-red-500/20">SELL / SHORT</button>
+                            <div class="card-premium flex flex-col">
+                                <div class="flex items-center gap-2 mb-6">
+                                    <i data-lucide="layers" class="w-4 h-4 text-accent-blue"></i>
+                                    <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest">Institutional Order Entry</h4>
+                                </div>
+                                <div class="flex flex-col gap-5 flex-1">
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <button onclick="manualTrade('BUY')" class="flex flex-col items-center justify-center gap-1 py-4 bg-green-500 hover:bg-green-600 text-white rounded-2xl font-black text-sm active:scale-95 transition-all shadow-lg shadow-green-500/20">
+                                            <span>BUY / LONG</span>
+                                            <span class="text-[8px] opacity-70 uppercase tracking-tighter">Market Execution</span>
+                                        </button>
+                                        <button onclick="manualTrade('SELL')" class="flex flex-col items-center justify-center gap-1 py-4 bg-red-500 hover:bg-red-600 text-white rounded-2xl font-black text-sm active:scale-95 transition-all shadow-lg shadow-red-500/20">
+                                            <span>SELL / SHORT</span>
+                                            <span class="text-[8px] opacity-70 uppercase tracking-tighter">Market Execution</span>
+                                        </button>
                                     </div>
-                                    <div class="grid grid-cols-3 gap-2">
-                                        <div class="bg-black/5 dark:bg-white/5 p-3 rounded-xl">
-                                            <p class="text-[8px] font-black text-secondary uppercase mb-1">Quantity</p>
-                                            <input type="number" id="trade-qty" value="0.1" class="bg-transparent w-full text-xs font-black outline-none">
+                                    
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <div class="bg-black/5 dark:bg-white/5 p-3 rounded-2xl border border-transparent focus-within:border-accent-blue/30 transition-all">
+                                            <p class="text-[8px] font-black text-secondary uppercase mb-1">Lot Size</p>
+                                            <div class="flex items-center gap-1">
+                                                <input type="number" id="trade-qty" value="0.1" step="0.01" class="bg-transparent w-full text-sm font-black outline-none tabular-nums">
+                                            </div>
                                         </div>
-                                        <div class="bg-black/5 dark:bg-white/5 p-3 rounded-xl">
-                                            <p class="text-[8px] font-black text-secondary uppercase mb-1">SL (Price)</p>
-                                            <input type="number" id="trade-sl" placeholder="Auto" class="bg-transparent w-full text-xs font-black outline-none">
+                                        <div class="bg-black/5 dark:bg-white/5 p-3 rounded-2xl border border-transparent focus-within:border-accent-red/30 transition-all">
+                                            <p class="text-[8px] font-black text-secondary uppercase mb-1">Stop Loss</p>
+                                            <input type="number" id="trade-sl" placeholder="Auto" step="0.00001" class="bg-transparent w-full text-sm font-black outline-none tabular-nums placeholder:text-secondary/30">
                                         </div>
-                                        <div class="bg-black/5 dark:bg-white/5 p-3 rounded-xl">
-                                            <p class="text-[8px] font-black text-secondary uppercase mb-1">TP (Price)</p>
-                                            <input type="number" id="trade-tp" placeholder="Auto" class="bg-transparent w-full text-xs font-black outline-none">
+                                        <div class="bg-black/5 dark:bg-white/5 p-3 rounded-2xl border border-transparent focus-within:border-accent-green/30 transition-all">
+                                            <p class="text-[8px] font-black text-secondary uppercase mb-1">Take Profit</p>
+                                            <input type="number" id="trade-tp" placeholder="Auto" step="0.00001" class="bg-transparent w-full text-sm font-black outline-none tabular-nums placeholder:text-secondary/30">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-auto pt-4 flex items-center justify-between">
+                                        <div class="flex flex-col">
+                                            <span class="text-[8px] font-black text-secondary uppercase">Projected Risk</span>
+                                            <span id="manual-risk-calc" class="text-[10px] font-bold">0.00 €</span>
+                                        </div>
+                                        <div class="flex gap-1">
+                                            <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                                            <span class="text-[8px] font-black text-secondary uppercase">Direct Market Access</span>
                                         </div>
                                     </div>
                                 </div>
@@ -616,9 +651,11 @@
                             </div>
                         </div>
 
-                        <!-- Execution Logs -->
                         <div class="card-premium flex-1">
-                            <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4">Execution Logs</h4>
+                            <div class="flex justify-between items-center mb-4">
+                                <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest">Execution Logs</h4>
+                                <button onclick="fetchAPI('/demo/reset', 'POST').then(update)" class="text-[8px] font-black text-accent-red uppercase hover:underline">Emergency Wipe</button>
+                            </div>
                             <div id="terminal-audit-logs" class="space-y-3 overflow-y-auto max-h-[300px] custom-scrollbar text-[9px] font-bold">
                                 <p class="text-secondary opacity-50 italic">System ready.</p>
                             </div>
@@ -630,7 +667,10 @@
             <!-- POSITIONS TAB -->
             <section id="tab-positions" class="tab-content">
                 <div class="max-w-4xl mx-auto">
-                    <h2 class="text-4xl font-black tracking-tight mb-8">Active Exposure</h2>
+                    <div class="flex justify-between items-center mb-8">
+                        <h2 class="text-4xl font-black tracking-tight">Active Exposure</h2>
+                        <button onclick="fetchAPI('/demo/reset', 'POST').then(update)" class="btn-premium bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-widest px-6 hover:bg-red-500/20 transition-colors">Force Exit All</button>
+                    </div>
                     <div id="active-pos-list" class="space-y-6"></div>
                 </div>
             </section>
@@ -791,6 +831,19 @@
 
     <script>
         lucide.createIcons();
+        
+        function updateThemeUI() {
+            const isDark = document.body.classList.contains('dark');
+            const icon = document.querySelector('#theme-toggle i');
+            if (icon) {
+                icon.setAttribute('data-lucide', isDark ? 'sun' : 'moon');
+                lucide.createIcons();
+            }
+        }
+
+        // Set initial icon based on applied class
+        updateThemeUI();
+
         let selectedSymbol = 'btc_usdt';
         let ws;
         let currentFilter = 'ALL';
@@ -1016,6 +1069,29 @@
             }
         }
 
+        // Calculate risk real-time for manual entries
+        function updateManualRisk() {
+            const qty = parseFloat(document.getElementById('trade-qty')?.value || 0);
+            const sl = parseFloat(document.getElementById('trade-sl')?.value || 0);
+            const currentPrice = parseFloat(document.getElementById('trading-live-price')?.innerText.replace(/,/g, '') || 0);
+            const riskEl = document.getElementById('manual-risk-calc');
+            
+            if (qty > 0 && sl > 0 && currentPrice > 0 && riskEl) {
+                const riskPerUnit = Math.abs(currentPrice - sl);
+                const totalRisk = riskPerUnit * qty;
+                riskEl.innerText = `${totalRisk.toFixed(2)} €`;
+                riskEl.style.color = totalRisk > 0 ? 'var(--accent-red)' : '';
+            } else if (riskEl) {
+                riskEl.innerText = '0.00 €';
+                riskEl.style.color = '';
+            }
+        }
+
+        // Attach listeners
+        document.addEventListener('input', (e) => {
+            if (['trade-qty', 'trade-sl'].includes(e.target.id)) updateManualRisk();
+        });
+
         async function manualTrade(direction) {
             const qty = document.getElementById('trade-qty').value;
             const sl = document.getElementById('trade-sl').value;
@@ -1054,8 +1130,8 @@
         document.getElementById('theme-toggle').onclick = () => {
             document.body.classList.toggle('dark');
             const isDark = document.body.classList.contains('dark');
-            document.querySelector('#theme-toggle i').setAttribute('data-lucide', isDark ? 'sun' : 'moon');
-            lucide.createIcons();
+            localStorage.setItem('quantum-theme', isDark ? 'dark' : 'light');
+            updateThemeUI();
         };
 
         // API
@@ -1144,8 +1220,20 @@
             }
 
             // Global State
-            document.getElementById('active-symbol-header').innerText = s.selected_market.toUpperCase().replace('_', '/');
+            const displaySymbol = s.selected_market.toUpperCase().replace('_', '/');
+            document.getElementById('active-symbol-header').innerText = displaySymbol;
             document.getElementById('bot-mode-display').innerText = `${s.mode} MODE ACTIVE`;
+            
+            if (document.getElementById('trading-active-symbol')) {
+                document.getElementById('trading-active-symbol').innerText = displaySymbol;
+            }
+            if (document.getElementById('trading-asset-class') && s.asset_info) {
+                document.getElementById('trading-asset-class').innerText = `${s.asset_info.asset_class} • ${s.asset_info.name}`;
+            }
+            if (s.asset_info) {
+                document.getElementById('market-status-tag').innerText = s.asset_info.market_status || 'CLOSED';
+                document.getElementById('market-status-tag').className = `text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${s.asset_info.market_status === 'OPEN' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`;
+            }
             
             const toggleBtn = document.getElementById('main-toggle-btn');
             if (s.is_running) {
@@ -1277,25 +1365,51 @@
             document.getElementById('arm-label').className = `text-[10px] font-black ${s.armed ? 'text-green-500' : 'text-red-500'} uppercase tracking-widest`;
             document.getElementById('arm-status-indicator').className = `w-1.5 h-1.5 rounded-full ${s.armed ? 'bg-green-500 shadow-sm shadow-green-500/50' : 'bg-red-500'}`;
 
-            // Terminal News (Calendar)
-            const newsList = document.getElementById('terminal-news-list');
-            if (s.news && s.news.next_events) {
-                newsList.innerHTML = s.news.next_events.map(e => `
-                    <div class="flex items-center justify-between p-3 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl border border-black/5 dark:border-white/5">
-                        <div class="flex items-center gap-4">
-                            <div class="flex flex-col items-center min-w-[40px]">
-                                <span class="text-[8px] font-black text-secondary opacity-50 uppercase">${e.currency}</span>
-                                <div class="w-2 h-2 rounded-full ${e.impact === 'High' ? 'bg-red-500' : (e.impact === 'Medium' ? 'bg-yellow-500' : 'bg-blue-500')}"></div>
+            // Terminal News (Global Data Stream)
+            const newsRes = await fetchAPI('/news/latest');
+            if (newsRes && document.getElementById('terminal-news-list')) {
+                const newsList = document.getElementById('terminal-news-list');
+                newsList.innerHTML = newsRes.map(n => `
+                    <div class="flex items-start justify-between p-3 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl border border-black/5 dark:border-white/5 group hover:border-accent-blue/20 transition-all">
+                        <div class="flex items-start gap-4">
+                            <div class="flex flex-col items-center min-w-[40px] pt-1">
+                                <span class="text-[7px] font-black text-secondary opacity-50 uppercase">${n.source}</span>
+                                <div class="w-1.5 h-1.5 rounded-full mt-1 ${n.impact === 'CRITICAL' ? 'bg-red-600 animate-ping' : (n.impact === 'HIGH' ? 'bg-red-500' : (n.impact === 'MEDIUM' ? 'bg-yellow-500' : 'bg-blue-500'))}"></div>
                             </div>
                             <div>
-                                <p class="text-[11px] font-black leading-tight">${e.event}</p>
-                                <p class="text-[9px] text-secondary font-bold mt-1 uppercase tracking-tighter">${e.time || 'All Day'} • PROJECTION: ${e.forecast || '--'}</p>
+                                <p class="text-[10px] font-black leading-snug group-hover:text-accent-blue transition-colors">${n.title}</p>
+                                <div class="flex items-center gap-2 mt-1.5">
+                                    <span class="text-[8px] font-bold text-secondary uppercase tracking-tighter">${n.category}</span>
+                                    <span class="w-1 h-1 rounded-full bg-black/10 dark:bg-white/10"></span>
+                                    <span class="text-[8px] font-medium text-secondary opacity-60 uppercase">${n.timestamp.split(' ').slice(0,4).join(' ')}</span>
+                                </div>
                             </div>
                         </div>
-                        <i data-lucide="bell" class="w-3 h-3 text-secondary opacity-30"></i>
+                        <a href="${n.url}" target="_blank" class="opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i data-lucide="external-link" class="w-3 h-3 text-secondary"></i>
+                        </a>
                     </div>
                 `).join('');
                 lucide.createIcons();
+            }
+
+            // Economic Calendar (Dashboard)
+            const calBox = document.getElementById('dashboard-calendar');
+            if (calBox && s.news && s.news.next_events) {
+                if (s.news.next_events.length > 0) {
+                    calBox.innerHTML = s.news.next_events.map(e => `
+                        <div class="p-3 bg-black/[0.03] dark:bg-white/[0.03] rounded-2xl border border-black/5 dark:border-white/5">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-[8px] font-black text-secondary uppercase opacity-50">${e.currency}</span>
+                                <span class="text-[8px] font-black text-red-500 uppercase tracking-widest">High Impact</span>
+                            </div>
+                            <p class="text-[10px] font-bold leading-tight">${e.event}</p>
+                            <p class="text-[8px] text-secondary font-medium mt-1 uppercase">${e.time || 'All Day'}</p>
+                        </div>
+                    `).join('');
+                } else {
+                    calBox.innerHTML = '<p class="text-secondary opacity-50 text-[10px] italic text-center py-4">No high impact events today.</p>';
+                }
             }
 
             // Scanner Table
@@ -1376,15 +1490,14 @@
                 `).join('');
             }
 
-            // Active Position
+            // Active Positions
             const activePos = document.getElementById('active-pos-list');
-            if (s.active_trade) {
-                const p = s.active_trade;
-                activePos.innerHTML = `
+            if (s.active_trades && s.active_trades.length > 0) {
+                activePos.innerHTML = s.active_trades.map(p => `
                     <div class="card-premium border-2 border-accent-blue/30 shadow-2xl shadow-accent-blue/10">
                         <div class="flex justify-between items-start mb-8">
                             <div>
-                                <h3 class="text-3xl font-black tracking-tighter mb-1">${p.symbol}</h3>
+                                <h3 class="text-3xl font-black tracking-tighter mb-1">${p.display_symbol || p.symbol}</h3>
                                 <p class="text-xs font-bold text-secondary uppercase tracking-widest">${p.direction} • ${p.quantity.toFixed(4)} UNITS • ${p.leverage}X LEVERAGE</p>
                             </div>
                             <div class="text-right">
@@ -1407,7 +1520,7 @@
                             </div>
                         </div>
                     </div>
-                `;
+                `).join('');
             } else {
                 activePos.innerHTML = '<div class="py-20 text-center opacity-30 flex flex-col items-center gap-4"><i data-lucide="box" class="w-10 h-10"></i><p class="font-black text-xs uppercase tracking-widest">No Active Market Exposure</p></div>';
                 lucide.createIcons();
@@ -1421,7 +1534,7 @@
             const res = await fetchAPI('/markets');
             if (res && !res.detail) {
                 let html = '';
-                // Rule: Ensure we only iterate over valid categories
+                // Rule: Ensure we only iterate over valid categories (All 5)
                 const categories = ["CRYPTO", "STOCKS", "FOREX", "INDICES", "COMMODITIES"];
                 
                 categories.forEach(cat => {

@@ -142,24 +142,54 @@ class MarketUniverse:
 
     def get_market_status(self, market_id: str) -> str:
         """
-        Rule 11: Determine if market is open based on its timezone and current time.
+        Rule 11: Determine if market is open based on its specific hours and timezone.
         """
         info = self.get_info(market_id)
         if not info: return "UNAVAILABLE"
         
-        if info["asset_class"] == "CRYPTO":
+        asset_class = info.get("asset_class")
+        if asset_class == "CRYPTO":
             return "OPEN"
             
-        # Basic check for non-crypto
         tz = pytz.timezone(info.get("timezone", "UTC"))
         now = datetime.now(tz)
-        
-        # Weekend check
-        if now.weekday() >= 5: # Sat/Sun
-            return "CLOSED"
+        weekday = now.weekday() # Mon=0, Sun=6
+        hour = now.hour
+        minute = now.minute
+        time_float = hour + minute / 60.0
+
+        if asset_class == "FOREX":
+            # Forex is 24/5: Opens Sunday 22:00 GMT, Closes Friday 22:00 GMT
+            # Simplifying for local timezone (approximate)
+            if weekday == 5: # Saturday: Closed
+                return "CLOSED"
+            if weekday == 6 and hour < 22: # Sunday before 22h: Closed
+                return "CLOSED"
+            if weekday == 4 and hour >= 22: # Friday after 22h: Closed
+                return "CLOSED"
+            return "OPEN"
             
-        # Hour check (9h - 22h local as a safe proxy)
-        if 9 <= now.hour < 22:
+        if asset_class == "STOCKS" or asset_class == "INDICES":
+            # US Markets: 9:30 AM - 16:00 PM
+            if "America/New_York" in info.get("timezone", ""):
+                if weekday >= 5: return "CLOSED"
+                if 9.5 <= time_float < 16.0: return "OPEN"
+                return "CLOSED"
+            # European Markets: 9:00 AM - 17:30 PM
+            if "Europe" in info.get("timezone", ""):
+                if weekday >= 5: return "CLOSED"
+                if 9.0 <= time_float < 17.5: return "OPEN"
+                return "CLOSED"
+            # Asian Markets: Approximate
+            if "Asia" in info.get("timezone", ""):
+                if weekday >= 5: return "CLOSED"
+                if 9.0 <= hour < 15: return "OPEN" # Simple proxy for Nikkei/HSI
+                return "CLOSED"
+
+        if asset_class == "COMMODITIES":
+            # Most commodities: 23 hours a day, closed on weekends
+            if weekday >= 5: return "CLOSED"
+            if hour == 17: return "CLOSED" # Daily break
             return "OPEN"
             
         return "CLOSED"
