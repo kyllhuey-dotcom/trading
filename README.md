@@ -2,7 +2,7 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
-> **v2.0** — refonte complète : pipeline de trading corrigé de bout en bout, mode REAL réel, authentification, contrat API complet, suite de tests verte (52 passés / 3 skips réseau).
+> **v2.1** — amélioration continue (lots A→H) : observabilité avancée, stratégies durcies, sizing exchange-aware, garde anti-scalping sur données différées, couverture 83 % des engines, rate limiting, avertissement REAL explicite. Suite : 185 passés / 6 skips réseau.
 
 ---
 
@@ -13,12 +13,12 @@ Bot de trading multi-marchés : données réelles, exécution papier réaliste, 
 | **Marchés** | 127 instruments : crypto (Gate/Bybit/Binance avec fallback), forex, indices, matières premières, actions, futures, obligations, ETF (Yahoo Finance) |
 | **Stratégies** | Structure (BOS/CHoCH, HH/HL/LH/LL), micro-arbitrage inter-plateformes, tape reading (imbalance + delta), liquidity gap (order book) |
 | **Gestion de risque** | Sizing par % de risque, plafond de levier, validation du sens du SL, limite de perte quotidienne au niveau de l'ordre, cool-down après perte, filtre de corrélation, max positions, drawdown global persistant |
-| **Exécution** | Mode DEMO : papier réaliste (latence, slippage, rejets simulés) sur prix réels. Mode REAL : vrais ordres market via CCXT avec ordres SL/TP de protection |
+| **Exécution** | Mode DEMO : papier réaliste (latence, slippage, rejets simulés) sur prix réels. Mode REAL : vrais ordres market via CCXT avec ordres SL/TP de protection, sizing arrondi aux contraintes d'exchange (lot/tick/min_notional), avertissement « experimental » explicite |
 | **Gestion de positions** | Partial TP 50 % au 1:1 → break-even, trailing stop ATR, fermeture forcée hors session, réconciliation broker en mode REAL |
 | **Filtres** | Calendrier économique (news à fort impact), sessions de marché, fraîcheur des données, spread max |
 | **Alertes** | Telegram + Discord (ouvertures, fermetures, emergency stop) |
 | **Dashboard** | Interface web : scanner global, terminal de trading manuel, positions, journal, brokers/wallets, réglages en direct (appliqués à chaud), diagnostic de décision par marché, WebSocket temps réel |
-| **Sécurité** | Authentification par clé API sur tous les endpoints mutables, secrets brokers chiffrés au repos (Fernet), audit log complet |
+| **Sécurité** | Authentification par clé API sur tous les endpoints mutables, secrets brokers chiffrés au repos (Fernet), rate limiting par IP (sliding window), audit log complet, bannière d'avertissement en mode REAL |
 
 ## 🚀 Démarrage rapide
 
@@ -49,7 +49,9 @@ pytest tests/ -q
 ```
 
 - La suite est **isolée** (base de données de test temporaire — votre base de prod n'est jamais touchée).
-- Les tests marqués `network` s'auto-skip si le réseau est indisponible.
+- Les tests marqués `network` s'auto-skip si le réseau ou le provider est indisponible.
+- Couverture : **83 %** sur `api/engines` (porte CI 80 %), vérifiée par `scripts/validate.sh`.
+- Les données Yahoo (différées ~15 min) ne sont **pas** utilisées pour l'exécution automatique (garde anti-scalping, opt-out `allow_delayed_data_trading`).
 
 ## 🔐 Sécurité
 

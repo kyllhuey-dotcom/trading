@@ -3,9 +3,15 @@ set -e
 
 echo "=== QUANTUM TRADE PRO VALIDATION PIPELINE ==="
 
-# 1. Install dependencies
+# 1. Install dependencies (tolerate externally-managed environments: the
+#    dependency check below is the real gate, not pip's exit code)
 echo "[1/5] Installing dependencies..."
-pip install -q -r requirements.txt -r requirements-dev.txt
+pip install -q -r requirements.txt -r requirements-dev.txt 2>/dev/null \
+  || pip install -q --break-system-packages -r requirements.txt -r requirements-dev.txt 2>/dev/null \
+  || pip install -q --user -r requirements.txt -r requirements-dev.txt 2>/dev/null \
+  || echo "  - WARN: pip install skipped (externally-managed env); assuming deps are present."
+python3 -c "import fastapi, ccxt, pandas, pydantic, pytest, yfinance" \
+  || { echo "ERROR: dependencies missing — install requirements.txt / requirements-dev.txt first"; exit 1; }
 
 # 2. Check for secrets in code
 echo "[2/5] Scanning for hardcoded secrets..."

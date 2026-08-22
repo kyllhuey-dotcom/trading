@@ -5,9 +5,9 @@ Single entry point: FastAPI app + background trading loops + WebSocket bus.
 
 v2.0 — Full API contract, authentication, live settings, real broker execution.
 """
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, Depends, Body
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, Depends, Body, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
 
@@ -21,6 +21,7 @@ from datetime import datetime
 from api.json_logging import setup_json_file_handler, structured_log
 from api.engines.exchange_constraints import normalize_order
 from api.engines.metrics_engine import MetricsEngine
+from api.rate_limit import SlidingWindowRateLimiter
 from api.engines.db_manager import DatabaseManager
 from api.engines.data_engine import DataEngine
 from api.engines.analysis_engine import AnalysisEngine
@@ -73,7 +74,32 @@ HEARTBEAT_INTERVAL_S = float(os.getenv("HEARTBEAT_INTERVAL_S", "2.0" if TESTING 
 # --------------------------------------------------------------------------- #
 # 3. System core                                                               #
 # --------------------------------------------------------------------------- #
-app = FastAPI(title="Quantum Trade Pro", version="2.0.0", lifespan=None)
+REAL_MODE_WARNING = "Live execution still experimental – use DEMO for strategies"
+
+app = FastAPI(title="Quantum Trade Pro", version="2.1.0", lifespan=None)
+
+# Basic reinforced rate limiting (LOT H): sliding window per client IP,
+# separate budgets for reads and mutations. Env-tunable.
+rate_limiter = SlidingWindowRateLimiter(
+    requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "1200")),
+    mutations_per_minute=int(os.getenv("RATE_LIMIT_MUTATIONS_PER_MINUTE", "300")),
+    window_s=float(os.getenv("RATE_LIMIT_WINDOW_S", "60")),
+)
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if request.method == "OPTIONS" or request.url.path == "/healthz":
+        return await call_next(request)
+    client_id = request.client.host if request.client else "unknown"
+    is_mutation = request.method in ("POST", "PUT", "PATCH", "DELETE")
+    if not rate_limiter.allow(client_id, is_mutation):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded — slow down",
+                     "retry_after_s": int(rate_limiter.window_s)},
+        )
+    return await call_next(request)
 
 db_manager = DatabaseManager()
 data_engine = DataEngine()
@@ -605,6 +631,7 @@ async def get_status(market_id: str = "btc_usdt"):
         "status_display": snapshot["status_display"],
         "is_running": bot_state["is_running"],
         "mode": mode,
+        "real_warning": REAL_MODE_WARNING if mode == "REAL" else None,
         "armed": bot_state["armed"],
         "balance": bot_state["balance"],
         "equity": bot_state["equity"],
@@ -698,6 +725,12 @@ async def toggle_mode():
         bot_state["mode"] = target
     db_manager.log_audit("WARNING" if target == "REAL" else "INFO", "MODE_CHANGE",
                          f"Mode switched to {target}: {msg}")
+    if target == "REAL":
+        # LOT H: explicit, impossible-to-miss warning on live mode
+        structured_log(logger, logging.WARNING, "MODE_SWITCHED_TO_REAL",
+                       event="mode_switched_to_real", warning=REAL_MODE_WARNING)
+        return {"success": True, "mode": target, "message": msg,
+                "warning": REAL_MODE_WARNING}
     return {"success": True, "mode": target, "message": msg}
 
 

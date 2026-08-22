@@ -6,7 +6,7 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
 
 ## État global
 
-- ✅ Suite de tests : **179 passés, 6 skips** (skips = tests `network` dont le
+- ✅ Suite de tests : **185 passés, 6 skips** (skips = tests `network` dont le
   provider est indisponible — ils s'auto-skip proprement désormais).
 - ✅ Couverture : **83 % sur `api/engines`** (engines critiques), 76 % sur `api/`
   (portes CI : 80 % / 60 % dans `scripts/validate.sh`).
@@ -129,6 +129,19 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
   80 % sur `api/engines`, scan de secrets, check d'entrée applicative.
 - **Bybit** : `get_order_book` / `get_recent_trades` implémentés (parité Gate/Binance).
 
+### LOT H — Polish production & documentation
+
+- **Message REAL explicite** : `real_warning` dans `/api/status`, champ `warning`
+  dans la réponse de `/api/mode`, log structuré `MODE_SWITCHED_TO_REAL` et
+  bannière frontend permanente en mode REAL (« Live execution still
+  experimental – use DEMO for strategies »).
+- **Rate limiting basique renforcé** (`api/rate_limit.py`) : sliding window par
+  IP (60 s), budget lectures 1200/min et mutations 300/min (réglables par env),
+  réponse 429 JSON, `/healthz` exempté, mémoire bornée. Tests unitaires avec
+  horloge injectée.
+- **`.env.example`** documenté (sécurité, rate limit, logging, heartbeat, gardes).
+- CHANGELOG 2.1.0 + README et audit resynchronisés avec le code réel.
+
 - **Authentification** : `ADMIN_API_KEY` protège tous les endpoints mutables (401 sinon).
 - **Chiffrement** : secrets brokers Fernet au repos, préfixe `enc:v1:` explicite, erreurs de décryptage loggées (pas de retour silencieux).
 - **SQLite** : connexions fermées systématiquement (context manager), `busy_timeout`, ordre déterministe.
@@ -141,15 +154,19 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
 
 ## Points de vigilance restants (assumés)
 
-1. **Données non-crypto** : Yahoo Finance est différé (~15 min) et rate-limité ; ce n'est pas une source « temps réel ». Le bot l'utilise pour du structurel, pas du scalping.
+1. **Données non-crypto** : Yahoo Finance est différé (~15 min) et rate-limité ; ce n'est pas une source « temps réel ». **Depuis le LOT F, l'exécution automatique y est bloquée par défaut** (`NON_REALTIME_SOURCE`) — le structurel Yahoo ne sert plus qu'à l'analyse/backtest, sauf opt-out explicite `allow_delayed_data_trading=true`.
 2. **Calendrier économique** : scraping HTML de ForexFactory — fragile si le site change de markup ou bloque ; en cas d'échec, le bot **refuse de trader** (fail-safe), ce qui est le comportement voulu.
 3. **SL/TP sur spot** : la pose d'ordres SL/TP conditionnels dépend des capacités de l'exchange CCXT ; en cas d'échec, l'ordre principal est passé et l'incident est loggé (`sl_tp_warning`).
-4. **Quantités** : le sizing ne tient pas encore compte de `lot_size`/`tick_size` par instrument (arrondi aux incréments du marché). À ajouter pour des brokers stricts.
-5. **Tests réseau** : les tests marqués `network` dépendent de la disponibilité des providers ; ils s'auto-skip proprement.
-6. **Multi-instances** : le bot est pensé pour une seule instance (état en mémoire + SQLite local). Pour du multi-instance, migrer vers Redis/Postgres.
+4. **Quantités** : ✔ résolu au LOT E — `lot_size`/`tick_size`/`min_notional` par instrument (MarketUniverse + marchés CCXT), arrondi floor + SL/TP protecteurs.
+5. **Tests réseau** : les tests marqués `network` s'auto-skip proprement quand un provider est indisponible (LOT G).
+6. **Multi-instances** : le bot est pensé pour une seule instance (état en mémoire + SQLite local). Pour du multi-instance, migrer vers Redis/Postgres. Le rate limiter en mémoire est donc par instance.
+7. **Rate limiting** : sliding window par IP en mémoire (lectures 1200/min, mutations 300/min par défaut, réglable par env) — volontairement simple ; pour une exposition publique importante, placer un rate limiter/gateway en amont (Railway/Cloudflare).
 
 ## Verdict
 
 Le projet est **fonctionnel de bout en bout en DEMO** et **exécute de vrais ordres en REAL**
-avec les protections configurées. Les claims « Production-Ready » des versions précédentes
+avec les protections configurées, une observabilité avancée (métriques enrichies, logs JSON,
+heartbeat WS), des stratégies durcies (fraîcheur/synchronisation/seuils dynamiques/stops
+logiques), un sizing exchange-aware, une couverture de 83 % des engines critiques et un
+avertissement REAL explicite. Les claims « Production-Ready » des versions précédentes
 étaient prématurés ; celui-ci repose sur des tests vérifiables.
