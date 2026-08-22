@@ -31,7 +31,9 @@ class SignalEngine:
                  fee_pct: float = 0.05,
                  slippage_pct: float = 0.05,
                  max_cost_ratio: float = 0.5,
-                 cost_filter_strategies: tuple = ("structure", "tape")):
+                 cost_filter_strategies: tuple = ("structure", "tape"),
+                 market_tuning: Optional[Dict[str, Dict[str, Any]]] = None,
+                 regime_adaptation_enabled: bool = True):
         self.min_score = min_score
         self.risk_reward = float(risk_reward) if risk_reward and risk_reward > 0 else 2.0
         self.atr_stop_multiplier = float(atr_stop_multiplier) if atr_stop_multiplier > 0 else 1.5
@@ -40,6 +42,9 @@ class SignalEngine:
         self.slippage_pct = float(slippage_pct)
         self.max_cost_ratio = float(max_cost_ratio)
         self.cost_filter_strategies = set(cost_filter_strategies)
+        # LOT R — per-market tuning + volatility-regime adaptation
+        self.market_tuning: Dict[str, Dict[str, Any]] = dict(market_tuning or {})
+        self.regime_adaptation_enabled = bool(regime_adaptation_enabled)
         self.strategies = {
             "arbitrage": MicroArbitrageStrategy(),
             "tape": TapeReadingStrategy(),
@@ -77,6 +82,58 @@ class SignalEngine:
     def set_alpha_override(self, enabled: bool) -> None:
         self.alpha_override_enabled = bool(enabled)
 
+    def set_market_tuning(self, tuning: Optional[Dict[str, Dict[str, Any]]]) -> None:
+        """Per-market parameter overrides (LOT R).
+
+        Map of `market_id -> {min_score, risk_reward, atr_stop_multiplier,
+        max_cost_ratio}` — built from the asset-class baselines
+        (`market_tuning.build_default_tuning`) refined by the profit audit
+        (`market_tuning.build_tuning_from_audit`).
+        """
+        self.market_tuning = dict(tuning or {})
+
+    def set_regime_adaptation(self, enabled: bool) -> None:
+        """Enable/disable the volatility-regime adaptation (conservative in
+        volatile markets, slightly more engaged in quiet/stable ones)."""
+        self.regime_adaptation_enabled = bool(enabled)
+
+    def _regime_of(self, analysis: Dict[str, Any]) -> str:
+        if not self.regime_adaptation_enabled:
+            return "NORMAL"
+        from .market_tuning import regime_of
+        return regime_of(analysis.get("volatility"))
+
+    def effective_min_score(self, market_id: Optional[str], regime: str = "NORMAL") -> int:
+        """Entry threshold actually applied for a market + regime (LOT R).
+
+        Priority: regime adjustment (±) on top of the per-market tuning when
+        present, else on the global `min_score`. Always clamped to 50–99.
+        """
+        from .market_tuning import regime_adjustments, BOUNDS
+        tuning = self.market_tuning.get(market_id or "", {}) or {}
+        base = tuning.get("min_score", self.min_score)
+        delta = regime_adjustments(regime)["min_score_delta"] if self.regime_adaptation_enabled else 0
+        lo, hi = BOUNDS["min_score"]
+        return int(max(lo, min(hi, int(base) + int(delta))))
+
+    def effective_risk_reward(self, market_id: Optional[str]) -> float:
+        """Take-profit target (R multiple) for a market, tuned per market."""
+        tuning = self.market_tuning.get(market_id or "", {}) or {}
+        value = float(tuning.get("risk_reward", self.risk_reward) or self.risk_reward)
+        return value if 0.3 <= value <= 10.0 else self.risk_reward
+
+    def effective_atr_stop_multiplier(self, market_id: Optional[str],
+                                      regime: str = "NORMAL") -> float:
+        """Stop-loss distance (× ATR) for a market, tuned per market + regime."""
+        from .market_tuning import regime_adjustments, BOUNDS
+        tuning = self.market_tuning.get(market_id or "", {}) or {}
+        base = float(tuning.get("atr_stop_multiplier", self.atr_stop_multiplier)
+                     or self.atr_stop_multiplier)
+        factor = regime_adjustments(regime)["atr_multiplier_factor"] if self.regime_adaptation_enabled else 1.0
+        value = base * factor
+        lo, hi = BOUNDS["atr_stop_multiplier"]
+        return max(lo, min(hi, value))
+
     def set_cost_params(self, fee_pct: Optional[float] = None,
                         slippage_pct: Optional[float] = None,
                         max_cost_ratio: Optional[float] = None) -> None:
@@ -91,17 +148,27 @@ class SignalEngine:
     # ------------------------------------------------------------------ #
     # Quality gates (LOT P)                                               #
     # ------------------------------------------------------------------ #
-    def _apply_quality_gates(self, res: Dict[str, Any], strategy: str) -> Dict[str, Any]:
-        """Apply the global score gate + the cost-vs-volatility filter."""
+    def _apply_quality_gates(self, res: Dict[str, Any], strategy: str,
+                             regime: str = "NORMAL") -> Dict[str, Any]:
+        """Apply the global score gate + the cost-vs-volatility filter.
+
+        LOT R: the score gate is per-market (audit-driven tuning) and
+        regime-adjusted (conservative in volatile markets).
+        """
         if res.get("status") != "SIGNAL_DETECTED":
             return res
 
-        # 1. Global score gate — applies to ALL strategies (fix quality leak)
+        # 1. Global score gate — applies to ALL strategies (fix quality leak).
+        #    LOT R: per-market entry threshold + volatility-regime adjustment.
+        market_id = res.get("market_id")
+        min_score = self.effective_min_score(market_id, regime)
         score = int(res.get("score", 0) or 0)
-        if score < self.min_score:
+        if score < min_score:
             res["status"] = "NO_TRADE"
-            res["reason"] = f"Below minimum score ({score}/{self.min_score})"
+            res["reason"] = f"Below minimum score ({score}/{min_score})"
+            res["min_score_applied"] = min_score
             return res
+        res["min_score_applied"] = min_score
 
         # 2. Cost filter: block trades whose costs would eat the edge
         if strategy in self.cost_filter_strategies:
@@ -165,7 +232,9 @@ class SignalEngine:
             )
             res["strategy"] = strategy_mode
             res["market_id"] = market_id
-            return self._apply_quality_gates(res, strategy_mode)
+            regime = self._regime_of(analysis)
+            res["regime"] = regime
+            return self._apply_quality_gates(res, strategy_mode, regime)
 
         # ------------------------------------------------------------------ #
         # Default: structure strategy
@@ -232,6 +301,12 @@ class SignalEngine:
         current_price = float(df['Close'].iloc[-1])
 
         # --- 3. ATR-based SL/TP (hardened) ---
+        # LOT R: stop distance and take-profit are tuned per market
+        # (audit-driven `market_tuning`) and adapted to the volatility regime —
+        # conservative (wider stop, threshold raised) in VOLATILE markets.
+        regime = self._regime_of(analysis)
+        atr_multiplier = self.effective_atr_stop_multiplier(market_id, regime)
+        risk_reward = self.effective_risk_reward(market_id)
         try:
             high_low = df['High'] - df['Low']
             high_close = (df['High'] - df['Close'].shift()).abs()
@@ -252,13 +327,13 @@ class SignalEngine:
                     "score": score, "market_id": market_id}
 
         if direction == "BUY":
-            stop_loss = min(analysis["last_low"], current_price - (atr * self.atr_stop_multiplier))
+            stop_loss = min(analysis["last_low"], current_price - (atr * atr_multiplier))
             risk_dist = current_price - stop_loss
-            take_profit = current_price + (risk_dist * self.risk_reward)
+            take_profit = current_price + (risk_dist * risk_reward)
         else:
-            stop_loss = max(analysis["last_high"], current_price + (atr * self.atr_stop_multiplier))
+            stop_loss = max(analysis["last_high"], current_price + (atr * atr_multiplier))
             risk_dist = stop_loss - current_price
-            take_profit = current_price - (risk_dist * self.risk_reward)
+            take_profit = current_price - (risk_dist * risk_reward)
 
         if risk_dist <= 0:
             return {"status": "NO_TRADE", "reason": "Invalid Risk parameters (Zero range)",
@@ -301,8 +376,11 @@ class SignalEngine:
                        f"{direction} signal confirmed (Score {score})"),
             "timestamp": datetime.now().isoformat(),
             "atr": atr,
-            "risk_reward": self.risk_reward,
+            "risk_reward": risk_reward,
+            "atr_stop_multiplier": atr_multiplier,
+            "regime": regime,
+            "market_tuning_applied": bool(self.market_tuning.get(market_id or "")),
             "strategy": "structure",
             "market_id": market_id
         }
-        return self._apply_quality_gates(result, "structure")
+        return self._apply_quality_gates(result, "structure", regime)

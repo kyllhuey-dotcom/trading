@@ -1,5 +1,51 @@
 # Changelog - Quantum Trade Pro
 
+## [2.5.0] - 2026-08-22 — LOT R : Audit & optimisation PAR MARCHÉ + adaptation au régime
+
+### Added (audit par marché — méthodologie demandée)
+- **`api/engines/market_tuning.py`** (nouveau) : optimisation des paramètres **par
+  marché financier** et par classe d'actifs — seuil d'entrée (`min_score`),
+  take-profit (`risk_reward`), stop-loss (`atr_stop_multiplier`), filtre de
+  coûts (`max_cost_ratio`).
+  - `ASSET_CLASS_TUNING` : lignes de base par classe (CRYPTO ≠ FOREX ≠ BONDS…),
+    `build_default_tuning(universe)` : 1 entrée par instrument (127).
+  - **Adaptation au régime de volatilité** : `regime_of` / `regime_adjustments` —
+    marché **VOLATILE → conservateur** (seuil d'entrée +5, stop élargi ×1.25,
+    donc position réduite à risque égal), marché **stable/QUIET → légèrement
+    plus engagé** (seuil −3, stop ×0.90), borné 50–99.
+  - **Faisabilité par capital** : `min_capital_for` / `markets_feasible_for_capital`
+    — quels marchés fonctionnent à 1 $, 5 $, 50 $+ (marge ≈ min_notional /
+    levier, mêmes champs `min_order`/`leverage_max` que le moteur de risque).
+  - **Recommandations pilotées par l'audit, par marché** : `recommend_for_market`
+    (verdict LOSING / TP_TOO_TIGHT / COST_LEAK / PROFITABLE → action
+    `QUARANTINE_OR_RAISE_SELECTIVITY`, `WIDEN_TAKE_PROFIT`,
+    `TIGHTEN_COST_FILTER`, `KEEP_AND_SCALE`) + `build_tuning_from_audit` qui
+    produit la carte `market_tuning` prête à coller dans `/api/settings`.
+    Honnêteté statistique : **aucun verdict avant 10 trades fermés**.
+- **`SignalEngine`** : `set_market_tuning`, `set_regime_adaptation`,
+  `effective_min_score` / `effective_risk_reward` / `effective_atr_stop_multiplier`
+  — le seuil d'entrée, le SL et le TP appliqués dépendent désormais du marché
+  (audit) et du régime de volatilité. Le signal expose `regime`,
+  `min_score_applied`, `atr_stop_multiplier`, `market_tuning_applied`.
+- **Réglages chauds** : `regime_adaptation_enabled` (défaut `true`) et
+  `market_tuning` (JSON par marché, défaut `{}`) — appliqués à chaud par
+  `SettingsProvider.apply()` (défauts de classe fusionnés avec les overrides).
+- **`GET /api/optimization`** (nouveau) : tranche de capital + réglages
+  recommandés, faisabilité des marchés au solde courant, tuning par marché
+  appliqué, top/flop marchés (trades fermés du mode demandé).
+- **`scripts/profit_audit.py`** : agrégation **par marché**, **par classe
+  d'actifs** et **par période mensuelle** (gains vs pertes dans le temps),
+  classement des marchés, flag `--json`, et bloc « PER-MARKET OPTIMIZATION »
+  avec le JSON `market_tuning` prêt à appliquer.
+- **`scripts/optimize_params.py`** : section faisabilité des marchés au capital
+  donné (levier plafonné par le profil de tranche).
+
+### Tests & qualité
+- **`tests/test_market_tuning.py`** (nouveau) : 21 tests — lignes de base par
+  classe, faisabilité par tranche de capital (1 $ / 50 $), régimes, tuning par
+  marché piloté par l'audit, intégration `SignalEngine`, réglages à chaud.
+- Suite complète : **375 tests passés / 6 skips réseau / 0 échec**.
+
 ## [2.4.1] - 2026-08-22 — Audit intégral, sûreté d'exécution et tests exhaustifs
 
 ### Fixed
