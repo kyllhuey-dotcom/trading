@@ -20,7 +20,23 @@ def test_enrich_and_sort():
     assert sort_hub_items(items, "volume", True)[0]["volume"] == 9
 
 
-def test_markets_api_additive():
+def test_markets_api_additive(monkeypatch):
+    # The overview endpoint must not hit live providers in unit tests.
+    async def _fake_overview():
+        return {
+            "CRYPTO": [{"market_id": "btc_usdt", "display_symbol": "BTC/USDT",
+                        "name": "Bitcoin", "last": 100.0, "score": 90}],
+            "FOREX": [{"market_id": "eurusd", "display_symbol": "EUR/USD",
+                       "name": "Euro", "last": 1.08, "score": 50}],
+            "STOCKS": [{"market_id": "aapl", "display_symbol": "AAPL",
+                        "name": "Apple", "last": 200.0, "score": 70}],
+        }
+
+    import api.index as idx
+    monkeypatch.setattr(idx.data_engine, "get_market_overview", _fake_overview)
+    # Ensure no previous scan interferes with enrichment.
+    monkeypatch.setitem(idx.bot_state, "latest_scan", [])
+
     r = client.get("/api/markets?sort=score&order=desc")
     assert r.status_code == 200
     data = r.json()
