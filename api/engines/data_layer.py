@@ -92,49 +92,45 @@ class DataLayer:
         """
         Fetches quotes with automatic fallback logic (Lot 2 Redundancy).
         """
-        results = []
         now = time.time()
         self._prune_failure_cache()
-        # drop expired quote cache
-        self._quote_cache = {k: v for k, v in self._quote_cache.items() if now - v[0] < self._quote_cache_ttl}
-        for mid in market_ids:
+        # Drop expired quote cache.  An overview can contain more than one
+        # hundred markets: fetching them serially made the endpoint take up to
+        # 5 seconds *per market* whenever a provider was unavailable.
+        self._quote_cache = {k: v for k, v in self._quote_cache.items()
+                             if now - v[0] < self._quote_cache_ttl}
+
+        async def fetch_one(mid: str) -> Optional[TickerModel]:
             info = catalog.get_info(mid)
-            if not info: continue
+            if not info:
+                return None
             cached = self._quote_cache.get(mid)
             if cached and now - cached[0] < self._quote_cache_ttl:
-                results.append(cached[1])
-                continue
+                return cached[1]
 
-            provider_list = prioritize_providers(info.get("providers", {}).items())
-            
-            quote = None
-            for pid, psymbol in provider_list:
+            for pid, psymbol in prioritize_providers(info.get("providers", {}).items()):
                 # Failure cache check (Rule 3.5 - Throttling, LOT F escalation)
                 cache_key = f"{pid}:{psymbol}"
-                if self._in_cooldown(cache_key):
-                    continue # Skip this provider for this symbol
+                if self._in_cooldown(cache_key) or pid not in self.providers:
+                    continue
+                try:
+                    quote = await self._fetch_quote_with_timeout(self.providers[pid], psymbol)
+                    if quote:
+                        self._record_success(cache_key)
+                        self._quote_cache[mid] = (now, quote)
+                        return quote
+                    self._record_failure(cache_key)
+                except Exception as e:
+                    # Known delisted-noise from yfinance stays silent, the rest is logged.
+                    if "possibly delisted" not in str(e) and "No data found" not in str(e):
+                        logger.debug(f"Provider {pid} failed for {psymbol}: {e}")
+                    self._record_failure(cache_key)
+            return None
 
-                if pid in self.providers:
-                    try:
-                        quote = await self._fetch_quote_with_timeout(self.providers[pid], psymbol)
-                        if quote:
-                            self._record_success(cache_key)
-                            break
-                        else:
-                            self._record_failure(cache_key)
-                    except Exception as e:
-                        # Known delisted-noise from yfinance stays silent, the rest is logged
-                        if "possibly delisted" in str(e) or "No data found" in str(e):
-                            pass
-                        else:
-                            logger.debug(f"Provider {pid} failed for {psymbol}: {e}")
-                        self._record_failure(cache_key)
-            
-            if quote:
-                self._quote_cache[mid] = (now, quote)
-                results.append(quote)
-        
-        return results
+        # Keep the input order (useful to callers and tests) while allowing
+        # independent provider requests to share one bounded timeout window.
+        quotes = await asyncio.gather(*(fetch_one(mid) for mid in market_ids))
+        return [quote for quote in quotes if quote is not None]
 
     async def get_ohlcv(self, symbol_id: str, timeframe: str, limit: int = 100, catalog: Any = None) -> pd.DataFrame:
         """
