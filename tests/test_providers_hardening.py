@@ -85,14 +85,14 @@ def test_cooldown_escalates_with_consecutive_failures():
 async def test_quote_fallback_and_failure_recorded():
     layer = DataLayer()
     universe = MarketUniverse()
-    gate = SlowProvider(fail=True)
-    bybit = SlowProvider()
+    bybit = SlowProvider(fail=True)   # higher priority
+    gate = SlowProvider()             # healthy fallback
     layer.register_provider("gate", gate)
     layer.register_provider("bybit", bybit)
     quotes = await layer.get_all_quotes(["btc_usdt"], universe)
     assert len(quotes) == 1
-    assert "gate:BTC/USDT" in layer.failure_cache  # recorded for cooldown
-    assert bybit.calls == 1
+    assert "bybit:BTC/USDT" in layer.failure_cache  # recorded for cooldown
+    assert gate.calls == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -102,30 +102,30 @@ async def test_ohlcv_timeout_skips_hung_provider():
     layer = DataLayer()
     layer.provider_timeout_s = 0.2
     universe = MarketUniverse()
-    gate = SlowProvider(delay_s=5.0)   # hung
-    bybit = SlowProvider()             # healthy
+    bybit = SlowProvider(delay_s=5.0)   # hung (priority)
+    gate = SlowProvider()               # healthy
     layer.register_provider("gate", gate)
     layer.register_provider("bybit", bybit)
     df = await layer.get_ohlcv("btc_usdt", "1m", 50, universe)
     assert not df.empty
     assert gate.calls == 1 and bybit.calls == 1
-    assert "ohlcv:gate:BTC/USDT" in layer.failure_cache
+    assert "ohlcv:bybit:BTC/USDT" in layer.failure_cache
 
 
 async def test_orderbook_and_trades_timeouts():
     layer = DataLayer()
     layer.provider_timeout_s = 0.2
     universe = MarketUniverse()
-    gate = SlowProvider(delay_s=5.0)
-    bybit = SlowProvider()
+    bybit = SlowProvider(delay_s=5.0)
+    gate = SlowProvider()
     layer.register_provider("gate", gate)
     layer.register_provider("bybit", bybit)
     ob = await layer.get_order_book("btc_usdt", universe)
     assert ob is not None and "bids" in ob
     trades = await layer.get_trades("btc_usdt", universe)
     assert trades and trades[0]["side"] == "buy"
-    assert "ob:gate:BTC/USDT" in layer.failure_cache
-    assert "tr:gate:BTC/USDT" in layer.failure_cache
+    assert "ob:bybit:BTC/USDT" in layer.failure_cache
+    assert "tr:bybit:BTC/USDT" in layer.failure_cache
 
 
 # --------------------------------------------------------------------------- #

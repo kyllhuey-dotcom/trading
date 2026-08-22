@@ -90,13 +90,19 @@ class DataEngine:
         # Simple polling-to-broadcast for demonstration (WS native Lot 12)
         ticker = await self.fetch_ticker(market_id)
         if ticker:
+            now_ms = int(datetime.now().timestamp() * 1000)
+            ts = ticker.get("timestamp") or now_ms
             update = {
                 "type": "MARKET_UPDATE",
                 "market_id": market_id,
                 "display_symbol": info["display_symbol"],
                 "price": ticker["last"],
                 "status": ticker["status"],
-                "timestamp": ticker["timestamp"]
+                "timestamp": ticker["timestamp"],
+                "data_age_ms": max(0, now_ms - int(ts)),
+                "change_24h": ticker.get("change_24h"),
+                "volume": ticker.get("volume"),
+                "realtime_source": self.is_realtime_capable(market_id),
             }
             await self.layer.broadcast_update(update)
 
