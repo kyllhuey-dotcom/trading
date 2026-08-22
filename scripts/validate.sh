@@ -10,14 +10,14 @@ python3 -m pip install -q -r requirements.txt -r requirements-dev.txt 2>/dev/nul
   || python3 -m pip install -q --break-system-packages -r requirements.txt -r requirements-dev.txt 2>/dev/null \
   || python3 -m pip install -q --user -r requirements.txt -r requirements-dev.txt 2>/dev/null \
   || echo "  - WARN: pip install skipped; verifying the existing environment."
-python3 -c "import fastapi, ccxt, httpx2, pandas, pydantic, pytest, ruff, yfinance" \
+python3 -c "import fastapi, ccxt, httpx, pandas, pydantic, pytest, ruff, yfinance" \
   || { echo "ERROR: dependencies missing — install requirements-dev.txt"; exit 1; }
 python3 -m pip check
 
 # 2. Syntax and static correctness.
 echo "[2/6] Running syntax and static checks..."
-python3 -m compileall -q api scripts tests test_lot2_data.py
-python3 -m ruff check api scripts tests test_lot2_data.py
+python3 -m compileall -q api scripts tests
+python3 -m ruff check api scripts tests
 
 # 3. Check for accidental hard-coded secrets in application code.
 echo "[3/6] Scanning for hardcoded secrets..."
@@ -27,16 +27,17 @@ if grep -rE "(api_key|api_secret|password|token)\s*=\s*\"[a-zA-Z0-9]{10,}\"" api
 fi
 echo "  - No hardcoded secrets found."
 
-# 4. Full suite, including the root-level provider regression tests. Scripts
-# are part of coverage because they now expose unit-testable functions.
+# 4. Full suite (including the live provider probes, which auto-skip when the
+# network is unavailable). Scripts are part of coverage because they expose
+# unit-testable functions.
 echo "[4/6] Running complete suite (branch coverage gate 85%)..."
 export TESTING=true
-python3 -m pytest tests/ test_lot2_data.py \
+python3 -m pytest tests/ \
   --cov=api --cov=scripts --cov-branch --cov-fail-under=85 -q
 
 # 5. Trading core has a stricter dedicated gate.
 echo "[5/6] Checking critical engines coverage (80%)..."
-python3 -m pytest tests/ test_lot2_data.py --cov=api/engines --cov-fail-under=80 -q
+python3 -m pytest tests/ --cov=api/engines --cov-fail-under=80 -q
 
 # 6. Import the production entry point and verify route registration.
 echo "[6/6] Checking application entry point..."

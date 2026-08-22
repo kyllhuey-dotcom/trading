@@ -3,7 +3,7 @@ Quantum Trade Pro — Institutional Trading Application
 =====================================================
 Single entry point: FastAPI app + background trading loops + WebSocket bus.
 
-v2.0 — Full API contract, authentication, live settings, real broker execution.
+v2.4.2 — Full API contract, authentication, live settings, real broker execution.
 """
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, Depends, Body, Request
 from fastapi.staticfiles import StaticFiles
@@ -51,29 +51,30 @@ from api.engines.institutional_executor import select_candidates, describe_inten
 # --------------------------------------------------------------------------- #
 # Console stays human-readable; the rotating FILE handler is structured NDJSON
 # so logs can be ingested by any JSON-capable tool (LOT A — observability).
-os.makedirs("data", exist_ok=True)
+_TESTING = os.getenv("TESTING", "false").lower() == "true"
 console_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(console_formatter)
-
-json_file_handler = setup_json_file_handler(
-    path=os.getenv("LOG_FILE", "data/trading_bot.jsonl"),
-    max_bytes=int(os.getenv("LOG_MAX_BYTES", 5 * 1024 * 1024)),
-    backup_count=int(os.getenv("LOG_BACKUP_COUNT", 5)),
-)
 
 root_logger = logging.getLogger()
 root_logger.handlers.clear()
 root_logger.setLevel(logging.INFO)
 root_logger.addHandler(console_handler)
-root_logger.addHandler(json_file_handler)
+if not _TESTING:
+    # The test suite must never create data/ or write the production log file.
+    os.makedirs("data", exist_ok=True)
+    root_logger.addHandler(setup_json_file_handler(
+        path=os.getenv("LOG_FILE", "data/trading_bot.jsonl"),
+        max_bytes=int(os.getenv("LOG_MAX_BYTES", 5 * 1024 * 1024)),
+        backup_count=int(os.getenv("LOG_BACKUP_COUNT", 5)),
+    ))
 logger = logging.getLogger("QuantumTradePro")
 
 # --------------------------------------------------------------------------- #
 # 2. Configuration                                                             #
 # --------------------------------------------------------------------------- #
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
-TESTING = os.getenv("TESTING", "false").lower() == "true"
+TESTING = _TESTING
 PORT = int(os.getenv("PORT", 8000))
 # WebSocket heartbeat cadence (accelerated in tests so coverage stays fast)
 HEARTBEAT_INTERVAL_S = float(os.getenv("HEARTBEAT_INTERVAL_S", "2.0" if TESTING else "15.0"))
@@ -83,7 +84,7 @@ HEARTBEAT_INTERVAL_S = float(os.getenv("HEARTBEAT_INTERVAL_S", "2.0" if TESTING 
 # --------------------------------------------------------------------------- #
 REAL_MODE_WARNING = "Live execution still experimental – use DEMO for strategies"
 
-app = FastAPI(title="Quantum Trade Pro", version="2.1.0", lifespan=None)
+app = FastAPI(title="Quantum Trade Pro", version="2.4.2", lifespan=None)
 
 # Basic reinforced rate limiting (LOT H): sliding window per client IP,
 # separate budgets for reads and mutations. Env-tunable.

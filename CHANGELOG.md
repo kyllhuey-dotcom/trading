@@ -1,5 +1,34 @@
 # Changelog - Quantum Trade Pro
 
+## [2.4.2] - 2026-08-22 — Mise en ordre finale (hygiène dépôt & suite unifiée)
+
+### Fixed (hygiène & ordre)
+- **Artefacts retirés du dépôt** : les logs serveur `uploads/*.csv` (exports Railway) et le
+  fichier vide `op` étaient encore versionnés alors que la documentation les déclarait
+  purgés — supprimés, et `uploads/` ajouté au `.gitignore`.
+- **Suite unifiée** : `test_lot2_data.py` (racine, hack `sys.path`, réseau non marqué,
+  jamais collecté par un simple `pytest`) devient `tests/test_data_engine_live.py` :
+  marqueur `network`, skips défensifs hors-ligne, assertions réelles, timeout borné et
+  arrêt du moteur garanti. Un simple `pytest` couvre désormais toute la suite.
+- **Collision de numérotation des lots résolue** : les anciens fichiers `test_lot9*` →
+  `test_lot13*` (numérotation v1.4, en conflit avec le plan de refonte v2 de
+  `CHANTIER.md`) sont renommés par fonctionnalité : `test_docs_contracts`,
+  `test_position_management`, `test_notifications`, `test_performance`, `test_backtest`,
+  `test_paper_trading`.
+- **Isolation des tests rétablie** : `test_performance` n'écrit plus `data/test_lot11.db`
+  dans le dépôt (base `tmp_path` isolée), et le handler de log NDJSON n'est plus attaché
+  en mode `TESTING` — plus aucun artefact dans `data/` après un run.
+- **Dépendance fantôme supprimée** : `httpx2` (jamais importé par le code) retiré de
+  `requirements-dev.txt` et du check d'imports de `validate.sh`.
+- **Version applicative resynchronisée** : l'API FastAPI annonçait `2.1.0`, elle reporte
+  désormais la vraie version `2.4.2`.
+
+### Tests & qualité
+- Pipeline `scripts/validate.sh` simplifié (plus de fichier racine spécial) :
+  **354 passés + 7 skips réseau auto hors-ligne / 355 passés avec réseau, 0 échec**.
+- Couverture : **89,05 % globale** avec branches (porte 85 %) et **92,22 % moteurs**
+  (porte 80 %) — inchangées.
+
 ## [2.4.1] - 2026-08-22 — Audit intégral, sûreté d'exécution et tests exhaustifs
 
 ### Fixed

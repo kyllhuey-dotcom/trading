@@ -15,6 +15,9 @@ dist/
 data/*
 !data/.gitkeep
 
+# Server log exports / runtime artifacts — never commit
+uploads/
+
 # Tests & tooling
 .pytest_cache/
 .coverage

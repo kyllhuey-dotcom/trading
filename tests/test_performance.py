@@ -1,10 +1,9 @@
 from api.engines.portfolio_engine import PortfolioEngine
 from api.engines.db_manager import DatabaseManager
 
-def test_performance_calculation():
-    db = DatabaseManager("data/test_lot11.db")
-    with db._get_connection() as conn:
-        conn.execute("DELETE FROM trades")  # hermetic test run
+def test_performance_calculation(tmp_path):
+    # Hermetic: an isolated temp database — the suite never writes into data/.
+    db = DatabaseManager(str(tmp_path / "performance.db"))
     portfolio = PortfolioEngine(db)
     
     # Simuler des trades avec différentes stratégies

@@ -2,7 +2,9 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
-> **v2.4.1** — Audit intégral : sûreté CCXT/reduce-only, réconciliation broker fail-safe, backtest intrabar, validation stricte des ordres, agrégation news résiliente et couverture de toutes les fonctions exécutables. Suite : **355 passés / 6 skips réseau / 0 échec**.
+> **v2.4.2** — Mise en ordre finale : artefacts Railway purgés du dépôt, suite 100 % unifiée dans `tests/` (anciens fichiers « lot » renommés par fonctionnalité), isolation tests/logs garantie, version API resynchronisée. Suite : **354 passés hors-ligne / 355 passés avec réseau, 0 échec**.
+
+> **v2.4.1** — Audit intégral : sûreté CCXT/reduce-only, réconciliation broker fail-safe, backtest intrabar, validation stricte des ordres, agrégation news résiliente et couverture de toutes les fonctions exécutables.
 
 > **v2.4** — Profils de capital MICRO/RETAIL/STANDARD et optimisation pilotée par l'audit.
 
