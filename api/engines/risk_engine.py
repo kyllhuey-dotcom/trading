@@ -26,7 +26,8 @@ class RiskEngine:
                  max_daily_loss_pct: float = 3.0,
                  max_drawdown_pct: float = 5.0,
                  max_open_positions: int = 10,
-                 cool_down_mins: int = 30):
+                 cool_down_mins: int = 30,
+                 max_consecutive_losses: int = 3):
         self.max_risk_pct = max_risk_pct
         self.max_leverage = max_leverage
         self.min_account_balance = min_account_balance
@@ -34,9 +35,11 @@ class RiskEngine:
         self.max_drawdown_pct = max_drawdown_pct
         self.max_open_positions = max_open_positions
         self.cool_down_mins = cool_down_mins
+        self.max_consecutive_losses = max_consecutive_losses
         self.daily_pnl = 0.0
         self.peak_balance = 0.0
         self.last_loss_time: Optional[datetime] = None
+        self.consecutive_losses = 0
 
     # ------------------------------------------------------------------ #
     # Configuration                                                       #
@@ -50,6 +53,8 @@ class RiskEngine:
             self.cool_down_mins = int(float(settings.get("cool_down_mins", self.cool_down_mins)))
             self.max_open_positions = int(float(settings.get("max_open_positions", self.max_open_positions)))
             self.max_drawdown_pct = float(settings.get("emergency_stop_drawdown_pct", self.max_drawdown_pct))
+            self.max_consecutive_losses = int(float(settings.get("max_consecutive_losses",
+                                                                 self.max_consecutive_losses)))
             persisted_peak = float(settings.get("peak_balance", 0.0) or 0.0)
             if persisted_peak > self.peak_balance:
                 # Restore peak across restarts so drawdown protection survives redeploys
@@ -61,10 +66,17 @@ class RiskEngine:
     # Trade lifecycle                                                     #
     # ------------------------------------------------------------------ #
     def register_closed_trade(self, pnl: float) -> None:
-        """Called by the execution engine whenever a trade closes (win or loss)."""
+        """
+        Called by the execution engine whenever a trade closes (win or loss).
+        LOT P: also tracks the consecutive-loss streak for auto-pause and
+        anti-martingale risk scaling.
+        """
         self.daily_pnl += pnl
         if pnl < 0:
             self.last_loss_time = datetime.now()
+            self.consecutive_losses += 1
+        else:
+            self.consecutive_losses = 0
 
     def update_peak(self, balance: float) -> None:
         if balance > self.peak_balance:
@@ -142,6 +154,13 @@ class RiskEngine:
                     "reason": f"Max Daily Loss reached ({self.daily_pnl:.2f} / -{self.max_daily_loss_pct}%)",
                     "risk_pct": self.max_risk_pct}
 
+        # 3b. LOT P: consecutive-loss circuit breaker — stop digging a hole
+        if self.consecutive_losses >= self.max_consecutive_losses:
+            return {"allowed": False,
+                    "reason": (f"Max consecutive losses reached "
+                               f"({self.consecutive_losses}/{self.max_consecutive_losses}) — auto-pause"),
+                    "risk_pct": self.max_risk_pct}
+
         # 4. Cool-down after a losing trade
         if self.last_loss_time:
             elapsed = (datetime.now() - self.last_loss_time).total_seconds() / 60.0
@@ -166,8 +185,12 @@ class RiskEngine:
         if dist <= 0:
             return {"allowed": False, "reason": "Zero SL distance", "risk_pct": self.max_risk_pct}
 
-        # 7. Sizing: risk a fixed % of balance, then cap by leverage
-        risk_amount = balance * (self.max_risk_pct / 100)
+        # 7. Sizing: risk a fixed % of balance, then cap by leverage.
+        #    LOT P: anti-martingale scaling — after losses we risk LESS
+        #    ({0:100%, 1:75%, 2+:50%}), never more.
+        streak = min(self.consecutive_losses, 2)
+        risk_scale = (1.0, 0.75, 0.5)[streak]
+        risk_amount = balance * (self.max_risk_pct * risk_scale / 100)
         qty = risk_amount / dist
         notional = qty * entry
         lev = notional / balance

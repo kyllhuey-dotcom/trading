@@ -140,6 +140,10 @@ class ExecutionEngine:
         ts_active = settings.get("trailing_stop_active", "false").lower() == "true"
         ts_dist_atr = float(settings.get("trailing_stop_distance_atr", "1.5"))
         partial_tp_ratio = float(settings.get("partial_tp_ratio", "1.0"))
+        try:
+            max_duration_mins = int(float(settings.get("max_trade_duration_minutes", "0") or 0))
+        except (TypeError, ValueError):
+            max_duration_mins = 0
 
         for pos in active:
             ticker = tickers.get(pos["display_symbol"]) or tickers.get(pos["symbol"])
@@ -166,6 +170,19 @@ class ExecutionEngine:
                 self._close_position(pos, "MARKET_CLOSED_PROTECTION", current_exit_price)
                 closed_trades.append(pos)
                 continue
+
+            # 1b. LOT P: time stop — a scalp that hasn't moved is a dead scalp.
+            if max_duration_mins > 0:
+                try:
+                    open_dt = datetime.fromisoformat(str(pos.get("open_time") or ""))
+                except (ValueError, TypeError):
+                    open_dt = None
+                if open_dt is not None:
+                    elapsed_s = (datetime.now() - open_dt).total_seconds()
+                    if elapsed_s > max_duration_mins * 60:
+                        self._close_position(pos, "TIME_STOP_EXIT", current_exit_price)
+                        closed_trades.append(pos)
+                        continue
 
             # 2. Partial TP at 1:1 RR → lock 50%, move SL to break-even
             risk_dist = abs(pos["entry_price"] - pos["sl"])

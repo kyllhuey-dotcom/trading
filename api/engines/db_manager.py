@@ -190,6 +190,12 @@ class DatabaseManager:
                     "partial_tp_ratio": "1.0",
                     "peak_balance": "0",
                     "scan_interval_seconds": "20",
+                    # LOT P — profitability hardening
+                    "alpha_override_enabled": "false",
+                    "max_cost_ratio": "0.5",
+                    "max_consecutive_losses": "3",
+                    "max_trade_duration_minutes": "0",
+                    "fee_pct": "0.05",
                 }
                 for k, v in defaults.items():
                     conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))

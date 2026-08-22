@@ -1,4 +1,4 @@
-# Audit de Robustesse — Quantum Trade Pro v2.1 (août 2026)
+# Audit de Robustesse — Quantum Trade Pro v2.2 (août 2026)
 
 Audit réalisé sur le code réel (clone du dépôt, exécution des tests et du serveur).
 Contrairement aux versions précédentes de ce document, chaque point ci-dessous a été
@@ -6,7 +6,7 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
 
 ## État global
 
-- ✅ Suite de tests : **185 passés, 6 skips** (skips = tests `network` dont le
+- ✅ Suite de tests : **204 passés, 6 skips** (skips = tests `network` dont le
   provider est indisponible — ils s'auto-skip proprement désormais).
 - ✅ Couverture : **83 % sur `api/engines`** (engines critiques), 76 % sur `api/`
   (portes CI : 80 % / 60 % dans `scripts/validate.sh`).
@@ -38,6 +38,44 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
 | Secrets et DB commités sur GitHub | DB, logs Railway, 7 DB de test dans le repo | `.gitignore` complet + fichiers retirés du suivi git | `git status` |
 
 ## Améliorations structurantes
+
+### LOT P — Rentabilité (fuites d'espérance corrigées)
+
+Fuite n°1 — **seuil de score contourné** : `min_signal_score` n'était appliqué
+qu'à la stratégie structure ; tape/liquidity/arbitrage exécutaient des signaux
+de score 60-70 (vérifié par reproduction : signal tape score 70 → `tradable`).
+Corrigé : la porte s'applique à toutes les stratégies (score conservé dans la
+réponse pour le diagnostic).
+
+Fuite n°2 — **trades mathématiquement perdants** : aucun filtre coûts/volatilité.
+Sur marché calme, les frais+slippage (~0,2 %) pouvaient représenter 200 %+ du
+gain cible. Corrigé : filtre `max_cost_ratio` (0,5 par défaut, réglable) qui
+bloque les signaux dont les coûts dépassent la moitié du risque.
+
+Fuite n°3 — **réglages morts** : `risk_reward_ratio` (présent dans les settings)
+jamais appliqué (TP codé en dur à 2.0). Corrigé : câblé + bornes de sécurité.
+
+Fuite n°4 — **alpha override systématique** : tout score ≥ 80 bypassait les
+filtres RANGE **et news**. Corrigé : opt-in (`alpha_override_enabled=false` par
+défaut) et la restriction news/session reste **toujours** appliquée.
+
+Protections ajoutées :
+- circuit breaker **séries de pertes** (3 pertes d'affilée → auto-pause à
+  l'ordre, reset au gain) + **scaling anti-martingale** (risque 100 % → 75 % →
+  50 % après pertes, jamais augmenté) ;
+- **time stop** réglable (`max_trade_duration_minutes`, 0 = off) ;
+- **`scripts/profit_audit.py`** : audit de rentabilité par stratégie (win rate,
+  espérance, RR réalisé, PnL, détection des fuites de coûts) sur n'importe
+  quelle base — y compris un export du volume Railway.
+
+Tests : `tests/test_profitability.py` (19 tests, chaque fuite verrouillée).
+
+> ⚠️ **Honnêteté obligatoire** : ces corrections éliminent des trades qui
+> perdaient structurellement et protègent le capital, mais **aucun code ne
+> garantit le profit** — la rentabilité dépend du marché et de la période.
+> Pour vérifier ce qui perd réellement sur ton instance : exporte ta base
+> (`/app/data/quantum_trade.db` sur Railway) puis
+> `python3 scripts/profit_audit.py chemin/vers/quantum_trade.db`.
 
 ### LOT A — Observabilité & métriques avancées (v2.1)
 
@@ -167,6 +205,8 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
 Le projet est **fonctionnel de bout en bout en DEMO** et **exécute de vrais ordres en REAL**
 avec les protections configurées, une observabilité avancée (métriques enrichies, logs JSON,
 heartbeat WS), des stratégies durcies (fraîcheur/synchronisation/seuils dynamiques/stops
-logiques), un sizing exchange-aware, une couverture de 83 % des engines critiques et un
+logiques), un sizing exchange-aware, un **durcissement de rentabilité** (seuil de score
+global, filtre coûts/volatilité, circuit breaker séries de pertes, scaling anti-martingale,
+time stop, audit `profit_audit.py`), une couverture de 83 % des engines critiques et un
 avertissement REAL explicite. Les claims « Production-Ready » des versions précédentes
-étaient prématurés ; celui-ci repose sur des tests vérifiables.
+étaient prématurés ; celui-ci repose sur des tests vérifiables (204 passés / 6 skips).

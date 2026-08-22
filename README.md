@@ -2,7 +2,7 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
-> **v2.1** — amélioration continue (lots A→H) : observabilité avancée, stratégies durcies, sizing exchange-aware, garde anti-scalping sur données différées, couverture 83 % des engines, rate limiting, avertissement REAL explicite. Suite : 185 passés / 6 skips réseau.
+> **v2.2** — LOT P « Rentabilité » : seuil de score appliqué à toutes les stratégies, filtre coûts/volatilité, circuit breaker séries de pertes, scaling anti-martingale, time stop, audit de rentabilité (`scripts/profit_audit.py`). Suite : 204 passés / 6 skips réseau.
 
 ---
 
@@ -12,7 +12,7 @@ Bot de trading multi-marchés : données réelles, exécution papier réaliste, 
 |---|---|
 | **Marchés** | 127 instruments : crypto (Gate/Bybit/Binance avec fallback), forex, indices, matières premières, actions, futures, obligations, ETF (Yahoo Finance) |
 | **Stratégies** | Structure (BOS/CHoCH, HH/HL/LH/LL), micro-arbitrage inter-plateformes, tape reading (imbalance + delta), liquidity gap (order book) |
-| **Gestion de risque** | Sizing par % de risque, plafond de levier, validation du sens du SL, limite de perte quotidienne au niveau de l'ordre, cool-down après perte, filtre de corrélation, max positions, drawdown global persistant |
+| **Gestion de risque** | Sizing par % de risque, plafond de levier, validation du sens du SL, limite de perte quotidienne au niveau de l'ordre, cool-down après perte, filtre de corrélation, max positions, drawdown global persistant, **circuit breaker séries de pertes + risque réduit après pertes (anti-martingale)**, filtre coûts/volatilité |
 | **Exécution** | Mode DEMO : papier réaliste (latence, slippage, rejets simulés) sur prix réels. Mode REAL : vrais ordres market via CCXT avec ordres SL/TP de protection, sizing arrondi aux contraintes d'exchange (lot/tick/min_notional), avertissement « experimental » explicite |
 | **Gestion de positions** | Partial TP 50 % au 1:1 → break-even, trailing stop ATR, fermeture forcée hors session, réconciliation broker en mode REAL |
 | **Filtres** | Calendrier économique (news à fort impact), sessions de marché, fraîcheur des données, spread max |
@@ -52,6 +52,7 @@ pytest tests/ -q
 - Les tests marqués `network` s'auto-skip si le réseau ou le provider est indisponible.
 - Couverture : **83 %** sur `api/engines` (porte CI 80 %), vérifiée par `scripts/validate.sh`.
 - Les données Yahoo (différées ~15 min) ne sont **pas** utilisées pour l'exécution automatique (garde anti-scalping, opt-out `allow_delayed_data_trading`).
+- **Audit de rentabilité** : `python3 scripts/profit_audit.py [chemin/vers/quantum_trade.db]` → win rate, espérance, RR réalisé et PnL par stratégie + détection des trades dont les frais dépassaient le risque.
 
 ## 🔐 Sécurité
 
