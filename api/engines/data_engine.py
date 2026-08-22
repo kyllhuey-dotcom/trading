@@ -54,6 +54,34 @@ class DataEngine:
         """Connect DataLayer to WebSocket for real-time broadcast."""
         self.layer.subscribers.append(manager)
 
+    # ------------------------------------------------------------------ #
+    # LOT F: non-realtime source guard                                   #
+    # ------------------------------------------------------------------ #
+    REALTIME_PROVIDERS = ("gate", "bybit", "binance")
+
+    def is_realtime_capable(self, market_id: str) -> bool:
+        """True when the instrument is fed by a realtime crypto exchange."""
+        info = self.universe.get_info(market_id)
+        if not info:
+            return False
+        return any(pid in self.REALTIME_PROVIDERS for pid in info.get("providers", {}))
+
+    def check_scalping_allowed(self, market_id: str,
+                               allow_delayed: bool = False) -> Dict[str, Any]:
+        """
+        Ultra-scalping needs *realtime* data. Yahoo Finance is delayed
+        (~15 min) — auto-trading it as if it were live would be dishonest
+        and dangerous. Blocked by default; `allow_delayed_data_trading=true`
+        in settings is the explicit opt-out (swing/experimental use only).
+        """
+        if self.is_realtime_capable(market_id):
+            return {"allowed": True, "reason": None, "realtime": True}
+        if allow_delayed:
+            return {"allowed": True, "reason": "Delayed data source explicitly allowed",
+                    "realtime": False}
+        return {"allowed": False, "realtime": False,
+                "reason": "NON_REALTIME_SOURCE — scalping blocked on delayed data (Yahoo)"}
+
     async def broadcast_market_update(self, market_id: str):
         """Rule 20, 22: Broadcast a specific market update to the bus."""
         info = self.universe.get_info(market_id)

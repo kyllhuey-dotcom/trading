@@ -102,7 +102,8 @@ class ScannerEngine:
                 info = self.data.universe.get_info(symbol)
                 if not info:
                     return {"symbol": symbol, "asset_class": "UNKNOWN", "status": "UNKNOWN_SYMBOL",
-                            "tradable": False, "reason": "Not in universe"}
+                            "tradable": False, "reason": "Not in universe",
+                            "realtime_source": False}
 
                 # Parallel data fetch: LTF, HTF, ticker, orderbook, trades
                 # (hard timeout so one hung provider can never stall the whole scan)
@@ -130,6 +131,7 @@ class ScannerEngine:
                         "status": "DATA_UNAVAILABLE",
                         "tradable": False,
                         "reason": "Missing data",
+                        "realtime_source": self.data.is_realtime_capable(symbol),
                         "diagnosis": {
                             "main_blocker": "DATA_VALID",
                             "main_reason": "No market data available",
@@ -189,6 +191,7 @@ class ScannerEngine:
                     "volume": float(ticker.get("volume", 0) or 0),
                     "status": ticker.get("status"),
                     "data_age_ms": data_age_ms,
+                    "realtime_source": self.data.is_realtime_capable(symbol),
                     "trend": ltf_analysis.get("trend"),
                     "structure": ltf_analysis.get("is_hh") and "HH/HL" or
                                  (ltf_analysis.get("is_ll") and "LH/LL" or "Neutral"),

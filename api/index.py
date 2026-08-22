@@ -344,6 +344,19 @@ async def tick_scanner():
             logger.warning(f"Stale ticker for {res['symbol']} — order skipped")
             continue
 
+        # LOT F: never scalp delayed (non-realtime) data. Yahoo-sourced
+        # instruments are blocked for automated execution unless explicitly
+        # allowed in settings (allow_delayed_data_trading=true).
+        allow_delayed = settings.get("allow_delayed_data_trading", "false").lower() == "true"
+        scalp_guard = data_engine.check_scalping_allowed(res["symbol"], allow_delayed)
+        if not scalp_guard["allowed"]:
+            db_manager.archive_signal(sig, "BLOCKED", scalp_guard["reason"])
+            metrics_engine.record_signal_blocked(sig.get("strategy", "structure"))
+            structured_log(logger, logging.WARNING, "SCALPING_BLOCKED_DELAYED_DATA",
+                           event="scalping_blocked_delayed_data", symbol=res["symbol"],
+                           strategy=sig.get("strategy", "structure"))
+            continue
+
         risk_data = risk_engine.calculate_position_size(
             balance, sig["entry"], sig["sl"], sig["direction"],
             symbol=res["symbol"], active_positions=active,

@@ -58,9 +58,12 @@ class BybitProvider(MarketDataProvider):
 
     async def health_check(self) -> Dict[str, Any]:
         try:
-            # More robust health check using a common ticker
+            # More robust health check using a common ticker + latency (LOT F)
+            start = datetime.now()
             await self.exchange.fetch_ticker('BTC/USDT')
-            return {"provider": self.source_name, "status": "ONLINE"}
+            latency = (datetime.now() - start).total_seconds() * 1000
+            return {"provider": self.source_name, "status": "ONLINE",
+                    "latency_ms": int(latency)}
         except Exception as e:
             return {"provider": self.source_name, "status": "ERROR", "message": str(e)}
 
