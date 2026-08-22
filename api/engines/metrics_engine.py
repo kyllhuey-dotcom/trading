@@ -41,6 +41,10 @@ class MetricsEngine:
         self.last_execution_ms: Optional[float] = None
         self.last_data_age_ms: Optional[float] = None
         self.last_scan_timestamp: Optional[str] = None
+        self.trades_above_min_score = 0
+        self.max_concurrent_seen = 0
+        self.institutional_idle_ticks = 0
+        self.institutional_exec_ticks = 0
 
     # ------------------------------------------------------------------ #
     # Recording                                                           #
@@ -86,6 +90,17 @@ class MetricsEngine:
         with self._lock:
             self._incr(self.signals_blocked_by_strategy, strategy or "structure")
 
+    def record_institutional(self, intent_code: str, n_active: int = 0, trades_above: int = 0) -> None:
+        with self._lock:
+            self.max_concurrent_seen = max(self.max_concurrent_seen, int(n_active or 0))
+            if trades_above:
+                self.trades_above_min_score += int(trades_above)
+            code = str(intent_code or "").upper()
+            if code == "IDLE":
+                self.institutional_idle_ticks += 1
+            elif code == "EXECUTING":
+                self.institutional_exec_ticks += 1
+
     def record_error(self) -> None:
         with self._lock:
             self.total_errors += 1
@@ -115,6 +130,12 @@ class MetricsEngine:
                     "samples": len(self._series["data_age_ms"]),
                 },
                 "last_scan_timestamp": self.last_scan_timestamp,
+                "institutional": {
+                    "trades_above_min_score": self.trades_above_min_score,
+                    "max_concurrent_seen": self.max_concurrent_seen,
+                    "institutional_idle_ticks": self.institutional_idle_ticks,
+                    "institutional_exec_ticks": self.institutional_exec_ticks,
+                },
             }
 
     # ------------------------------------------------------------------ #
