@@ -41,6 +41,10 @@ class ExecutionRouter:
 
         if res.get("success"):
             self.last_order_timestamp = now
+            # Record the per-symbol timestamp so the anti-duplication throttle
+            # actually engages on the next order for the same symbol (LOT Q fix:
+            # the dict was previously read but never written).
+            self.last_order_by_symbol[throttle_key] = now
             pos = res.get("position") or {}
             pos["client_order_id"] = client_order_id
             res["client_order_id"] = client_order_id

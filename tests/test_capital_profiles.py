@@ -13,10 +13,12 @@ import pandas as pd
 import pytest
 
 from api.engines.capital_profiles import (
-    BRACKETS, resolve_bracket, profile_overrides, recommend_from_audit,
+    BRACKETS, resolve_bracket, profile_overrides, bracket_summary,
+    _expectancy_pct, recommend_from_audit, HEALTH_TARGETS,
 )
 from api.engines.risk_engine import RiskEngine
 from api.engines.signal_engine import SignalEngine
+from api.engines.settings_schema import validate_settings, SETTINGS_SPEC
 
 
 # --------------------------------------------------------------------------- #
@@ -166,3 +168,172 @@ def test_signal_atr_stop_multiplier_widens_stop():
     assert res_wide["atr"] == pytest.approx(atr)
     # Larger ATR multiplier = further stop (more distance to the trade).
     assert (res_wide["entry"] - res_wide["sl"]) > (res["entry"] - res["sl"])
+
+
+# --------------------------------------------------------------------------- #
+# 5. resolve_bracket — None / negative edge cases                              #
+# --------------------------------------------------------------------------- #
+def test_resolve_bracket_none_and_negative():
+    assert resolve_bracket(None).name == "MICRO"
+    assert resolve_bracket(-1.0).name == "MICRO"
+    assert resolve_bracket(-1_000_000.0).name == "MICRO"
+
+
+# --------------------------------------------------------------------------- #
+# 6. bracket_summary                                                           #
+# --------------------------------------------------------------------------- #
+def test_bracket_summary_matches_brackets():
+    summary = bracket_summary()
+    assert len(summary) == len(BRACKETS) == 3
+    assert [b["name"] for b in summary] == ["MICRO", "RETAIL", "STANDARD"]
+    # asdict must mirror the dataclass fields 1:1
+    for b, s in zip(BRACKETS, summary):
+        assert s["name"] == b.name
+        assert s["min_balance"] == b.min_balance
+        assert s["max_balance"] == b.max_balance
+        assert s["atr_stop_multiplier"] == b.atr_stop_multiplier
+        assert s["min_trade_notional"] == b.min_trade_notional
+
+
+# --------------------------------------------------------------------------- #
+# 7. _expectancy_pct                                                           #
+# --------------------------------------------------------------------------- #
+def test_expectancy_pct_formula():
+    # E = win_rate% × avg_win − loss_rate% × |avg_loss|
+    assert _expectancy_pct(50.0, 2.0, 1.0) == pytest.approx(0.5)
+    assert _expectancy_pct(100.0, 1.0, 1.0) == pytest.approx(1.0)
+    assert _expectancy_pct(0.0, 1.0, 1.0) == pytest.approx(-1.0)
+    assert _expectancy_pct(40.0, 3.0, 1.0) == pytest.approx(0.6)
+    # no win and no loss data → 0 (guard against division-by-zero ambiguity)
+    assert _expectancy_pct(50.0, 0.0, 0.0) == pytest.approx(0.0)
+
+
+# --------------------------------------------------------------------------- #
+# 8. recommend_from_audit — every optimization branch                          #
+# --------------------------------------------------------------------------- #
+def _audit(pnl, win_rate, avg_win, avg_loss, cost_leaks=0, trades=10, wins=None,
+           modes=("DEMO",)):
+    """Build a synthetic profit-audit payload for one strategy across modes."""
+    wins = int(round(trades * win_rate / 100)) if wins is None else wins
+    by_strategy = {
+        "structure": {
+            "trades": trades, "wins": wins, "losses": trades - wins,
+            "win_rate": win_rate, "net_pnl": pnl,
+            "avg_win": avg_win, "avg_loss": avg_loss,
+            "realized_rr": (avg_win / avg_loss) if avg_loss > 0 else None,
+            "expectancy_per_trade": pnl / trades if trades else 0.0,
+            "cost_leaks": cost_leaks, "verdict": "?",
+        },
+    }
+    return {
+        "modes": {m: {"closed_trades": trades, "net_pnl": pnl,
+                      "by_strategy": by_strategy} for m in modes},
+        "total_closed_trades": trades * len(modes),
+        "total_net_pnl": pnl * len(modes),
+    }
+
+
+def test_recommend_from_audit_widen_take_profit():
+    # Win rate healthy, PnL positive, but realized RR too low → widen TP.
+    rec = recommend_from_audit(_audit(pnl=1.0, win_rate=50.0, avg_win=1.0,
+                                      avg_loss=1.0, cost_leaks=0), 50.0)
+    s = rec["per_strategy"]["structure"]
+    assert s["verdict"] == "PROFITABLE"
+    assert s["action"] == "WIDEN_TAKE_PROFIT"
+
+
+def test_recommend_from_audit_tighten_cost_filter():
+    # Healthy RR, but trades with fee leaks → tighten the cost filter.
+    rec = recommend_from_audit(_audit(pnl=1.0, win_rate=60.0, avg_win=2.0,
+                                      avg_loss=1.0, cost_leaks=2), 50.0)
+    s = rec["per_strategy"]["structure"]
+    assert s["action"] == "TIGHTEN_COST_FILTER"
+
+
+def test_recommend_from_audit_keep():
+    # Fully healthy strategy → keep and scale.
+    rec = recommend_from_audit(_audit(pnl=1.0, win_rate=60.0, avg_win=2.0,
+                                      avg_loss=1.0, cost_leaks=0), 50.0)
+    s = rec["per_strategy"]["structure"]
+    assert s["action"] == "KEEP"
+    assert s["expectancy"] > 0
+    assert rec["health_verdict"] == "HEALTHY"
+
+
+def test_recommend_from_audit_review():
+    # Breakeven, no leaks, no RR data, non-positive expectancy → REVIEW.
+    rec = recommend_from_audit(_audit(pnl=0.0, win_rate=50.0, avg_win=0.0,
+                                      avg_loss=0.0, cost_leaks=0), 50.0)
+    s = rec["per_strategy"]["structure"]
+    assert s["verdict"] == "BREAKEVEN"
+    assert s["action"] == "REVIEW"
+
+
+def test_recommend_from_audit_aggregates_multi_modes():
+    # Same strategy present in two modes: trades/PnL are summed, best tracked.
+    rec = recommend_from_audit(
+        _audit(pnl=1.0, win_rate=60.0, avg_win=2.0, avg_loss=1.0,
+               cost_leaks=0, trades=10, modes=("DEMO", "REAL")), 100.0)
+    s = rec["per_strategy"]["structure"]
+    assert s["trades"] == 20
+    assert s["net_pnl"] == pytest.approx(2.0)
+    assert rec["best_strategy"]["name"] == "structure"
+    assert rec["health_verdict"] == "HEALTHY"
+
+
+def test_recommend_from_audit_needs_tailoring():
+    # Worst win rate in [35, 45) → NEEDS_TAILORING.
+    rec = recommend_from_audit(_audit(pnl=-1.0, win_rate=40.0, avg_win=1.0,
+                                      avg_loss=1.0, cost_leaks=0), 50.0)
+    assert rec["health_verdict"] == "NEEDS_TAILORING"
+
+
+# --------------------------------------------------------------------------- #
+# 9. settings_schema — new fields, clamp, enum                                 #
+# --------------------------------------------------------------------------- #
+def test_settings_schema_has_lot_q_fields():
+    for key in ("min_account_balance", "min_trade_notional",
+                "atr_stop_multiplier", "capital_profile_mode"):
+        assert key in SETTINGS_SPEC
+
+
+def test_settings_schema_clamps_min_max():
+    cleaned, errors = validate_settings({"min_account_balance": "0.001",
+                                         "max_leverage": "999"})
+    assert cleaned["min_account_balance"] == "0.5"   # clamped to min
+    assert cleaned["max_leverage"] == "100"          # clamped to max
+    assert any("clamped" in e for e in errors)
+
+
+def test_settings_schema_enum_generic_message():
+    cleaned, errors = validate_settings({"capital_profile_mode": "bogus"})
+    assert cleaned["capital_profile_mode"] == "manual"
+    joined = " ".join(errors)
+    assert "invalid language" not in joined        # misleading wording gone
+    assert "manual" in joined and "auto" in joined  # valid choices listed
+
+
+# --------------------------------------------------------------------------- #
+# 10. set_atr_stop_multiplier — bounds & rejection                             #
+# --------------------------------------------------------------------------- #
+def test_set_atr_stop_multiplier_bounds():
+    engine = SignalEngine()
+    engine.set_atr_stop_multiplier(0.1)
+    assert engine.atr_stop_multiplier == pytest.approx(0.1)
+    engine.set_atr_stop_multiplier(10.0)
+    assert engine.atr_stop_multiplier == pytest.approx(10.0)
+    engine.set_atr_stop_multiplier(2.5)
+    assert engine.atr_stop_multiplier == pytest.approx(2.5)
+
+
+def test_set_atr_stop_multiplier_rejects_out_of_range():
+    engine = SignalEngine()
+    assert engine.atr_stop_multiplier == pytest.approx(1.5)  # default
+    engine.set_atr_stop_multiplier(0.05)   # below lower bound
+    assert engine.atr_stop_multiplier == pytest.approx(1.5)
+    engine.set_atr_stop_multiplier(10.5)   # above upper bound
+    assert engine.atr_stop_multiplier == pytest.approx(1.5)
+    engine.set_atr_stop_multiplier("abc")  # non-numeric
+    assert engine.atr_stop_multiplier == pytest.approx(1.5)
+    engine.set_atr_stop_multiplier(None)   # None
+    assert engine.atr_stop_multiplier == pytest.approx(1.5)
