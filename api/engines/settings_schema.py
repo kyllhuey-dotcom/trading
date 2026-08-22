@@ -26,6 +26,8 @@ SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
     "alpha_override_enabled": {"type": "bool", "default": "false"},
     "max_cost_ratio": {"type": "float", "min": 0.0, "max": 2.0, "default": "0.5"},
     "capital_profile_mode": {"type": "enum", "choices": ("manual", "auto"), "default": "manual"},
+    "regime_adaptation_enabled": {"type": "bool", "default": "true"},
+    "market_tuning": {"type": "str", "default": "{}"},
     "max_consecutive_losses": {"type": "int", "min": 1, "max": 20, "default": "3"},
     "max_trade_duration_minutes": {"type": "int", "min": 0, "max": 1440, "default": "0"},
     "fee_pct": {"type": "float", "min": 0.0, "max": 2.0, "default": "0.05"},

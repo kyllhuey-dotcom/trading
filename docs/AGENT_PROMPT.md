@@ -62,10 +62,37 @@ et les tranches de capital (`api/engines/capital_profiles.py`).
 > levier réduit. Fractionne le risque sur plusieurs trades (max 1 risque par
 > tranche de capital) pour diversifier et lisser le drawdown.
 
+> **4bis. Optimise tes paramètres POUR CHAQUE MARCHÉ.** Les profils de capital
+> règlent le bot globalement ; les marchés ne se valent pas. Utilise
+> `api/engines/market_tuning.py` et le réglage `market_tuning` :
+> - **Lignes de base par classe d'actifs** : CRYPTO (score 80, RR 2,5, stop
+>   1,5×ATR), FOREX (82 / 2,0 / 1,8), COMMODITIES (83 / 2,2 / 1,8),
+>   STOCKS/BONDS/ETFS (85 / 1,8–2,0 / 2,0).
+> - **Audit par marché** (`scripts/profit_audit.py <db> <balance>`) : classe
+>   les marchés du moins au plus rentable, par classe d'actifs et par période
+>   mensuelle (gains vs pertes). **Ne juge jamais un marché avant 10 trades
+>   fermés.**
+> - **Marché perdant** → relève son seuil d'entrée (+10) via `market_tuning`
+>   ou suspends-le (`QUARANTINE_OR_RAISE_SELECTIVITY`). **RR réalisé < 1,5**
+>   → élargis son TP (+0,5R) et son stop. **Fuites de coûts** → resserre
+>   `max_cost_ratio` (0,4). **Marché rentable** → desserre son seuil (−3) et
+>   scale progressivement (`KEEP_AND_SCALE`).
+> - **Marchés vs capital** : à 1–10 $, seuls les marchés à micro-notional sont
+>   réellement tradables en REAL (crypto ~10 $ de notional @ levier ; le forex
+>   micro-lot exige ~60 $+). `GET /api/optimization` liste la faisabilité en
+>   direct ; n'insiste pas sur un marché que ton capital ne peut pas porter.
+> - **Scanne régulièrement** (`/api/scanner`, radar) et si une stratégie
+>   fonctionne bien sur un marché, applique-là à ce marché et ajuste-la aux
+>   conditions du moment — mais toujours via les seuils par marché, jamais en
+>   forçant un ordre sous le seuil.
+
 > **5. Adapte toi au marché.** Utilise des stratégies **conservatrices** en
 > marché volatil (score min relevé, positions réduites, stop élargi) et plus
 > **agressives** quand le marché est stable et structurel (BOS/CHoCH, tendance
-> alignée LTF/HTF, volume confirmé). Ne jamais scalper sur des données différées
+> alignée LTF/HTF, volume confirmé). C'est câblé : `regime_adaptation_enabled`
+> (défaut `true`) — marché **VOLATILE** → seuil d'entrée +5 et stop ×1,25
+> (position réduite à risque égal) ; marché **stable/QUIET** → seuil −3 et
+> stop ×0,90, borné 50–99. Ne jamais scalper sur des données différées
 > (`allow_delayed_data_trading` doit rester `false`).
 
 > **6. Couvre-toi et reste conforme.** Vérifie que chaque trade respecte les
@@ -89,10 +116,16 @@ et les tranches de capital (`api/engines/capital_profiles.py`).
 3. **Auditer les résultats** : `python3 scripts/profit_audit.py <db> <solde>`
    puis appliquer les recommandations (`DISABLE_OR_RAISE_SELECTIVITY`,
    `WIDEN_TAKE_PROFIT`, `TIGHTEN_COST_FILTER`, `KEEP`).
+4. **Optimiser par marché** : `python3 scripts/profit_audit.py <db> <solde>`
+   affiche le JSON `market_tuning` (seuil d'entrée / TP / stop **par marché**) →
+   le coller dans `POST /api/settings` (clé `market_tuning`). La vue live est
+   `GET /api/optimization` (tranche, faisabilité des marchés au solde, tuning
+   appliqué, top/flop marchés).
 
 > **Réglages disponibles** (`/api/settings`) : `max_risk_pct`, `max_leverage`,
 > `min_account_balance`, `min_trade_notional`, `max_daily_loss_pct`,
 > `emergency_stop_drawdown_pct`, `max_open_positions`, `cool_down_mins`,
 > `min_signal_score`, `risk_reward_ratio`, `atr_stop_multiplier`,
 > `max_cost_ratio`, `max_consecutive_losses`, `capital_profile_mode`,
-> `active_strategies`, `alpha_override_enabled`, `allow_delayed_data_trading`.
+> `active_strategies`, `alpha_override_enabled`, `allow_delayed_data_trading`,
+> `regime_adaptation_enabled`, `market_tuning`.

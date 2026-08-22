@@ -100,6 +100,22 @@ Liste de trades fermés (plus récents d'abord).
   "daily_pnl": 0.0, "timestamp": "..." }
 ```
 
+### `GET /api/optimization?mode=DEMO` — audit & optimisation live (v2.5)
+```json
+{ "balance": 5.0,
+  "capital_profile": { "mode": "auto", "bracket": "MICRO", "balance": 5.0, "applied": true },
+  "recommended_settings": { "max_risk_pct": 1.0, "min_signal_score": 85, "risk_reward_ratio": 2.5 },
+  "regime_adaptation_enabled": true,
+  "market_feasibility": { "balance": 5.0, "asset_classes": { "CRYPTO": { "class_feasible": true, "markets_feasible": 36, "markets_total": 36, "min_capital_estimate": 0.6 },
+                                                            "FOREX": { "class_feasible": false } } },
+  "market_tuning": { "btc_usdt": { "min_score": 80, "risk_reward": 2.5, "atr_stop_multiplier": 1.5 } },
+  "best_markets": [ { "market_id": "btc_usdt", "trades": 12, "win_rate": 66.7, "net_pnl": 48.0 } ],
+  "worst_markets": [ { "market_id": "doge_usdt", "trades": 14, "win_rate": 28.6, "net_pnl": -15.0 } ] }
+```
+- `market_feasibility` : marchés réellement portables au solde courant (REAL) ;
+- `market_tuning` : seuil d'entrée / TP / stop appliqués par marché ;
+- `best_markets` / `worst_markets` : top/flop des marchés tradés (trades fermés).
+
 ### `GET /api/metrics`
 Compteurs + durée de scan + derniers ordres (`recent_orders`).
 
@@ -137,8 +153,14 @@ Réponse : `{ success, balance }`.
   "trailing_stop_distance_atr": "1.5", "emergency_stop_drawdown_pct": "10.0",
   "auto_arm_on_startup": "false", "active_strategies": "structure,arbitrage,tape,liquidity",
   "sim_latency_ms": "100", "sim_slippage_pct": "0.05", "sim_rejection_prob": "0.01",
-  "partial_tp_ratio": "1.0", "scan_interval_seconds": "20", "peak_balance": "0" }
+  "partial_tp_ratio": "1.0", "scan_interval_seconds": "20", "peak_balance": "0",
+  "regime_adaptation_enabled": "true", "market_tuning": "{}" }
 ```
+- `market_tuning` : JSON par marché, ex.
+  `{"doge_usdt": {"min_score": 95}, "eur_usd": {"risk_reward": 3.0, "atr_stop_multiplier": 2.5}}`
+  (fusionné sur les lignes de base par classe d'actifs — voir `/api/optimization`).
+- `regime_adaptation_enabled` : adaptation conservatrice aux marchés volatils
+  (seuil +5, stop ×1.25) / engagement modéré sur marchés stables (seuil −3).
 
 ### `POST /api/settings` 🔐
 Corps = dictionnaire `{ clé: valeur }`. Les réglages sont appliqués **à chaud**

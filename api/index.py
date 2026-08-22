@@ -45,6 +45,7 @@ from api.engines.order_types import normalize_order_type, risk_based_quantity
 from api.engines.settings_schema import validate_settings, ensure_defaults
 from api.engines.capital_profiles import resolve_bracket, profile_overrides
 from api.engines.institutional_executor import select_candidates, describe_intent
+from api.engines import market_tuning as market_tuning_engine
 
 # --------------------------------------------------------------------------- #
 # 1. Logging                                                                   #
@@ -222,6 +223,25 @@ class SettingsProvider:
 
         strategies = [x.strip() for x in s.get("active_strategies", "structure").split(",") if x.strip()]
         signal_engine.set_active_strategies(strategies)
+
+        # LOT R — per-market tuning + volatility-regime adaptation:
+        #   defaults per asset class, refined by the `market_tuning` setting
+        #   (JSON overrides produced by `scripts/profit_audit.py --json` +
+        #   `market_tuning.build_tuning_from_audit`).
+        signal_engine.set_regime_adaptation(s.get("regime_adaptation_enabled", "true").lower() == "true")
+        tuning_map = market_tuning_engine.build_default_tuning(data_engine.universe)
+        try:
+            import json as _json
+            overrides = _json.loads(s.get("market_tuning", "{}") or "{}")
+            if isinstance(overrides, dict):
+                for mid, ov in overrides.items():
+                    if isinstance(ov, dict) and mid in tuning_map:
+                        tuning_map[mid].update(ov)
+        except (ValueError, TypeError):
+            logger.warning("Invalid market_tuning JSON in settings — using class defaults")
+        signal_engine.set_market_tuning(tuning_map)
+        bot_state["regime_adaptation_enabled"] = signal_engine.regime_adaptation_enabled
+
         scanner_engine.apply_settings(s)
         bot_state["language"] = s.get("language", "en")
 
@@ -1093,6 +1113,55 @@ async def delete_wallet_api(wallet_id: str):
 @app.get("/api/performance")
 async def get_performance(mode: str = "DEMO"):
     return portfolio_engine.get_performance_report(mode)
+
+
+@app.get("/api/optimization")
+async def get_optimization(mode: str = "DEMO"):
+    """Audit & optimization dashboard data (LOT R).
+
+    Live answer to the audit methodology:
+    - current capital bracket + the settings it recommends;
+    - which markets / asset classes are feasible at the current balance
+      (1 $ → 50 $+), and which are realtime vs delayed;
+    - the per-market tuning currently applied (entry threshold, SL, TP);
+    - the top/bottom closed-trade markets in this mode (most profitable
+      markets vs markets needing improvement).
+    """
+    balance = bot_state.get("balance", 0.0) or 0.0
+    feasibility = market_tuning_engine.markets_feasible_for_capital(
+        balance, data_engine.universe, leverage_cap=risk_engine.max_leverage)
+    best_markets, worst_markets = [], []
+    try:
+        history = db_manager.get_history(mode=mode, limit=500)
+        per_market: Dict[str, Dict[str, Any]] = {}
+        for t in history or []:
+            mid = t.get("symbol") or t.get("market_id") or "?"
+            pnl = float(t.get("pnl") or 0.0)
+            m = per_market.setdefault(mid, {"trades": 0, "wins": 0, "pnl": 0.0})
+            m["trades"] += 1
+            m["pnl"] += pnl
+            if pnl > 0:
+                m["wins"] += 1
+        ranked = sorted(
+            ({"market_id": mid, "trades": m["trades"],
+              "win_rate": round(m["wins"] / m["trades"] * 100, 1) if m["trades"] else 0.0,
+              "net_pnl": round(m["pnl"], 2)} for mid, m in per_market.items()),
+            key=lambda x: x["net_pnl"])
+        worst_markets = ranked[:5]
+        best_markets = list(reversed(ranked[-5:]))
+    except Exception as e:
+        structured_log(logger, logging.WARNING, "OPTIMIZATION_HISTORY_FAILED",
+                       event="optimization_history_failed", error=str(e))
+    return {
+        "balance": balance,
+        "capital_profile": bot_state.get("capital_profile"),
+        "recommended_settings": profile_overrides(balance),
+        "regime_adaptation_enabled": signal_engine.regime_adaptation_enabled,
+        "market_feasibility": feasibility,
+        "market_tuning": signal_engine.market_tuning,
+        "best_markets": best_markets,
+        "worst_markets": worst_markets,
+    }
 
 
 @app.get("/api/metrics")

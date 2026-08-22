@@ -29,6 +29,13 @@ except Exception:  # allow standalone use
     recommend_from_audit = None
     bracket_summary = None
 
+try:
+    from api.engines.market_tuning import markets_feasible_for_capital
+    from api.engines.market_universe import MarketUniverse
+except Exception:  # allow standalone use
+    markets_feasible_for_capital = None
+    MarketUniverse = None
+
 
 def load_audit(path: Optional[str]) -> Optional[Dict[str, Any]]:
     if not path:
@@ -83,6 +90,29 @@ def main(argv: Optional[list[str]] = None) -> int:
                 print(f"    {strat:<14} {r['verdict']:<10} -> {r['action']}")
                 print(f"        {r['recommend']}")
 
+    # ---- LOT R: which markets actually work at this capital level ---------- #
+    if markets_feasible_for_capital is not None and MarketUniverse is not None:
+        try:
+            lev_cap = 10.0
+            if profile_overrides is not None:
+                lev_cap = float(profile_overrides(balance).get("max_leverage", 10.0))
+            feasibility = markets_feasible_for_capital(balance, MarketUniverse(), leverage_cap=lev_cap)
+            print(f"\nMarkets feasible at this balance (REAL-mode estimate, {lev_cap:.0f}x cap):")
+            for cls, c in sorted(feasibility["asset_classes"].items(),
+                                 key=lambda kv: kv[1]["min_capital_estimate"] or 9e9):
+                status = "OK" if c["class_feasible"] else "capital too small"
+                cheapest = ", ".join(x["market_id"] for x in c["cheapest"][:4])
+                print(f"  {cls:<12} {status:<18} "
+                      f"min capital ~ {c['min_capital_estimate'] if c['min_capital_estimate'] is not None else '?'} $ "
+                      f"({c['markets_feasible']}/{c['markets_total']} markets — e.g. {cheapest})")
+            print("  Note: in DEMO (paper) every market is feasible; Yahoo-sourced classes")
+            print("        (delayed data) stay blocked for automated execution by default.")
+        except Exception as e:
+            print(f"\n[warn] market feasibility unavailable: {e}", file=sys.stderr)
+
+    print("\nPer-market tuning: run `python3 scripts/profit_audit.py <db> "
+          f"{balance} --json` once the bot has closed trades, then apply the")
+    print("`market_tuning` overrides it produces (entry threshold / SL / TP per market).")
     print("\n" + "=" * 78)
     return 0
 

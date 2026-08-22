@@ -2,7 +2,9 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
-> **v2.4.1** — Audit intégral : sûreté CCXT/reduce-only, réconciliation broker fail-safe, backtest intrabar, validation stricte des ordres, agrégation news résiliente et couverture de toutes les fonctions exécutables. Suite : **355 passés / 6 skips réseau / 0 échec**.
+> **v2.5** — Audit & optimisation **par marché** : tuning par instrument/classe d'actifs (seuil d'entrée, SL, TP), adaptation au régime de volatilité (conservateur en marché volatil), faisabilité des marchés par capital (1 $ → 50 $+), audit par marché/classe/période et `GET /api/optimization`. Suite : **375 passés / 6 skips réseau / 0 échec**.
+
+> **v2.4.1** — Audit intégral : sûreté CCXT/reduce-only, réconciliation broker fail-safe, backtest intrabar, validation stricte des ordres, agrégation news résiliente et couverture de toutes les fonctions exécutables.
 
 > **v2.4** — Profils de capital MICRO/RETAIL/STANDARD et optimisation pilotée par l'audit.
 
@@ -16,6 +18,7 @@ Bot de trading multi-marchés : données réelles, exécution papier réaliste, 
 |---|---|
 | **Marchés** | 127 instruments : crypto (Gate/Bybit/Binance avec fallback), forex, indices, matières premières, actions, futures, obligations, ETF (Yahoo Finance) |
 | **Stratégies** | Structure (BOS/CHoCH, HH/HL/LH/LL), micro-arbitrage inter-plateformes, tape reading (imbalance + delta), liquidity gap (order book) |
+| **Optimisation par marché** | Tuning **par instrument et par classe d'actifs** (seuil d'entrée, TP, stop ATR) affiné par l'audit des trades ; adaptation au **régime de volatilité** (conservateur en marché volatil : seuil +5, stop ×1,25 → position réduite à risque égal) ; faisabilité des marchés par niveau de capital (1 $ → 50 $+) via `/api/optimization` |
 | **Gestion de risque** | Sizing par % de risque, plafond de levier, validation du sens du SL, limite de perte quotidienne au niveau de l'ordre, cool-down après perte, filtre de corrélation, max positions, drawdown global persistant, **circuit breaker séries de pertes + risque réduit après pertes (anti-martingale)**, filtre coûts/volatilité |
 | **Exécution** | Mode DEMO : papier réaliste (latence, slippage, rejets simulés) sur prix réels. Mode REAL : vrais ordres market via CCXT avec ordres SL/TP de protection, sizing arrondi aux contraintes d'exchange (lot/tick/min_notional), avertissement « experimental » explicite |
 | **Gestion de positions** | Partial TP 50 % au 1:1 → break-even, trailing stop ATR, fermeture forcée hors session, réconciliation broker en mode REAL |
@@ -56,9 +59,10 @@ pytest tests/ -q
 - Les tests marqués `network` s'auto-skip si le réseau ou le provider est indisponible.
 - Couverture : **89 % globale avec branches** (`api` + `scripts`, porte CI 85 %) et **92 % sur `api/engines`** (porte CI 80 %). Toutes les fonctions exécutables sont exercées au moins une fois.
 - Les données Yahoo (différées ~15 min) ne sont **pas** utilisées pour l'exécution automatique (garde anti-scalping, opt-out `allow_delayed_data_trading`).
-- **Audit de rentabilité** : `python3 scripts/profit_audit.py [chemin/vers/quantum_trade.db] [balance]` → win rate, espérance, RR réalisé et PnL par stratégie + détection des trades dont les frais dépassaient le risque + **recommandations d'optimisation** par stratégie (capital-aware).
+- **Audit de rentabilité** : `python3 scripts/profit_audit.py [chemin/vers/quantum_trade.db] [balance]` → win rate, espérance, RR réalisé et PnL **par stratégie ET par marché**, par classe d'actifs et **par période mensuelle** (gains vs pertes), classement des marchés + détection des trades dont les frais dépassaient le risque + **recommandations d'optimisation par marché** (seuil d'entrée / SL / TP) avec le JSON `market_tuning` prêt à appliquer. Flag `--json` pour l'export.
 - **Petit capital (1 $ → 50 $+)** : `min_account_balance` et `min_trade_notional` sont configurables (défaut 1 $), et `capital_profile_mode=auto` fait choisir automatiquement au bot le profil adapté au solde (MICRO / RETAIL / STANDARD) — plus de plancher codé en dur à 10 $.
-- **Optimiseur de paramètres** : `python3 scripts/optimize_params.py <balance>` → profil de tranche + réglages recommandés.
+- **Optimiseur de paramètres** : `python3 scripts/optimize_params.py <balance>` → profil de tranche + réglages recommandés + **marchés faisables à ce capital**.
+- **Optimisation par marché** : réglage à chaud `market_tuning` (JSON par marché, produit par l'audit) + `regime_adaptation_enabled` (adaptation conservatrice aux marchés volatils). Vue live : `GET /api/optimization`.
 
 ## 🔐 Sécurité
 
@@ -82,6 +86,8 @@ api/
     ├── signal_engine.py     # Scoring 0-100 + SL/TP ATR
     ├── strategies/          # arbitrage / tape / liquidity / base
     ├── risk_engine.py       # Sizing, limites, corrélation, cooldown
+    ├── capital_profiles.py  # Tranches MICRO/RETAIL/STANDARD + optimisation audit
+    ├── market_tuning.py     # Tuning par marché/classe + régimes + faisabilité capital
     ├── execution_engine.py  # Exécution papier (DEMO)
     ├── execution_router.py  # Routage DEMO/REAL + anti-doublon
     ├── broker_connector.py  # Agrégation brokers + wallets web3
@@ -108,6 +114,7 @@ Contrat complet : [`docs/api_contract.md`](docs/api_contract.md). Résumé :
 | GET | `/api/scanner` | Dernier scan global |
 | GET | `/api/history?mode=` | Journal des trades fermés |
 | GET | `/api/performance?mode=` | Stats, espérance, par stratégie |
+| GET | `/api/optimization?mode=` | Audit/optimisation live : tranche de capital, faisabilité des marchés au solde, tuning par marché, top/flop marchés |
 | GET | `/api/metrics` | Compteurs système + ordres récents |
 | GET | `/api/health` | Santé des providers de données |
 | GET | `/api/news` | Actualités agrégées |

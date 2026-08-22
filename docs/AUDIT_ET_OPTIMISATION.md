@@ -10,7 +10,7 @@
 Ce document applique la méthodologie demandée au bot **Quantum Trade Pro** :
 
 1. Audit des performances (données historiques).
-2. Évaluation des stratégies.
+2. Évaluation des stratégies **et des marchés**.
 3. Analyse des risques.
 4. Optimisation des paramètres (adaptée au capital 1 $ → 50 $+).
 
@@ -180,3 +180,116 @@ recommandations.
 | `tests/test_capital_profiles.py` | **nouveau** : 10 tests (tranches, petit capital, stop ATR, optimisation) |
 
 **Tests** : suite complète **244 passés / 2 échecs pré-existants / 6 skips réseau**.
+
+---
+
+## 7. LOT R — Audit & optimisation PAR MARCHÉ (v2.5.0)
+
+Le Lot Q optimisait **globalement** (par tranche de capital) et jugeait les
+**stratégies**. La méthodologie demande aussi d'agir **par marché financier** :
+identifier les marchés les plus rentables, ceux qui fonctionnent à quel niveau
+de capital, adapter l'agressivité aux conditions du marché, et optimiser
+**pour chaque marché** les seuils d'entrée, les stop-loss et les take-profit.
+
+### 7.1 Analyse des données historiques — par marché et par période
+
+`scripts/profit_audit.py` produit désormais :
+
+- **par marché** (`by_market`) : trades, win rate, PnL net, RR réalisé,
+  espérance, fuites de coûts, verdict — au niveau du mode **et** toutes modes
+  confondus, avec la classe d'actifs de chaque marché ;
+- **par classe d'actifs** (`by_asset_class`) : CRYPTO vs FOREX vs INDICES… ;
+- **par période mensuelle** (`by_period`) : les périodes de gains
+  significatifs vs celles de pertes ;
+- un **classement des marchés** (du moins rentable au plus rentable) ;
+- un bloc **PER-MARKET OPTIMIZATION** : pour chaque marché jugé (≥ 10 trades
+  fermés — honnêteté statistique), l'action recommandée et ses paramètres ;
+- un flag **`--json`** pour exporter tout le rapport (utilisable par
+  `optimize_params.py` ou pour générer la carte `market_tuning`).
+
+```bash
+python3 scripts/profit_audit.py data/quantum_trade.db 5.0        # rapport complet
+python3 scripts/profit_audit.py data/quantum_trade.db 5.0 --json # export JSON
+```
+
+### 7.2 Évaluation des marchés par niveau de capital
+
+`market_tuning.markets_feasible_for_capital(balance, universe)` estime le
+**capital minimal** de chaque marché : marge ≈ `min_order` (notionnel minimum —
+le même champ que le moteur de risque applique) ÷ levier effectif (plafonné par
+l'instrument **et** par le profil de tranche), avec une marge de sécurité de
+20 %. Résultat au 2026-08-22 :
+
+| Classe | Capital min estimé (REAL) | À 1 $ | À 5 $ | À 50 $ |
+|---|---|---|---|---|
+| COMMODITIES / FUTURES / INDICES / BONDS / STOCKS / ETFS | < 0,25 $ | ✅* | ✅* | ✅* |
+| CRYPTO | ~1,2 $ (min notional 10 $ @ 10–20x) | ✅ (limite) | ✅ | ✅ |
+| FOREX | ~60–120 $ (micro-lot 1 000) | ❌ | ❌ | ❌ (≥ 60 $) |
+
+\* ces classes sont sourcées Yahoo (**données différées ~15 min**) : la garde
+anti-scalping les **bloque pour l'exécution automatique** tant que
+`allow_delayed_data_trading=false` (défaut). En DEMO (papier) tout est
+faisable. Visible en direct via `GET /api/optimization` et
+`python3 scripts/optimize_params.py <solde>`.
+
+### 7.3 Adaptation aux conditions du marché (régime de volatilité)
+
+Demande : *« utilise des stratégies plus conservatrices lors de marchés
+volatils et des stratégies plus agressives lors de marchés stables »*. C'est
+maintenant câblé dans `SignalEngine` (`regime_adaptation_enabled`, défaut
+`true`) à partir de l'étiquette volatilité de l'analyse (HIGH/MEDIUM/LOW) :
+
+| Régime | Seuil d'entrée | Stop (× ATR) | Effet de risque |
+|---|---|---|---|
+| **VOLATILE** | **+5** (plus sélectif) | **×1.25** (élargi) | position réduite automatiquement à risque % égal |
+| NORMAL | — | ×1.0 | — |
+| QUIET (stable) | **−3** (floor 50) | ×0.90 | engagement modéré sur tendances propres |
+
+Chaque signal expose `regime`, `min_score_applied` et `atr_stop_multiplier`
+pour le diagnostic (visible dans `/api/status?market_id=` et le scanner).
+
+### 7.4 Optimisation des paramètres PAR MARCHÉ
+
+Lignes de base par classe d'actifs (`ASSET_CLASS_TUNING`), par exemple :
+
+| Classe | min_score | TP (RR) | Stop (×ATR) | Justification |
+|---|---|---|---|---|
+| CRYPTO | 80 | 2.5 | 1.5 | 24/7 temps réel, volatilité native |
+| FOREX | 82 | 2.0 | 1.8 | spread relatif élevé vs mouvement 1m |
+| COMMODITIES | 83 | 2.2 | 1.8 | gaps de session |
+| STOCKS / ETFS / BONDS | 85 | 1.8–2.0 | 2.0 | données différées, mouvements lents |
+
+Ces lignes de base sont affinées **par l'audit** (`recommend_for_market`) :
+
+| Verdict (≥ 10 trades) | Action | Paramètres recommandés |
+|---|---|---|
+| LOSING | `QUARANTINE_OR_RAISE_SELECTIVITY` | seuil d'entrée +10 sur ce marché (ou suspension) |
+| TP_TOO_TIGHT (RR < 1.5) | `WIDEN_TAKE_PROFIT` | TP +0.5R, stop ATR +0.5 sur ce marché |
+| COST_LEAK | `TIGHTEN_COST_FILTER` | `max_cost_ratio` 0.4 pour ce marché |
+| PROFITABLE | `KEEP_AND_SCALE` | seuil d'entrée −3 (capitaliser sur l'edge) |
+| < 10 trades | `OBSERVE` | aucun (pas de tuning sur du bruit) |
+
+**Application** : le JSON produit par l'audit se colle dans le réglage
+`market_tuning` (`POST /api/settings`) — appliqué **à chaud**, fusionné sur les
+défauts de classe. Le `SignalEngine` utilise alors pour CHAQUE marché son
+propre seuil d'entrée / TP / stop.
+
+```bash
+# 1. auditer, 2. récupérer le JSON market_tuning affiché, 3. l'appliquer :
+curl -X POST /api/settings -H "X-API-Key: …" \
+     -d '{"market_tuning": "{\"doge_usdt\": {\"min_score\": 95}, \"eur_usd\": {\"risk_reward\": 3.0}}"}'
+```
+
+### 7.5 Résumé des changements (Lot R)
+
+| Fichier | Changement |
+|---|---|
+| `api/engines/market_tuning.py` | **nouveau** : tuning par marché/classe, régimes, faisabilité capital, recommandations audit |
+| `api/engines/signal_engine.py` | seuil/SL/TP effectifs par marché + régime, exposés dans le signal |
+| `api/engines/settings_schema.py` | réglages `regime_adaptation_enabled`, `market_tuning` |
+| `api/index.py` | câblage à chaud + `GET /api/optimization` |
+| `scripts/profit_audit.py` | par marché / par classe / par période + `--json` + recommandations par marché |
+| `scripts/optimize_params.py` | faisabilité des marchés au capital (levier du profil) |
+| `tests/test_market_tuning.py` | **nouveau** : 21 tests |
+
+**Tests** : **375 passés / 6 skips réseau / 0 échec**.
