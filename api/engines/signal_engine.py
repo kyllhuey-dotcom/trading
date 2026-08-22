@@ -11,10 +11,33 @@ class SignalEngine:
     Signal generation (structure + custom strategies).
     Every returned SIGNAL_DETECTED carries `market_id` and `entry`/`sl`/`tp`
     so the execution layer can always route the order.
+
+    PROFIT HARDENING (LOT P):
+    - `min_score` now gates EVERY strategy (before: custom strategies could
+      emit signals below the configured threshold — quality leak);
+    - `risk_reward` is applied to SL/TP (was hardcoded to 2.0 despite the
+      `risk_reward_ratio` setting);
+    - cost-vs-volatility filter: signals whose round-trip costs (fees +
+      slippage) exceed `max_cost_ratio` × the risk distance are blocked —
+      they are mathematically losing trades;
+    - `alpha_override_enabled` makes the score-80 bypass of range/news
+      filters opt-in (default off: never trade through high-impact news).
     """
 
-    def __init__(self, min_score: int = 80):
+    def __init__(self, min_score: int = 80,
+                 risk_reward: float = 2.0,
+                 alpha_override_enabled: bool = False,
+                 fee_pct: float = 0.05,
+                 slippage_pct: float = 0.05,
+                 max_cost_ratio: float = 0.5,
+                 cost_filter_strategies: tuple = ("structure", "tape")):
         self.min_score = min_score
+        self.risk_reward = float(risk_reward) if risk_reward and risk_reward > 0 else 2.0
+        self.alpha_override_enabled = alpha_override_enabled
+        self.fee_pct = float(fee_pct)
+        self.slippage_pct = float(slippage_pct)
+        self.max_cost_ratio = float(max_cost_ratio)
+        self.cost_filter_strategies = set(cost_filter_strategies)
         self.strategies = {
             "arbitrage": MicroArbitrageStrategy(),
             "tape": TapeReadingStrategy(),
@@ -30,6 +53,60 @@ class SignalEngine:
 
     def set_min_score(self, min_score: int) -> None:
         self.min_score = min_score
+
+    def set_risk_reward(self, risk_reward: float) -> None:
+        """Wire the `risk_reward_ratio` setting into SL/TP computation (LOT P)."""
+        try:
+            value = float(risk_reward)
+            if 0.3 <= value <= 10.0:  # sanity bounds
+                self.risk_reward = value
+        except (TypeError, ValueError):
+            pass
+
+    def set_alpha_override(self, enabled: bool) -> None:
+        self.alpha_override_enabled = bool(enabled)
+
+    def set_cost_params(self, fee_pct: Optional[float] = None,
+                        slippage_pct: Optional[float] = None,
+                        max_cost_ratio: Optional[float] = None) -> None:
+        """Update the cost-vs-volatility filter parameters (LOT P)."""
+        if fee_pct is not None:
+            self.fee_pct = float(fee_pct)
+        if slippage_pct is not None:
+            self.slippage_pct = float(slippage_pct)
+        if max_cost_ratio is not None:
+            self.max_cost_ratio = float(max_cost_ratio)
+
+    # ------------------------------------------------------------------ #
+    # Quality gates (LOT P)                                               #
+    # ------------------------------------------------------------------ #
+    def _apply_quality_gates(self, res: Dict[str, Any], strategy: str) -> Dict[str, Any]:
+        """Apply the global score gate + the cost-vs-volatility filter."""
+        if res.get("status") != "SIGNAL_DETECTED":
+            return res
+
+        # 1. Global score gate — applies to ALL strategies (fix quality leak)
+        score = int(res.get("score", 0) or 0)
+        if score < self.min_score:
+            res["status"] = "NO_TRADE"
+            res["reason"] = f"Below minimum score ({score}/{self.min_score})"
+            return res
+
+        # 2. Cost filter: block trades whose costs would eat the edge
+        if strategy in self.cost_filter_strategies:
+            entry = res.get("entry")
+            sl = res.get("sl")
+            if entry and sl:
+                risk_dist = abs(float(entry) - float(sl))
+                round_trip_costs = (self.fee_pct + self.slippage_pct) * 2.0
+                if risk_dist > 0:
+                    cost_ratio = round_trip_costs / risk_dist
+                    if cost_ratio > self.max_cost_ratio:
+                        res["status"] = "NO_TRADE"
+                        res["reason"] = (f"Cost ratio too high ({cost_ratio:.2f}) — "
+                                         f"fees would eat the edge (risk {risk_dist:.3f}%)")
+                        res["cost_blocked"] = True
+        return res
 
     def generate_signal(self,
                         analysis: Dict[str, Any],
@@ -77,7 +154,7 @@ class SignalEngine:
             )
             res["strategy"] = strategy_mode
             res["market_id"] = market_id
-            return res
+            return self._apply_quality_gates(res, strategy_mode)
 
         # ------------------------------------------------------------------ #
         # Default: structure strategy
@@ -166,34 +243,39 @@ class SignalEngine:
         if direction == "BUY":
             stop_loss = min(analysis["last_low"], current_price - (atr * 1.5))
             risk_dist = current_price - stop_loss
-            take_profit = current_price + (risk_dist * 2.0)
+            take_profit = current_price + (risk_dist * self.risk_reward)
         else:
             stop_loss = max(analysis["last_high"], current_price + (atr * 1.5))
             risk_dist = stop_loss - current_price
-            take_profit = current_price - (risk_dist * 2.0)
+            take_profit = current_price - (risk_dist * self.risk_reward)
 
         if risk_dist <= 0:
             return {"status": "NO_TRADE", "reason": "Invalid Risk parameters (Zero range)",
                     "score": score, "market_id": market_id}
 
         # --- 4. Final filtering ---
-        # High-conviction signals (score >= 80) may trade even in range/news contexts;
-        # signals below threshold respect ALL filters.
-        alpha_override = score >= 80
+        # High-conviction signals (score >= 80) may trade even in range/news
+        # contexts ONLY when explicitly enabled (alpha_override_enabled) —
+        # trading through high-impact news is -EV for scalping.
+        alpha_override = self.alpha_override_enabled and score >= 80
 
         reasons = []
         if score < self.min_score:
             reasons.append(f"Low score ({score}/{self.min_score})")
 
+        # LOT P: news/session restriction is a SAFETY filter — it always
+        # applies, even with alpha_override (never trade through high-impact
+        # news). Alpha override only bypasses the technical RANGE filter.
+        if not news_status.get("trading_allowed"):
+            reasons.append("News/Session restricted")
+
         if not alpha_override:
             if analysis.get("market_state") == "RANGE":
                 reasons.append("Market in Range")
-            if not news_status.get("trading_allowed"):
-                reasons.append("News/Session restricted")
 
-        is_detected = len(reasons) == 0 or alpha_override
+        is_detected = len(reasons) == 0
 
-        return {
+        result = {
             "status": "SIGNAL_DETECTED" if is_detected else "NO_TRADE",
             "direction": direction,
             "entry": current_price,
@@ -208,7 +290,8 @@ class SignalEngine:
                        f"{direction} signal confirmed (Score {score})"),
             "timestamp": datetime.now().isoformat(),
             "atr": atr,
-            "risk_reward": 2.0,
+            "risk_reward": self.risk_reward,
             "strategy": "structure",
             "market_id": market_id
         }
+        return self._apply_quality_gates(result, "structure")

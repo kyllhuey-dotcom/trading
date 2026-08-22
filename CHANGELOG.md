@@ -1,5 +1,23 @@
 # Changelog - Quantum Trade Pro
 
+## [2.2.0] - 2026-08-22 — LOT P : Rentabilité (fuites d'espérance corrigées)
+
+### Fixed (fuites de rentabilité)
+- **Seuil de score global** : `min_signal_score` s'applique désormais à **toutes** les stratégies. Avant, tape/liquidity/arbitrage pouvaient exécuter des signaux de score 60-70 alors que le seuil était 80 (fuite de sélectivité majeure).
+- **`risk_reward_ratio` réellement appliqué** : le réglage existait dans les settings mais était codé en dur à 2.0 dans le SignalEngine. Il pilote maintenant le TP.
+- **Filtre coûts/volatilité** : les signaux dont les coûts aller-retour (frais + slippage ≈ 0,2 %) dépassent `max_cost_ratio` (0,5 par défaut) × la distance de risque sont bloqués — ces trades sont mathématiquement perdants en espérance. Réglable via settings (`fee_pct`, `sim_slippage_pct`, `max_cost_ratio`).
+- **Alpha override opt-in** : le bypass des filtres RANGE pour les scores ≥ 80 est désactivé par défaut (`alpha_override_enabled=false`) ; la restriction news/session reste **toujours** appliquée (jamais de trade pendant les news à fort impact).
+
+### Added (protections)
+- **Circuit breaker séries de pertes** : après `max_consecutive_losses` (3 par défaut) pertes d'affilée, le bot se met automatiquement en pause (bloqué au niveau de l'ordre). Un gain remet le compteur à zéro.
+- **Scaling anti-martingale** : le risque est réduit après les pertes (100 % → 75 % → 50 %), jamais augmenté.
+- **Time stop** : sortie automatique des positions qui trainent (`max_trade_duration_minutes`, 0 = désactivé par défaut).
+- **`scripts/profit_audit.py`** : audit de rentabilité sur n'importe quelle base (y compris un export de ton volume Railway) — win rate, espérance, RR réalisé, PnL par stratégie, détection des trades « fuites de coûts ».
+
+### Tests
+- `tests/test_profitability.py` (19 tests) — chaque fuite est verrouillée par un test.
+- Suite complète : **204 passés / 6 skips réseau / 0 échec**.
+
 ## [2.1.0] - 2026-08-22 — Amélioration continue (lots A → H)
 
 ### Observabilité (LOT A)

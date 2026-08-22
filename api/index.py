@@ -170,6 +170,16 @@ class SettingsProvider:
             signal_engine.set_min_score(int(float(s.get("min_signal_score", 80))))
         except ValueError:
             pass
+        # LOT P: wire the profit levers that were previously dead settings
+        signal_engine.set_risk_reward(s.get("risk_reward_ratio", 2.0))
+        signal_engine.set_alpha_override(s.get("alpha_override_enabled", "false").lower() == "true")
+        try:
+            signal_engine.set_cost_params(
+                fee_pct=float(s.get("fee_pct", 0.05)),
+                slippage_pct=float(s.get("sim_slippage_pct", 0.05)),
+                max_cost_ratio=float(s.get("max_cost_ratio", 0.5)))
+        except ValueError:
+            pass
         strategies = [x.strip() for x in s.get("active_strategies", "structure").split(",") if x.strip()]
         signal_engine.set_active_strategies(strategies)
         scanner_engine.apply_settings(s)
@@ -869,6 +879,7 @@ async def demo_reset():
     portfolio_engine.set_balance("DEMO", 10000.0)
     risk_engine.daily_pnl = 0.0
     risk_engine.last_loss_time = None
+    risk_engine.consecutive_losses = 0
     risk_engine.peak_balance = 10000.0
     db_manager.log_audit("INFO", "DEMO_RESET", "Demo account reset (balance 10 000, journal wiped)")
     return {"success": True, "balance": portfolio_engine.get_balance("DEMO")}
