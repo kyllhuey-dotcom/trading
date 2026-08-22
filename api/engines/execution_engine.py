@@ -1,4 +1,5 @@
 from .db_manager import DatabaseManager
+from .order_types import normalize_order_type, should_fill_now, serialize_pending
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import asyncio
@@ -23,6 +24,7 @@ class ExecutionEngine:
         self.risk = risk_engine
         self.universe = universe
         self.notifications = notification_engine
+        self.pending_orders: List[Dict[str, Any]] = []
 
     @property
     def active_positions(self):
@@ -64,8 +66,36 @@ class ExecutionEngine:
         if any(p["symbol"] == mid for p in active):
             return {"success": False, "reason": "Position already open for this asset"}
 
+        order_type = normalize_order_type(signal.get("order_type"))
+        last_px = ticker.get("last") or ticker.get("ask") or ticker.get("bid")
+        if order_type in ("LIMIT", "STOP") and not should_fill_now(
+            order_type, signal.get("direction"), last_px,
+            limit_price=signal.get("limit_price"),
+            stop_price=signal.get("stop_price"),
+        ):
+            pending = {
+                "id": f"PND-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}",
+                "mode": mode,
+                "market_id": mid,
+                "signal": signal,
+                "risk": risk,
+                "order_type": order_type,
+                "direction": signal.get("direction"),
+                "limit_price": signal.get("limit_price"),
+                "stop_price": signal.get("stop_price"),
+                "quantity": risk.get("quantity"),
+                "status": "PENDING",
+            }
+            self.pending_orders.append(pending)
+            return {"success": True, "pending": True, "reason": "QUEUED_PENDING_TRIGGER",
+                    "order": serialize_pending(pending)}
+
         # 5. Fill on the real bid/ask
-        entry_price = ticker.get('ask') if signal["direction"] == "BUY" else ticker.get('bid')
+        fill_override = signal.get("_fill_price")
+        if fill_override:
+            entry_price = float(fill_override)
+        else:
+            entry_price = ticker.get('ask') if signal["direction"] == "BUY" else ticker.get('bid')
         if not entry_price:
             entry_price = ticker.get('last')
         if not entry_price:
@@ -230,6 +260,30 @@ class ExecutionEngine:
                 self.db.save_trade(pos)
 
         return closed_trades
+
+    async def process_pending_orders(self, mode: str, tickers: Dict[str, Any]) -> List[Dict[str, Any]]:
+        filled = []
+        still = []
+        for pending in list(self.pending_orders):
+            if pending.get("mode") != mode:
+                still.append(pending)
+                continue
+            mid = pending.get("market_id")
+            ticker = tickers.get(mid) or {}
+            last = ticker.get("last") or ticker.get("ask") or ticker.get("bid")
+            sig = dict(pending.get("signal") or {})
+            if should_fill_now(pending.get("order_type"), pending.get("direction"), last,
+                               limit_price=pending.get("limit_price"),
+                               stop_price=pending.get("stop_price")):
+                if pending.get("order_type") == "LIMIT" and pending.get("limit_price"):
+                    sig["_fill_price"] = float(pending["limit_price"])
+                res = await self.execute_order(mode, sig, pending.get("risk") or {}, ticker or {"last": last})
+                if res.get("success") and not res.get("pending"):
+                    filled.append(res)
+                    continue
+            still.append(pending)
+        self.pending_orders = still
+        return filled
 
     def clear_active_positions(self, mode: str) -> List[Dict[str, Any]]:
         """Emergency/exit-all: close every open position at last known price."""
