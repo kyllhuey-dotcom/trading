@@ -26,6 +26,7 @@ class SignalEngine:
 
     def __init__(self, min_score: int = 80,
                  risk_reward: float = 2.0,
+                 atr_stop_multiplier: float = 1.5,
                  alpha_override_enabled: bool = False,
                  fee_pct: float = 0.05,
                  slippage_pct: float = 0.05,
@@ -33,6 +34,7 @@ class SignalEngine:
                  cost_filter_strategies: tuple = ("structure", "tape")):
         self.min_score = min_score
         self.risk_reward = float(risk_reward) if risk_reward and risk_reward > 0 else 2.0
+        self.atr_stop_multiplier = float(atr_stop_multiplier) if atr_stop_multiplier > 0 else 1.5
         self.alpha_override_enabled = alpha_override_enabled
         self.fee_pct = float(fee_pct)
         self.slippage_pct = float(slippage_pct)
@@ -60,6 +62,15 @@ class SignalEngine:
             value = float(risk_reward)
             if 0.3 <= value <= 10.0:  # sanity bounds
                 self.risk_reward = value
+        except (TypeError, ValueError):
+            pass
+
+    def set_atr_stop_multiplier(self, atr_stop_multiplier: float) -> None:
+        """Wire the ATR stop multiplier (capital-profile aware) into SL distance."""
+        try:
+            value = float(atr_stop_multiplier)
+            if 0.1 <= value <= 10.0:  # sanity bounds
+                self.atr_stop_multiplier = value
         except (TypeError, ValueError):
             pass
 
@@ -241,11 +252,11 @@ class SignalEngine:
                     "score": score, "market_id": market_id}
 
         if direction == "BUY":
-            stop_loss = min(analysis["last_low"], current_price - (atr * 1.5))
+            stop_loss = min(analysis["last_low"], current_price - (atr * self.atr_stop_multiplier))
             risk_dist = current_price - stop_loss
             take_profit = current_price + (risk_dist * self.risk_reward)
         else:
-            stop_loss = max(analysis["last_high"], current_price + (atr * 1.5))
+            stop_loss = max(analysis["last_high"], current_price + (atr * self.atr_stop_multiplier))
             risk_dist = stop_loss - current_price
             take_profit = current_price - (risk_dist * self.risk_reward)
 

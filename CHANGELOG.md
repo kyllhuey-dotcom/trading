@@ -1,5 +1,32 @@
 # Changelog - Quantum Trade Pro
 
+## [2.4.0] - 2026-08-22 — LOT Q : Petits capitaux + profils capital-aware
+
+### Added (petit capital & optimisation)
+- **`api/engines/capital_profiles.py`** : tranches de capital **MICRO (0–10 $)**,
+  **RETAIL (10–50 $)**, **STANDARD (≥ 50 $)** avec risk %, RR, score min, positions
+  max, levier max, stop ATR, notional min. Fonctions `resolve_bracket`,
+  `profile_overrides`, `recommend_from_audit` + cibles réalistes
+  (win rate ≥ 45 %, RR ≥ 1.5, espérance ≥ +0.5R, profit factor ≥ 1.3).
+- **`capital_profile_mode`** (`manual`/`auto`) : en `auto`, le bot **sur-ride**
+  `max_risk_pct`, `max_leverage`, `max_open_positions`, `min_signal_score`,
+  `risk_reward_ratio`, `atr_stop_multiplier`, `min_trade_notional`,
+  `max_cost_ratio` selon le solde. `capital_profile` exposé dans `/api/status`.
+- **Petit capital** : `min_account_balance` et `min_trade_notional` configurables
+  (défaut **1 $**) via `/api/settings`. **Suppression du plancher `10.0` codé en
+  dur** dans `RiskEngine.calculate_position_size` — un compte de 1 $ à 10 $
+  peut désormais trader (DEMO pleinement ; REAL soumis aux min-notional d'échange).
+- **Stop ATR paramétrable** : `atr_stop_multiplier` (défaut 1.5, stop plus large
+  en MICRO) câblé dans `SignalEngine` (`set_atr_stop_multiplier`).
+- **Optimisation pilotée par l'audit** : `scripts/profit_audit.py` affiche des
+  recommandations par stratégie (`DISABLE_OR_RAISE_SELECTIVITY`,
+  `WIDEN_TAKE_PROFIT`, `TIGHTEN_COST_FILTER`, `KEEP`) ; nouveau script
+  `scripts/optimize_params.py <balance>`.
+
+### Tests
+- `tests/test_capital_profiles.py` (10 tests) — tranches, petit capital, stop ATR,
+  optimisation. Suite complète : **244 passés / 2 échecs pré-existants / 6 skips réseau**.
+
 ## [2.3.0] - 2026-08-22 — UI desk + institutional ≥80
 
 - **Global Radar** : tri score DESC/ASC, filtres ≥80/≥90/crypto, highlight institutionnel, TRADE 1-clic (`POST /api/execute-signal`).

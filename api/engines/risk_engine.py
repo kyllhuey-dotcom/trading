@@ -22,7 +22,8 @@ class RiskEngine:
     def __init__(self,
                  max_risk_pct: float = 1.0,
                  max_leverage: int = 20,
-                 min_account_balance: float = 10.0,
+                 min_account_balance: float = 1.0,
+                 min_trade_notional: float = 1.0,
                  max_daily_loss_pct: float = 3.0,
                  max_drawdown_pct: float = 5.0,
                  max_open_positions: int = 10,
@@ -31,6 +32,7 @@ class RiskEngine:
         self.max_risk_pct = max_risk_pct
         self.max_leverage = max_leverage
         self.min_account_balance = min_account_balance
+        self.min_trade_notional = min_trade_notional
         self.max_daily_loss_pct = max_daily_loss_pct
         self.max_drawdown_pct = max_drawdown_pct
         self.max_open_positions = max_open_positions
@@ -49,6 +51,8 @@ class RiskEngine:
         try:
             self.max_risk_pct = float(settings.get("max_risk_pct", self.max_risk_pct))
             self.max_leverage = float(settings.get("max_leverage", self.max_leverage))
+            self.min_account_balance = float(settings.get("min_account_balance", self.min_account_balance))
+            self.min_trade_notional = float(settings.get("min_trade_notional", self.min_trade_notional))
             self.max_daily_loss_pct = float(settings.get("max_daily_loss_pct", self.max_daily_loss_pct))
             self.cool_down_mins = int(float(settings.get("cool_down_mins", self.cool_down_mins)))
             self.max_open_positions = int(float(settings.get("max_open_positions", self.max_open_positions)))
@@ -235,7 +239,7 @@ class RiskEngine:
                     "market_constraints": constraints,
                 }
 
-        notional_ok = notional >= 10.0
+        notional_ok = notional >= self.min_trade_notional
         result = {
             "allowed": notional_ok,
             "quantity": float(qty),

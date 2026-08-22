@@ -54,7 +54,9 @@ pytest tests/ -q
 - Les tests marqués `network` s'auto-skip si le réseau ou le provider est indisponible.
 - Couverture : **83 %** sur `api/engines` (porte CI 80 %), vérifiée par `scripts/validate.sh`.
 - Les données Yahoo (différées ~15 min) ne sont **pas** utilisées pour l'exécution automatique (garde anti-scalping, opt-out `allow_delayed_data_trading`).
-- **Audit de rentabilité** : `python3 scripts/profit_audit.py [chemin/vers/quantum_trade.db]` → win rate, espérance, RR réalisé et PnL par stratégie + détection des trades dont les frais dépassaient le risque.
+- **Audit de rentabilité** : `python3 scripts/profit_audit.py [chemin/vers/quantum_trade.db] [balance]` → win rate, espérance, RR réalisé et PnL par stratégie + détection des trades dont les frais dépassaient le risque + **recommandations d'optimisation** par stratégie (capital-aware).
+- **Petit capital (1 $ → 50 $+)** : `min_account_balance` et `min_trade_notional` sont configurables (défaut 1 $), et `capital_profile_mode=auto` fait choisir automatiquement au bot le profil adapté au solde (MICRO / RETAIL / STANDARD) — plus de plancher codé en dur à 10 $.
+- **Optimiseur de paramètres** : `python3 scripts/optimize_params.py <balance>` → profil de tranche + réglages recommandés.
 
 ## 🔐 Sécurité
 
