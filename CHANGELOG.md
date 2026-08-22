@@ -1,5 +1,18 @@
 # Changelog - Quantum Trade Pro
 
+## [2.3.0] - 2026-08-22 — UI desk + institutional ≥80
+
+- **Global Radar** : tri score DESC/ASC, filtres ≥80/≥90/crypto, highlight institutionnel, TRADE 1-clic (`POST /api/execute-signal`).
+- **Market Hub** : scores live, sparklines, tri score/volume/variation, cartes glassmorphism.
+- **Trade Terminal** : MARKET/LIMIT/STOP, risk-based size, order book, bougies + BOS/CHoCH, toasts.
+- **i18n** : en/fr/es/de fonctionnel (`public/js/i18n.js`).
+- **Hot-reload** : `validate_settings` / `ensure_defaults`, `POST /api/settings` message `Parameters deployed live`.
+- **≥80 only** : `select_candidates` + `execution_intent` (IDLE/EXECUTING/FULL), jusqu'à 10 positions.
+- **Throttle per-symbol** (plus de lock global 5s).
+- Endpoints additifs : `/api/execute-signal`, `/api/orderbook`, `/api/ohlcv`, query `sort/order/filter` scanner, `execution_intent` dans `/api/status`.
+- `max_open_positions` défaut nouvelles DB `"10"`, `language` hot-reload.
+- `MARKET_UPDATE` + `data_age_ms`. Priorité providers Binance → Bybit → Gate.
+
 ## [2.2.0] - 2026-08-22 — LOT P : Rentabilité (fuites d'espérance corrigées)
 
 ### Fixed (fuites de rentabilité)

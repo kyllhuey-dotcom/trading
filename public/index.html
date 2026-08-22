@@ -222,7 +222,25 @@
             0% { background-position: 200% 0; }
             100% { background-position: -200% 0; }
         }
+        .skel { background: linear-gradient(90deg, transparent, rgba(0,0,0,0.06), transparent); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; min-height: 12px; border-radius: 6px; }
+        .btn-premium:hover:not(:disabled) { transform: scale(1.03); }
+        .btn-premium:active:not(:disabled) { transform: scale(0.96); }
+        .btn-premium:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-premium.loading { pointer-events: none; opacity: 0.7; }
+        .btn-premium.loading::after { content: ""; width: 12px; height: 12px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .radar-row-institutional { background: rgba(40, 205, 65, 0.12); box-shadow: inset 0 0 18px rgba(40, 205, 65, 0.18); }
+        .radar-score-glow { color: #28cd41; text-shadow: 0 0 12px rgba(40, 205, 65, 0.7); font-weight: 900; }
+        .hub-hot { box-shadow: 0 0 0 1px rgba(40,205,65,0.4), 0 8px 24px rgba(40,205,65,0.12); }
+        .tab-content { animation: fadeSlide 0.35s ease; }
+        @keyframes fadeSlide { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .candle { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; }
+        .candle-wick { width: 1px; background: currentColor; }
+        .candle-body { width: 70%; min-height: 2px; border-radius: 1px; }
+        #toast-host { position: fixed; bottom: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+        .qtp-toast { background: var(--surface-color); border: var(--glass-border); padding: 10px 14px; border-radius: 12px; font-size: 12px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
     </style>
+    <script src="/js/i18n.js"></script>
 </head>
 <body class="">
     <div id="real-mode-banner" class="hidden fixed top-0 left-0 right-0 z-[100] bg-amber-500 text-slate-900 text-center text-xs font-bold py-1.5 px-4 shadow-lg">
@@ -248,19 +266,19 @@
             </div>
 
             <nav class="space-y-1 flex-1">
-                <div class="sidebar-item active" onclick="showTab('dashboard')"><i data-lucide="layout-grid" class="w-5 h-5"></i> Dashboard</div>
-                <div class="sidebar-item" onclick="showTab('markets')"><i data-lucide="layers" class="w-5 h-5"></i> Market Hub</div>
-                <div class="sidebar-item" onclick="showTab('scanner')"><i data-lucide="radar" class="w-5 h-5"></i> Global Scanner</div>
-                <div class="sidebar-item" onclick="showTab('trading')"><i data-lucide="terminal" class="w-5 h-5"></i> Trade Terminal</div>
+                <div class="sidebar-item active" onclick="showTab('dashboard')"><i data-lucide="layout-grid" class="w-5 h-5"></i> <span data-i18n="dashboard">Dashboard</span></div>
+                <div class="sidebar-item" onclick="showTab('markets')"><i data-lucide="layers" class="w-5 h-5"></i> <span data-i18n="markets">Market Hub</span></div>
+                <div class="sidebar-item" onclick="showTab('scanner')"><i data-lucide="radar" class="w-5 h-5"></i> <span data-i18n="scanner">Global Radar</span></div>
+                <div class="sidebar-item" onclick="showTab('trading')"><i data-lucide="terminal" class="w-5 h-5"></i> <span data-i18n="trading">Trade Terminal</span></div>
                 <div class="sidebar-item" onclick="showTab('brokers')"><i data-lucide="wallet-2" class="w-5 h-5"></i> Brokers & Wallets</div>
                 <div class="sidebar-item" onclick="showTab('positions')"><i data-lucide="briefcase" class="w-5 h-5"></i> Open Positions</div>
                 <div class="sidebar-item" onclick="showTab('history')"><i data-lucide="clock-rewind" class="w-5 h-5"></i> Trade Journal</div>
             </nav>
 
             <div class="mt-auto space-y-4 pt-6 border-t border-black/5 dark:border-white/5">
-                <div class="sidebar-item" onclick="showTab('settings')"><i data-lucide="settings" class="w-5 h-5"></i> Settings</div>
+                <div class="sidebar-item" onclick="showTab('settings')"><i data-lucide="settings" class="w-5 h-5"></i> <span data-i18n="settings">Settings</span></div>
                 <button id="emergency-stop-btn" class="sidebar-item text-red-500 w-full hover:bg-red-500/10 active:bg-red-500/20">
-                    <i data-lucide="shield-alert" class="w-5 h-5"></i> Emergency Stop
+                    <i data-lucide="shield-alert" class="w-5 h-5"></i> <span data-i18n="emergency">Emergency Stop</span>
                 </button>
             </div>
         </aside>
@@ -324,7 +342,7 @@
             <section id="tab-dashboard" class="tab-content active">
                 <div class="max-w-7xl mx-auto">
                     <header class="mb-4">
-                        <h2 class="font-black text-sm uppercase tracking-widest mb-0.5">Command Center</h2>
+                        <h2 class="font-black text-sm uppercase tracking-widest mb-0.5" data-i18n="command">Command Center</h2>
                         <p class="text-xs text-secondary font-medium">Real-time performance and system diagnostic.</p>
                     </header>
                     
@@ -405,8 +423,13 @@
                 <div class="max-w-7xl mx-auto">
                     <header class="flex justify-between items-center mb-6">
                         <div>
-                            <h2 class="font-black text-sm uppercase tracking-widest mb-1">Market Hub</h2>
-                            <p class="text-xs text-secondary font-medium">Global assets across 5 classes.</p>
+                            <h2 class="font-black text-sm uppercase tracking-widest mb-1" data-i18n="hubTitle">Market Hub</h2>
+                            <p class="text-xs text-secondary font-medium" data-i18n="hubSub">Global assets across 5 classes.</p>
+                        </div>
+                        <div class="flex gap-2 mr-3">
+                            <button class="btn-premium bg-black/5" data-hub-sort="score" onclick="setHubSort('score')">Score</button>
+                            <button class="btn-premium bg-black/5" data-hub-sort="volume" onclick="setHubSort('volume')">Volume</button>
+                            <button class="btn-premium bg-black/5" data-hub-sort="change" onclick="setHubSort('change')">Variation</button>
                         </div>
                         <div class="switch-container p-1" id="market-filters">
                             <div onclick="setMarketFilter('ALL')" class="switch-option active">ALL</div>
@@ -427,19 +450,27 @@
             <section id="tab-scanner" class="tab-content">
                 <div class="max-w-7xl mx-auto">
                     <header class="mb-6">
-                        <h2 class="font-black text-sm uppercase tracking-widest mb-1">Global Radar</h2>
-                        <p class="text-xs text-secondary font-medium">Unified scanning of all tracked instruments.</p>
+                        <h2 class="font-black text-sm uppercase tracking-widest mb-1" data-i18n="radarTitle">Global Radar</h2>
+                        <p class="text-xs text-secondary font-medium" data-i18n="radarSub">Unified scanning of all tracked instruments.</p>
+                        <div class="flex gap-2 mt-3">
+                            <button class="btn-premium bg-black/5" data-radar-filter="ge80" onclick="setRadarFilter('ge80')">≥80</button>
+                            <button class="btn-premium bg-black/5" data-radar-filter="ge90" onclick="setRadarFilter('ge90')">≥90</button>
+                            <button class="btn-premium bg-black/5" data-radar-filter="all" onclick="setRadarFilter('all')">Toutes</button>
+                            <button class="btn-premium bg-black/5" data-radar-filter="crypto" onclick="setRadarFilter('crypto')">Crypto only</button>
+                        </div>
                     </header>
                     <div class="card-premium !p-0 overflow-hidden border border-black/5 dark:border-white/5">
                         <table class="w-full text-xs text-left">
                             <thead class="bg-black/[0.02] dark:bg-white/[0.02] text-[9px] text-secondary font-black uppercase tracking-widest">
                                 <tr>
-                                    <th class="py-3 px-6">Instrument</th>
-                                    <th class="py-3 text-right">Price</th>
-                                    <th class="py-3 text-right">24h</th>
-                                    <th class="py-3 text-center">Bias</th>
-                                    <th class="py-3 text-center">Data</th>
-                                    <th class="py-3 pr-6 text-right">Score</th>
+                                    <th class="py-3 px-6" data-i18n="instrument">Instrument</th>
+                                    <th class="py-3 text-right" data-i18n="livePrice">Prix live</th>
+                                    <th class="py-3 text-right" data-i18n="change24h">Variation 24h</th>
+                                    <th class="py-3 text-center" data-i18n="bias">Bias</th>
+                                    <th class="py-3 text-center cursor-pointer" onclick="toggleRadarSort()">Score <span id="radar-sort-arrow">▾</span></th>
+                                    <th class="py-3 text-center" data-i18n="strategy">Stratégie</th>
+                                    <th class="py-3 text-center" data-i18n="dataAge">Age data</th>
+                                    <th class="py-3 pr-6 text-right" data-i18n="action">Action</th>
                                 </tr>
                             </thead>
                             <tbody id="scanner-table-body" class="divide-y divide-black/5 dark:divide-white/5"></tbody>
@@ -585,7 +616,12 @@
                             </div>
 
                             <div class="flex-1 bg-black/[0.03] dark:bg-white/[0.03] rounded-[32px] p-8 relative overflow-hidden group">
+                                <div id="bos-choch-tag" class="absolute top-3 left-4 text-[9px] font-black uppercase tracking-widest"></div>
                                 <div class="chart-grid" id="main-chart-bars"></div>
+                            </div>
+                            <div id="orderbook-panel" class="mt-3 text-[10px] font-bold">
+                                <p class="text-[9px] font-black uppercase text-secondary mb-1">Order Book</p>
+                                <div id="orderbook-rows" class="grid grid-cols-2 gap-2"></div>
                             </div>
                         </div>
 
@@ -597,6 +633,19 @@
                                     <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest">Institutional Order Entry</h4>
                                 </div>
                                 <div class="flex flex-col gap-5 flex-1">
+                                    <div class="flex gap-2">
+                                        <button class="btn-premium bg-black text-white" data-otype="MARKET" onclick="setOrderType('MARKET')">Market</button>
+                                        <button class="btn-premium bg-black/5" data-otype="LIMIT" onclick="setOrderType('LIMIT')">Limit</button>
+                                        <button class="btn-premium bg-black/5" data-otype="STOP" onclick="setOrderType('STOP')">Stop</button>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div class="bg-black/5 p-3 rounded-2xl">
+                                            <p class="text-[8px] font-black text-secondary uppercase mb-1">Limit/Stop px</p>
+                                            <input type="number" id="trade-trigger-px" step="0.00001" class="bg-transparent w-full text-sm font-black outline-none">
+                                        </div>
+                                        <label class="flex items-center gap-2 text-[10px] font-bold"><input type="checkbox" id="trade-risk-based"> Risk-based size</label>
+                                    </div>
+                                    <button id="execute-signal-btn" class="btn-premium bg-accent-blue text-white" onclick="executeRadarTrade(selectedSymbol)" disabled>Execute Signal</button>
                                     <div class="grid grid-cols-2 gap-4">
                                         <button onclick="manualTrade('BUY')" class="flex flex-col items-center justify-center gap-1 py-4 bg-green-500 hover:bg-green-600 text-white rounded-2xl font-black text-sm active:scale-95 transition-all shadow-lg shadow-green-500/20">
                                             <span>BUY / LONG</span>
@@ -739,7 +788,8 @@
             <section id="tab-settings" class="tab-content">
                 <div class="max-w-4xl mx-auto pb-20">
                     <header class="mb-10">
-                        <h2 class="text-4xl font-black tracking-tight mb-2">Intelligence Config</h2>
+                        <div id="settings-live-banner" class="hidden mb-4 px-4 py-2 rounded-xl bg-green-500/15 text-green-600 text-xs font-black uppercase">Parameters deployed live</div>
+                        <h2 class="text-4xl font-black tracking-tight mb-2" data-i18n="intel">Intelligence Config</h2>
                         <p class="text-secondary font-medium">Fine-tune your algorithmic DNA and execution parameters.</p>
                     </header>
                     
@@ -753,7 +803,7 @@
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
                                 <div class="space-y-2">
                                     <label class="text-[10px] font-black text-secondary uppercase">Interface Language</label>
-                                    <select id="set-language" class="w-full bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-bold">
+                                    <select id="set-language" onchange="changeLanguage(this.value)" class="w-full bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-bold">
                                         <option value="en">English (US)</option>
                                         <option value="fr">Français (FR)</option>
                                         <option value="es">Español</option>
@@ -811,7 +861,7 @@
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
                                 <div class="space-y-2">
                                     <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Min AI Confidence Score</label><span class="text-[10px] font-bold text-accent-green" id="val-min_signal_score">80</span></div>
-                                    <input type="range" id="set-min_signal_score" min="50" max="95" step="1" value="80" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-min_signal_score').innerText=this.value">
+                                    <input type="range" id="set-min_signal_score" min="50" max="99" step="1" value="80" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-min_signal_score').innerText=this.value">
                                 </div>
                                 <div class="space-y-2">
                                     <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Risk/Reward Ratio</label><span class="text-[10px] font-bold text-accent-green" id="val-risk_reward_ratio">2.0</span></div>
@@ -901,8 +951,10 @@
         </main>
     </div>
 
+    <div id="toast-host"></div>
     <script>
         lucide.createIcons();
+        try { window.QTP_I18N && QTP_I18N.applyLanguage(localStorage.getItem('qtp-lang') || 'en'); } catch (e) {}
 
         let selectedSymbol = 'btc_usdt';
         let ws;
@@ -914,6 +966,72 @@
         let lastScanDuration = 0;
         let metricsCache = null;
         let metricsFetchedAt = 0;
+        let radarSortDesc = true;
+        let radarFilter = 'all';
+        let hubSort = 'score';
+        let currentOrderType = 'MARKET';
+        let scannerPoll = null;
+
+        function showToast(msg, kind) {
+            const host = document.getElementById('toast-host');
+            if (!host) return;
+            const el = document.createElement('div');
+            el.className = 'qtp-toast';
+            el.textContent = msg;
+            host.appendChild(el);
+            setTimeout(() => el.remove(), 3200);
+        }
+        function setBtnLoading(el, on) {
+            if (!el) return;
+            el.classList.toggle('loading', !!on);
+            el.disabled = !!on;
+        }
+        function toggleRadarSort() {
+            radarSortDesc = !radarSortDesc;
+            const ar = document.getElementById('radar-sort-arrow');
+            if (ar) ar.textContent = radarSortDesc ? '▾' : '▴';
+            updateScanner();
+        }
+        function setRadarFilter(mode) { radarFilter = mode; updateScanner(); }
+        function setHubSort(k) { hubSort = k; initMarkets(); }
+        function setOrderType(t) {
+            currentOrderType = t;
+            document.querySelectorAll('[data-otype]').forEach(b => b.classList.toggle('bg-black', b.getAttribute('data-otype')===t));
+        }
+        async function executeRadarTrade(mid) {
+            const res = await fetchAPI('/execute-signal', 'POST', { market_id: mid || selectedSymbol });
+            if (res && res.success) showToast('Signal executed');
+            else showToast((res && res.reason) || 'Trade rejected');
+            update();
+        }
+        function changeLanguage(val) {
+            if (window.QTP_I18N) QTP_I18N.applyLanguage(val);
+            fetchAPI('/settings', 'POST', { language: val });
+        }
+        async function loadTerminalChart() {
+            const data = await fetchAPI('/ohlcv?market_id=' + selectedSymbol + '&timeframe=1m&limit=60');
+            const host = document.getElementById('main-chart-bars');
+            if (!host || !data || !data.candles) return;
+            const cs = data.candles;
+            const min = Math.min(...cs.map(c => c.l));
+            const max = Math.max(...cs.map(c => c.h));
+            const span = (max - min) || 1;
+            host.innerHTML = cs.map(c => {
+                const up = c.c >= c.o;
+                const top = ((c.h - Math.max(c.o,c.c)) / span) * 100;
+                const body = (Math.abs(c.c - c.o) / span) * 100;
+                const bot = ((Math.min(c.o,c.c) - c.l) / span) * 100;
+                return `<div class="candle" style="color:${up?'#28cd41':'#ff3b30'}"><div class="candle-wick" style="height:${top}%"></div><div class="candle-body" style="height:${Math.max(body,2)}%;background:currentColor"></div><div class="candle-wick" style="height:${bot}%"></div></div>`;
+            }).join('');
+            const tag = document.getElementById('bos-choch-tag');
+            if (tag) tag.textContent = [data.bos ? 'BOS' : '', data.choch ? 'CHoCH' : ''].filter(Boolean).join(' · ');
+            const book = await fetchAPI('/orderbook?market_id=' + selectedSymbol);
+            const rows = document.getElementById('orderbook-rows');
+            if (rows && book) {
+                rows.innerHTML = `<div>${(book.asks||[]).slice(0,6).map(a=>`<div class="text-red-500">${a[0]} × ${a[1]}</div>`).join('')||'noBook'}</div>
+                    <div>${(book.bids||[]).slice(0,6).map(a=>`<div class="text-green-500">${a[0]} × ${a[1]}</div>`).join('')}</div>`;
+            }
+        }
 
         const LOGOS = {
             'GATE': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>',
@@ -1016,6 +1134,7 @@
                 } else if (data.type === 'SCAN_COMPLETED') {
                     if (data.duration_s !== undefined) lastScanDuration = data.duration_s;
                     if (activeTab === 'scanner') updateScanner();
+                    if (activeTab === 'markets') initMarkets();
                     if (activeTab === 'dashboard') update();
                 }
             };
@@ -1132,7 +1251,14 @@
             const icon = document.getElementById('diag-icon');
             if (!d) return;
             if (blocker) blocker.innerText = (d.main_blocker || 'NONE').replace(/_/g, ' ');
-            if (reason) reason.innerText = d.main_reason || 'No blocker. System is clear.';
+            if (reason) {
+                const intent = window._lastExecutionIntent;
+                if (intent && (intent.code === 'IDLE' || intent.code === 'EXECUTING') && intent.message) {
+                    reason.innerText = intent.message;
+                } else {
+                    reason.innerText = d.main_reason || 'No blocker. System is clear.';
+                }
+            }
             if (icon) {
                 const ok = (d.main_blocker || 'NONE') === 'NONE';
                 icon.className = 'w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ' + (ok ? 'bg-green-500/10' : 'bg-red-500/10');
@@ -1285,25 +1411,26 @@
         }
 
         async function updateScanner() {
-            const data = await fetchAPI('/scanner');
+            const ord = radarSortDesc ? 'desc' : 'asc';
+            const data = await fetchAPI(`/scanner?sort=score&order=${ord}&filter=${radarFilter}`);
             const scannerBody = document.getElementById('scanner-table-body');
             if (scannerBody && data && data.assets) {
                 if (data.duration_s !== undefined) lastScanDuration = data.duration_s;
-                scannerBody.innerHTML = data.assets.map(a => `
-                    <tr class="group hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer" onclick="selectMarket('${escapeHtml(a.symbol)}')">
-                        <td class="py-5 px-8 flex flex-col">
-                            <span class="font-black text-sm">${escapeHtml((a.symbol || '').toUpperCase().replace('_', '/'))}</span>
-                            <span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${escapeHtml(a.name || '--')}</span>
-                        </td>
-                        <td class="py-5 text-right font-black tabular-nums">${fmtPrice(a.price)}</td>
-                        <td class="py-5 text-right font-bold ${(a.change || 0) >= 0 ? 'text-green-500' : 'text-red-500'}">${a.change != null ? ((a.change >= 0 ? '+' : '') + Number(a.change).toFixed(2) + '%') : '0.00%'}</td>
-                        <td class="py-5 text-center">
-                            <span class="text-[10px] font-black uppercase tracking-widest ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}">${escapeHtml(a.trend || '--')}</span>
-                        </td>
-                        <td class="py-5 text-center"><span class="status-badge bg-black/5 dark:bg-white/5 text-secondary text-[8px]">${escapeHtml(a.status || 'LIVE')}</span></td>
-                        <td class="py-5 pr-8 text-right"><div class="flex items-center justify-end gap-3"><span class="font-black text-sm">${a.score || 0}</span><div class="w-12 h-1 bg-black/5 rounded-full overflow-hidden"><div class="h-full bg-accent-blue" style="width: ${a.score || 0}%"></div></div></div></td>
-                    </tr>
-                `).join('');
+                scannerBody.innerHTML = data.assets.map(a => {
+                    const hot = (a.score || 0) >= 80;
+                    const canTrade = a.tradable && hot;
+                    return `
+                    <tr class="group hover:bg-black/[0.01] transition-colors ${hot ? 'radar-row-institutional' : ''}">
+                        <td class="py-4 px-6 font-black cursor-pointer" onclick="selectMarket('${escapeHtml(a.symbol)}')">${escapeHtml(a.display_symbol || (a.symbol||'').toUpperCase())}</td>
+                        <td class="py-4 text-right font-black tabular-nums" data-price-id="${escapeHtml(a.symbol)}">${fmtPrice(a.price)}</td>
+                        <td class="py-4 text-right ${(a.change||0)>=0?'text-green-500':'text-red-500'}">${a.change != null ? ((a.change>=0?'+':'')+Number(a.change).toFixed(2)+'%') : '—'}</td>
+                        <td class="py-4 text-center font-black">${escapeHtml(a.direction || a.trend || '--')}</td>
+                        <td class="py-4 text-center ${hot?'radar-score-glow':'font-black'}">${a.score || 0}</td>
+                        <td class="py-4 text-center">${escapeHtml(a.strategy || '--')}</td>
+                        <td class="py-4 text-center text-secondary">${escapeHtml(a.data_age_label || '—')}</td>
+                        <td class="py-4 pr-6 text-right"><button class="btn-premium ${canTrade?'bg-green-500 text-white':'bg-black/5'}" ${canTrade?'':'disabled'} onclick="event.stopPropagation();executeRadarTrade('${escapeHtml(a.symbol)}')">TRADE</button></td>
+                    </tr>`;
+                }).join('');
             }
         }
 
@@ -1385,6 +1512,9 @@
                 renderIndicators(a);
             }
 
+            window._lastExecutionIntent = s.execution_intent;
+            const execBtn = document.getElementById('execute-signal-btn');
+            if (execBtn) execBtn.disabled = !s.signal || (s.signal.score || 0) < 80;
             renderSignal(s.signal);
             renderDiagnosis(s.diagnosis);
             renderBlockers(s.diagnosis, s.news);
@@ -1439,7 +1569,9 @@
             if (tabId === 'brokers') updateBrokers();
             if (tabId === 'settings') loadSettings();
             if (tabId === 'markets') initMarkets();
-            if (tabId === 'trading') updateNews();
+            if (tabId === 'trading') { updateNews(); loadTerminalChart(); }
+            if (scannerPoll) { clearInterval(scannerPoll); scannerPoll = null; }
+            if (tabId === 'scanner') scannerPoll = setInterval(updateScanner, 1000);
             if (tabId === 'positions') update();
         }
 
@@ -1457,7 +1589,7 @@
 
         async function initMarkets() {
             const grid = document.getElementById('markets-full-grid');
-            const res = await fetchAPI('/markets');
+            const res = await fetchAPI('/markets?sort=' + hubSort + '&order=desc');
             if (grid && res) {
                 let html = '';
                 const categories = ['CRYPTO', 'FOREX', 'INDICES', 'COMMODITIES', 'STOCKS', 'FUTURES', 'BONDS', 'ETFS'];
@@ -1465,12 +1597,24 @@
                     if (currentFilter !== 'ALL' && cat !== currentFilter) return;
                     if (!res[cat] || res[cat].length === 0) return;
                     html += `<div class="col-span-full mt-4 border-b border-black/5 pb-2 text-[10px] font-black uppercase tracking-widest">${cat}</div>`;
-                    html += res[cat].map(m => `
-                        <div class="market-card" onclick="selectMarket('${escapeHtml(m.market_id || m.symbol)}')">
-                            <div class="flex flex-col"><span class="font-black text-sm">${escapeHtml((m.display_symbol || m.symbol || '').toUpperCase())}</span><span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${escapeHtml(m.name || '--')}</span></div>
+                    html += res[cat].map(m => {
+                        const hot = (m.score || 0) >= 80;
+                        const initials = (m.display_symbol || m.symbol || '??').slice(0,2).toUpperCase();
+                        const spark = (m.sparkline || []).map((v,i,arr) => {
+                            const mn = Math.min(...arr), mx = Math.max(...arr), sp = (mx-mn)||1;
+                            return `<div style="height:${8+((v-mn)/sp)*22}px;width:3px;background:${hot?'#28cd41':'#0071e3'};border-radius:1px"></div>`;
+                        }).join('');
+                        return `
+                        <div class="market-card ${hot?'hub-hot':''}" onclick="selectMarket('${escapeHtml(m.market_id || m.symbol)}')">
+                            <div class="flex items-center gap-2"><div class="w-7 h-7 rounded-lg bg-black/10 flex items-center justify-center text-[10px] font-black">${escapeHtml(initials)}</div>
+                            <div class="flex flex-col"><span class="font-black text-sm">${escapeHtml((m.display_symbol || m.symbol || '').toUpperCase())}</span><span class="text-[9px] font-bold text-secondary uppercase">${escapeHtml(m.name || '--')}</span></div></div>
                             <p class="font-black text-sm mt-2" data-price-id="${escapeHtml(m.market_id || m.symbol)}">${fmtPrice(m.price)}</p>
-                        </div>
-                    `).join('');
+                            <p class="${hot?'radar-score-glow':'text-xs font-black'}">Score ${m.score||0}</p>
+                            <p class="text-[10px]">${escapeHtml(m.trend||'—')} · vol ${m.volume!=null?Number(m.volume).toFixed(0):'—'}</p>
+                            <div class="flex items-end gap-0.5 h-8 mt-2">${spark}</div>
+                            <p class="text-[8px] text-secondary">${m.data_age_ms!=null?(m.data_age_ms+'ms'):''}</p>
+                        </div>`;
+                    }).join('');
                 });
                 grid.innerHTML = html || '<p class="text-secondary text-xs italic col-span-full">No data yet — the scanner is warming up.</p>';
             }
@@ -1530,9 +1674,17 @@
                 const key = el.id.replace('set-', '');
                 data[key] = el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value;
             });
+            const ms = parseInt(data.min_signal_score, 10);
+            const mop = parseInt(data.max_open_positions, 10);
+            if (!isNaN(ms) && (ms < 50 || ms > 99)) { showToast('min_signal_score must be 50–99'); return; }
+            if (!isNaN(mop) && (mop < 1 || mop > 20)) { showToast('max_open_positions must be 1–20'); return; }
             const res = await fetchAPI('/settings', 'POST', data);
-            if (res && res.success) alert('Settings deployed. Engines updated live.');
-            else alert('Failed to save settings (admin key required?).');
+            if (res && res.success) {
+                showToast('Parameters deployed live');
+                const ban = document.getElementById('settings-live-banner');
+                if (ban) ban.classList.remove('hidden');
+            }
+            else showToast('Failed to save settings (admin key required?).');
         }
 
         async function setBalance() {

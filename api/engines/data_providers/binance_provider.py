@@ -42,6 +42,7 @@ class BinanceProvider(MarketDataProvider):
                 last=ticker['last'],
                 spread=(ticker['ask'] - ticker['bid']) if ticker.get('ask') and ticker.get('bid') else None,
                 volume=ticker.get('baseVolume'),
+                change_24h=ticker.get('percentage'),
                 source=self.source_name,
                 status="LIVE"
             )

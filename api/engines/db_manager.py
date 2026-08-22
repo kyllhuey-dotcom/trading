@@ -174,7 +174,7 @@ class DatabaseManager:
                     "max_leverage": "20",
                     "max_daily_loss_pct": "3.0",
                     "cool_down_mins": "30",
-                    "max_open_positions": "3",
+                    "max_open_positions": "10",
                     "trailing_stop_active": "true",
                     "max_spread_pct": "0.5",
                     "min_signal_score": "80",

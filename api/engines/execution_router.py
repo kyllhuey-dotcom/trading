@@ -17,6 +17,7 @@ class ExecutionRouter:
         self.demo = demo_adapter
         self.broker = broker_connector
         self.last_order_timestamp: Optional[datetime] = None
+        self.last_order_by_symbol: Dict[str, datetime] = {}
         self.order_history: List[Dict[str, Any]] = []
         self.min_interval_seconds = 5.0
 
@@ -24,8 +25,10 @@ class ExecutionRouter:
                       ticker: Dict[str, Any]) -> Dict[str, Any]:
         now = datetime.now()
 
-        # Anti-duplication: never fire two orders in a row within 5s
-        if self.last_order_timestamp and (now - self.last_order_timestamp).total_seconds() < self.min_interval_seconds:
+        # Anti-duplication PER SYMBOL (LOT 8) — was a global 5s lock
+        throttle_key = str(signal.get("market_id") or signal.get("display_symbol") or "UNK")
+        last_sym = self.last_order_by_symbol.get(throttle_key)
+        if last_sym and (now - last_sym).total_seconds() < self.min_interval_seconds:
             return {"success": False, "reason": "Execution throttled (anti-duplication)"}
 
         sym_id = str(signal.get('display_symbol') or signal.get('market_id') or 'UNK').replace('/', '')

@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Any
 from .data_providers.base_provider import MarketDataProvider, TickerModel
+from .provider_priority import prioritize_providers
 import pandas as pd
 import asyncio
 import json
@@ -32,6 +33,8 @@ class DataLayer:
         self.max_failure_cooldown = 3600 # escalation cap: 60 minutes
         # LOT B/LOT F: strict per-provider timeout (quotes + orderbook + trades).
         self.provider_timeout_s = 5.0
+        self._quote_cache: Dict[str, tuple] = {}
+        self._quote_cache_ttl = 0.25
 
     # ------------------------------------------------------------------ #
     # Failure tracking (escalating cooldown)                             #
@@ -92,12 +95,17 @@ class DataLayer:
         results = []
         now = time.time()
         self._prune_failure_cache()
+        # drop expired quote cache
+        self._quote_cache = {k: v for k, v in self._quote_cache.items() if now - v[0] < self._quote_cache_ttl}
         for mid in market_ids:
             info = catalog.get_info(mid)
             if not info: continue
-            
-            # Sorted providers list: we try them in order
-            provider_list = list(info.get("providers", {}).items())
+            cached = self._quote_cache.get(mid)
+            if cached and now - cached[0] < self._quote_cache_ttl:
+                results.append(cached[1])
+                continue
+
+            provider_list = prioritize_providers(info.get("providers", {}).items())
             
             quote = None
             for pid, psymbol in provider_list:
@@ -123,6 +131,7 @@ class DataLayer:
                         self._record_failure(cache_key)
             
             if quote:
+                self._quote_cache[mid] = (now, quote)
                 results.append(quote)
         
         return results
@@ -137,7 +146,7 @@ class DataLayer:
         if not info: return pd.DataFrame()
 
         self._prune_failure_cache()
-        for pid, psymbol in info.get("providers", {}).items():
+        for pid, psymbol in prioritize_providers(info.get("providers", {}).items()):
             cache_key = f"ohlcv:{pid}:{psymbol}"
             if self._in_cooldown(cache_key):
                 continue
@@ -160,7 +169,7 @@ class DataLayer:
     async def get_order_book(self, market_id: str, catalog: Any) -> Optional[Dict[str, Any]]:
         info = catalog.get_info(market_id)
         if not info: return None
-        for pid, psymbol in info.get("providers", {}).items():
+        for pid, psymbol in prioritize_providers(info.get("providers", {}).items()):
             cache_key = f"ob:{pid}:{psymbol}"
             if self._in_cooldown(cache_key):
                 continue
@@ -181,7 +190,7 @@ class DataLayer:
     async def get_trades(self, market_id: str, catalog: Any) -> Optional[List[Dict[str, Any]]]:
         info = catalog.get_info(market_id)
         if not info: return None
-        for pid, psymbol in info.get("providers", {}).items():
+        for pid, psymbol in prioritize_providers(info.get("providers", {}).items()):
             cache_key = f"tr:{pid}:{psymbol}"
             if self._in_cooldown(cache_key):
                 continue
@@ -215,7 +224,7 @@ class DataLayer:
         if not info:
             return []
 
-        provider_list = list(info.get("providers", {}).items())
+        provider_list = prioritize_providers(info.get("providers", {}).items())
         timeout = timeout_s if timeout_s is not None else self.provider_timeout_s
         self._prune_failure_cache()
 
