@@ -41,6 +41,9 @@ class ExecutionRouter:
 
         if res.get("success"):
             self.last_order_timestamp = now
+            # LOT 8: record the per-symbol throttle timestamp so the next
+            # rapid duplicate on the same symbol is actually rejected.
+            self.last_order_by_symbol[throttle_key] = now
             pos = res.get("position") or {}
             pos["client_order_id"] = client_order_id
             res["client_order_id"] = client_order_id
