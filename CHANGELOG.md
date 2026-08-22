@@ -1,5 +1,35 @@
 # Changelog - Quantum Trade Pro
 
+## [2.1.0] - 2026-08-22 — Amélioration continue (lots A → H)
+
+### Observabilité (LOT A)
+- `/api/metrics` enrichi (additif) : signaux générés/bloqués par stratégie, winrate simulé par mode/stratégie, latence scan/exécution, âge des données, ordres REAL vs DEMO, heartbeat WS.
+- Logging JSON structuré (NDJSON) avec rotation (`api/json_logging.py` + helper `structured_log`).
+- Heartbeat WebSocket dédié + ping/pong applicatif + watchdog frontend ; diagnostic complet même hors-ligne.
+
+### Stratégies (LOTs B, C, D)
+- **Arbitrage** : timeout par provider, fraîcheur + synchronisation des quotes, score de confiance 0-100.
+- **Tape reading** : imbalance pondéré par la profondeur, velocity proportionnelle, seuil dynamique piloté par l'ATR, multiplicateur de conviction.
+- **Liquidity gap** : détection spread élargi + zones de faible volume, confirmation « côté mince », stop logique sous le dernier cluster de liquidité.
+
+### Risque & exécution (LOT E)
+- Sizing exchange-aware : lot_size/tick_size/min_notional (MarketUniverse + CCXT markets), arrondis Decimal floor (jamais au-dessus du risque), SL/TP protecteurs, ordres manuels normalisés.
+
+### Données (LOT F)
+- Fallback providers : timeouts stricts partout, cooldown à escalade exponentielle (5 min → 60 min).
+- **Garde anti-scalping sur données différées** : Yahoo (~15 min de retard) bloqué pour l'exécution auto (`NON_REALTIME_SOURCE`), opt-out `allow_delayed_data_trading`.
+- Health check précis : ONLINE/DEGRADED/SLOW/ERROR par latence + historique par provider.
+
+### Tests & CI (LOT G)
+- Couverture **api/engines : 83 %** (porte CI 80 %) ; mocks complets hors réseau (`tests/mocks.py`).
+- Tests réseau auto-skippables ; plus aucun test n'écrit dans `data/` ; code mort supprimé.
+- `validate.sh` : portes 60 % (api) + 80 % (engines), scan secrets, check d'entrée.
+
+### Production (LOT H)
+- **Message REAL explicite** : `real_warning` dans `/api/status`, warning au basculement REAL + bannière frontend « LIVE EXECUTION STILL EXPERIMENTAL — USE DEMO FOR STRATEGIES ».
+- **Rate limiting renforcé** : sliding window par IP (lectures 1200/min, mutations 300/min par défaut, réglable), 429 JSON.
+- `.env.example` documenté ; suite finale **185 passés / 6 skips / 0 échec**.
+
 ## [2.0.0] - 2026-08-22 — Refonte complète (audit + corrections)
 ### Fixed (critique)
 - **market_id propagé dans tous les signaux** — l'auto-trading était impossible (chaque ordre rejeté `MARKET_CLOSED`).

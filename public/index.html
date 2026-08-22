@@ -225,6 +225,9 @@
     </style>
 </head>
 <body class="">
+    <div id="real-mode-banner" class="hidden fixed top-0 left-0 right-0 z-[100] bg-amber-500 text-slate-900 text-center text-xs font-bold py-1.5 px-4 shadow-lg">
+        ⚠️ LIVE EXECUTION STILL EXPERIMENTAL — USE DEMO FOR STRATEGIES
+    </div>
     <script>
         (function() {
             const savedTheme = localStorage.getItem('quantum-theme') || 'light';
@@ -997,9 +1000,14 @@
         function connectWS() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            let lastHeartbeat = Date.now();
             ws.onmessage = (event) => {
                 let data;
                 try { data = JSON.parse(event.data); } catch (e) { return; }
+                if (data.type === 'HEARTBEAT') {
+                    lastHeartbeat = Date.now();
+                    return;
+                }
                 if (data.type === 'ACCOUNT_STREAM') {
                     updateStatus(data);
                     updateAccountUI(data);
@@ -1011,7 +1019,26 @@
                     if (activeTab === 'dashboard') update();
                 }
             };
-            ws.onclose = () => setTimeout(connectWS, 3000);
+            // Application-level ping every 30s + watchdog: reconnect if the
+            // server stops heartbeating (LOT A — robust WS heartbeat).
+            ws.onopen = () => {
+                lastHeartbeat = Date.now();
+                ws.pingTimer = setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'ping', seq: Date.now() }));
+                    }
+                }, 30000);
+                ws.watchdog = setInterval(() => {
+                    if (Date.now() - lastHeartbeat > 90000 && ws.readyState === WebSocket.OPEN) {
+                        ws.close(); // onclose triggers the reconnect
+                    }
+                }, 15000);
+            };
+            ws.onclose = () => {
+                clearInterval(ws.pingTimer);
+                clearInterval(ws.watchdog);
+                setTimeout(connectWS, 3000);
+            };
         }
 
         /* ------------------------------------------------------------------ *
@@ -1070,6 +1097,20 @@
             const dot = document.getElementById('status-dot');
             if (dot) {
                 dot.className = 'w-2.5 h-2.5 rounded-full shadow-lg transition-all duration-500 ' + (data.is_running ? 'bg-green-500 animate-pulse' : 'bg-slate-400');
+            }
+            if (data.mode !== undefined) updateRealWarning(data.mode);
+        }
+
+        /* LOT H: explicit banner whenever the bot runs in REAL mode */
+        function updateRealWarning(mode) {
+            const banner = document.getElementById('real-mode-banner');
+            if (!banner) return;
+            if (mode === 'REAL') {
+                banner.classList.remove('hidden');
+                document.body.classList.add('pt-7');
+            } else {
+                banner.classList.add('hidden');
+                document.body.classList.remove('pt-7');
             }
         }
 

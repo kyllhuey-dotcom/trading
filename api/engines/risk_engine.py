@@ -2,6 +2,8 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 import logging
 
+from .exchange_constraints import constraints_from_info, floor_to_step
+
 logger = logging.getLogger("RiskEngine")
 
 
@@ -113,10 +115,16 @@ class RiskEngine:
                                 direction: str = "BUY",
                                 fee_pct: float = 0.05,
                                 symbol: str = "unknown",
-                                active_positions: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                                active_positions: Optional[List[Dict[str, Any]]] = None,
+                                market_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Full pre-trade validation + sizing. Returns {allowed, reason, ...}.
         Every blocking check returns a precise reason (never a bare boolean).
+
+        LOT E: when `market_info` (instrument info with lot_size/tick_size/
+        min_order) is provided, the quantity is floored to the lot step and
+        the resulting notional is re-checked against the instrument minimum.
+        Rounding is always DOWN — never risk more than the computed size.
         """
         # 1. Account balance floor
         if balance < self.min_account_balance:
@@ -169,8 +177,43 @@ class RiskEngine:
             lev = self.max_leverage
             notional = qty * entry
 
+        # 8. Exchange constraints (LOT E): lot size / min notional per instrument.
+        #    Quantity is floored (never rounded up) so risk never exceeds the cap.
+        constraints = constraints_from_info(market_info)
+        quantity_rounded = False
+        if constraints:
+            lot = constraints["lot_size"]
+            if lot and lot > 0:
+                floored = floor_to_step(qty, lot)
+                if floored != qty:
+                    quantity_rounded = True
+                    qty = floored
+            if qty <= 0:
+                return {
+                    "allowed": False,
+                    "quantity": 0.0,
+                    "leverage": 0.0,
+                    "risk_pct": self.max_risk_pct,
+                    "estimated_fees": 0.0,
+                    "reason": "Quantity below minimum lot size for this instrument",
+                    "market_constraints": constraints,
+                }
+            notional = qty * entry
+            lev = notional / balance
+            min_notional = constraints["min_notional"]
+            if min_notional and min_notional > 0 and notional < min_notional:
+                return {
+                    "allowed": False,
+                    "quantity": float(qty),
+                    "leverage": float(lev),
+                    "risk_pct": self.max_risk_pct,
+                    "estimated_fees": float(notional * (fee_pct / 100) * 2),
+                    "reason": f"Order notional below instrument minimum ({min_notional})",
+                    "market_constraints": constraints,
+                }
+
         notional_ok = notional >= 10.0
-        return {
+        result = {
             "allowed": notional_ok,
             "quantity": float(qty),
             "leverage": float(lev),
@@ -178,3 +221,8 @@ class RiskEngine:
             "estimated_fees": float(notional * (fee_pct / 100) * 2),
             "reason": None if notional_ok else "Order size too small"
         }
+        if constraints:
+            result["market_constraints"] = constraints
+        if quantity_rounded:
+            result["quantity_rounded"] = True
+        return result

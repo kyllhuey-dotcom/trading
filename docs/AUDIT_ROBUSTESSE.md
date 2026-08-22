@@ -1,4 +1,4 @@
-# Audit de Robustesse — Quantum Trade Pro v2.0 (août 2026)
+# Audit de Robustesse — Quantum Trade Pro v2.1 (août 2026)
 
 Audit réalisé sur le code réel (clone du dépôt, exécution des tests et du serveur).
 Contrairement aux versions précédentes de ce document, chaque point ci-dessous a été
@@ -6,10 +6,14 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
 
 ## État global
 
-- ✅ Suite de tests : **52 passés, 3 skips** (skips = providers indisponibles depuis le réseau de test, pas des bugs).
+- ✅ Suite de tests : **185 passés, 6 skips** (skips = tests `network` dont le
+  provider est indisponible — ils s'auto-skip proprement désormais).
+- ✅ Couverture : **83 % sur `api/engines`** (engines critiques), 76 % sur `api/`
+  (portes CI : 80 % / 60 % dans `scripts/validate.sh`).
 - ✅ L'application démarre, tous les endpoints répondent.
 - ✅ Le pipeline critique (scan → signal → exécution → suivi) est fonctionnel en DEMO.
 - ✅ Le mode REAL passe de **vrais ordres** via CCXT (plus de simulation mensongère).
+- ✅ Observabilité avancée : `/api/metrics` enrichi, logging JSON structuré, heartbeat WS.
 - ⚠️ Points de vigilance restants listés en fin de document.
 
 ## Bugs critiques corrigés (vérifiés)
@@ -35,6 +39,109 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
 
 ## Améliorations structurantes
 
+### LOT A — Observabilité & métriques avancées (v2.1)
+
+- **`/api/metrics` enrichi** (additif, anciens champs conservés) :
+  - `signals_generated_by_strategy` / `signals_blocked_by_strategy` : signaux par stratégie (générés / bloqués) ;
+  - `orders_by_mode` : nombre d'ordres `REAL` vs `DEMO` routés ;
+  - `winrate_simulated` : taux de réussite calculé sur les trades clôturés, par mode et par stratégie (`PortfolioEngine`, jamais simulé « au doigt mouillé ») ;
+  - `latency` : latence moyenne/max du scan et de l'exécution (fenêtre glissante bornée) ;
+  - `data_age` : âge des données (dernier/moyen/max + échantillons), alimenté par `data_age_ms` ajouté à chaque résultat de scan ;
+  - `heartbeat` : séquence, nombre de clients WS, dernier envoi.
+- **Logging structuré JSON** (`api/json_logging.py`) : NDJSON avec rotation par taille
+  (`data/trading_bot.jsonl`, 5 × 5 Mo), champs standard + champs `extra` personnalisés +
+  `exc_info`, sérialisation défensive des valeurs non-JSON. La console reste lisible.
+  Helper `structured_log()` pour des événements métier typés (ordre exécuté, erreur de boucle).
+- **WebSocket heartbeat robuste** : boucle dédiée (15 s) émettant `HEARTBEAT`
+  (seq / server_time / clients / state), ping/pong applicatif (`ping` → `pong`),
+  nettoyage automatique des connexions mortes, métadonnées par client.
+  Le frontend envoie un ping toutes les 30 s et se reconnecte si le serveur
+  reste silencieux > 90 s (watchdog).
+- **Diagnostic complet hors-ligne** : les snapshots « DATA ERROR » exposent
+  désormais toutes les clés de vérification du contrat (dont `RISK_VALID`),
+  ce qui rend la suite de tests fiable même sans réseau.
+- Nouveau module `api/engines/metrics_engine.py` (verrouillé, fenêtres bornées 500 échantillons).
+- Tests dédiés : `tests/test_metrics_observability.py` (15 tests).
+
+### LOT B — Arbitrage micro-temporel
+
+- `DataLayer.get_cross_quotes` : timeout strict par provider (5 s), cache d'échec,
+  metadata de timing par quote (`latency_ms`, `received_at`, `age_ms`).
+- `MicroArbitrageStrategy` : porte de fraîcheur (quotes périmées écartées),
+  porte de synchronisation (dispersion max entre quotes → NO_TRADE),
+  score de confiance 0-100 (spread + fraîcheur + synchro), `min_confidence` optionnel.
+- Rétrocompatible : quotes sans timing = fraîches. Tests : `tests/test_arbitrage_robustness.py`.
+
+### LOT C — Tape reading
+
+- Imbalance pondéré par la profondeur (10 niveaux, poids décroissants),
+  velocity proportionnelle signée (clamp ±40), multiplicateur de conviction
+  (alignement ×1.15 / conflit ×0.85).
+- **Seuil dynamique piloté par l'ATR** (clampé 15-60, fallback au seuil de
+  base sans OHLCV) : marchés calmes = plus sensible, marchés violents = plus strict.
+- Tests : `tests/test_tape_reading_robustness.py` (mocks orderbook/trades/volatilités).
+
+### LOT D — Liquidity gap
+
+- Détection enrichie : trous de prix (15 niveaux), spread élargi bloquant,
+  profil de volume (confirmation « côté mince », discount 25 % sinon).
+- **Stop logique anticipatif** : SL sous le dernier cluster de liquidité
+  (au-dessus pour les shorts), TP en 2R, fallback % conservé.
+- Tests : `tests/test_liquidity_gap_robustness.py` (13 tests + régressions).
+
+### LOT E — Sizing & contraintes d'exchange
+
+- Nouveau module `api/engines/exchange_constraints.py` : arrondis Decimal sûrs
+  (quantité floor au lot, prix au tick, SL/TP protecteurs), portes min_notional.
+- `RiskEngine.calculate_position_size(market_info=…)` (optionnel, rétrocompatible) :
+  quantité floored, levier/notional recalculés, min notional vérifié.
+- `CCXTAdapter.get_market_constraints` (parsing offline des marchés CCXT),
+  ordres manuels normalisés (DEMO + REAL).
+- Tests : `tests/test_exchange_constraints.py` (17 tests).
+
+### LOT F — Data & providers
+
+- `DataLayer` : timeouts par provider sur tous les chemins, cooldown d'échec à
+  **escalade exponentielle** (5 min → 60 min max), reset au succès.
+- **Garde anti-scalping sur données différées** : les instruments Yahoo
+  (~15 min de retard) sont bloqués pour l'exécution automatique
+  (`NON_REALTIME_SOURCE`), opt-out explicite `allow_delayed_data_trading`.
+- Health check précis : ONLINE/DEGRADED/SLOW/ERROR selon latence, historique
+  par provider (checks, échecs consécutifs, dernier OK), latence Gate/Bybit.
+- Tests : `tests/test_providers_hardening.py` (9 tests offline).
+
+### LOT G — Couverture & CI
+
+- **Couverture engines critiques : 83 %** (objectif ≥ 80 %), avec mocks complets
+  hors réseau : `tests/mocks.py` (orderbooks, trades, tickers, cross-quotes,
+  exchange ccxt factice, engines factices), `tests/test_engine_coverage.py`
+  (scanner, router, signal, exécution, diagnostic, univers, providers ccxt,
+  DB manager) et `tests/test_offline_engine_coverage.py` (news/calendrier,
+  backtest, broker connector, notifications, Yahoo, risque, sessions avec
+  horloge fixée).
+- **Tests réseau auto-skippables** : les tests `network` se skip proprement
+  quand Gate/Yahoo/Binance sont inaccessibles (plus d'échecs d'environnement).
+- **Isolation totale** : plus aucun test n'écrit dans `data/` du dépôt
+  (bases temporaires `tmp_path` partout).
+- **Code mort supprimé** : `data_providers/crypto_provider.py` (imports
+  cassés) et `market_catalog.py` (doublon inutilisé de MarketUniverse).
+- **`scripts/validate.sh` plus strict** : porte de couverture 60 % globale +
+  80 % sur `api/engines`, scan de secrets, check d'entrée applicative.
+- **Bybit** : `get_order_book` / `get_recent_trades` implémentés (parité Gate/Binance).
+
+### LOT H — Polish production & documentation
+
+- **Message REAL explicite** : `real_warning` dans `/api/status`, champ `warning`
+  dans la réponse de `/api/mode`, log structuré `MODE_SWITCHED_TO_REAL` et
+  bannière frontend permanente en mode REAL (« Live execution still
+  experimental – use DEMO for strategies »).
+- **Rate limiting basique renforcé** (`api/rate_limit.py`) : sliding window par
+  IP (60 s), budget lectures 1200/min et mutations 300/min (réglables par env),
+  réponse 429 JSON, `/healthz` exempté, mémoire bornée. Tests unitaires avec
+  horloge injectée.
+- **`.env.example`** documenté (sécurité, rate limit, logging, heartbeat, gardes).
+- CHANGELOG 2.1.0 + README et audit resynchronisés avec le code réel.
+
 - **Authentification** : `ADMIN_API_KEY` protège tous les endpoints mutables (401 sinon).
 - **Chiffrement** : secrets brokers Fernet au repos, préfixe `enc:v1:` explicite, erreurs de décryptage loggées (pas de retour silencieux).
 - **SQLite** : connexions fermées systématiquement (context manager), `busy_timeout`, ordre déterministe.
@@ -47,15 +154,19 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
 
 ## Points de vigilance restants (assumés)
 
-1. **Données non-crypto** : Yahoo Finance est différé (~15 min) et rate-limité ; ce n'est pas une source « temps réel ». Le bot l'utilise pour du structurel, pas du scalping.
+1. **Données non-crypto** : Yahoo Finance est différé (~15 min) et rate-limité ; ce n'est pas une source « temps réel ». **Depuis le LOT F, l'exécution automatique y est bloquée par défaut** (`NON_REALTIME_SOURCE`) — le structurel Yahoo ne sert plus qu'à l'analyse/backtest, sauf opt-out explicite `allow_delayed_data_trading=true`.
 2. **Calendrier économique** : scraping HTML de ForexFactory — fragile si le site change de markup ou bloque ; en cas d'échec, le bot **refuse de trader** (fail-safe), ce qui est le comportement voulu.
 3. **SL/TP sur spot** : la pose d'ordres SL/TP conditionnels dépend des capacités de l'exchange CCXT ; en cas d'échec, l'ordre principal est passé et l'incident est loggé (`sl_tp_warning`).
-4. **Quantités** : le sizing ne tient pas encore compte de `lot_size`/`tick_size` par instrument (arrondi aux incréments du marché). À ajouter pour des brokers stricts.
-5. **Tests réseau** : les tests marqués `network` dépendent de la disponibilité des providers ; ils s'auto-skip proprement.
-6. **Multi-instances** : le bot est pensé pour une seule instance (état en mémoire + SQLite local). Pour du multi-instance, migrer vers Redis/Postgres.
+4. **Quantités** : ✔ résolu au LOT E — `lot_size`/`tick_size`/`min_notional` par instrument (MarketUniverse + marchés CCXT), arrondi floor + SL/TP protecteurs.
+5. **Tests réseau** : les tests marqués `network` s'auto-skip proprement quand un provider est indisponible (LOT G).
+6. **Multi-instances** : le bot est pensé pour une seule instance (état en mémoire + SQLite local). Pour du multi-instance, migrer vers Redis/Postgres. Le rate limiter en mémoire est donc par instance.
+7. **Rate limiting** : sliding window par IP en mémoire (lectures 1200/min, mutations 300/min par défaut, réglable par env) — volontairement simple ; pour une exposition publique importante, placer un rate limiter/gateway en amont (Railway/Cloudflare).
 
 ## Verdict
 
 Le projet est **fonctionnel de bout en bout en DEMO** et **exécute de vrais ordres en REAL**
-avec les protections configurées. Les claims « Production-Ready » des versions précédentes
+avec les protections configurées, une observabilité avancée (métriques enrichies, logs JSON,
+heartbeat WS), des stratégies durcies (fraîcheur/synchronisation/seuils dynamiques/stops
+logiques), un sizing exchange-aware, une couverture de 83 % des engines critiques et un
+avertissement REAL explicite. Les claims « Production-Ready » des versions précédentes
 étaient prématurés ; celui-ci repose sur des tests vérifiables.

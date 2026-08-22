@@ -5,6 +5,8 @@ import os
 import logging
 from datetime import datetime
 
+from ..exchange_constraints import parse_ccxt_market_constraints
+
 logger = logging.getLogger("CCXTAdapter")
 
 
@@ -65,6 +67,17 @@ class CCXTAdapter(BrokerAdapter):
     # ------------------------------------------------------------------ #
     # Market data & account                                               #
     # ------------------------------------------------------------------ #
+    def get_market_constraints(self, symbol: str) -> Dict[str, Any]:
+        """
+        LOT E: lot_size / tick_size / min_notional for one instrument,
+        parsed from the CCXT markets loaded at connect() time (no network
+        call — the markets table is already in memory).
+        """
+        if not self.client:
+            return {"lot_size": None, "tick_size": None, "min_notional": None}
+        market = self.client.markets.get(symbol) or {}
+        return parse_ccxt_market_constraints(market)
+
     async def get_balance(self, asset: str = 'USDT') -> float:
         if not self.client:
             return 0.0

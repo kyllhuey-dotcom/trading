@@ -7,8 +7,8 @@ from api.engines.portfolio_engine import PortfolioEngine
 from api.engines.risk_engine import RiskEngine
 
 @pytest.mark.asyncio
-async def test_realistic_simulation():
-    db = DatabaseManager("data/test_lot13.db")
+async def test_realistic_simulation(tmp_path):
+    db = DatabaseManager(str(tmp_path / "test_lot13.db"))
     # Force high latency for test
     with db._get_connection() as conn:
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('sim_latency_ms', '500')")

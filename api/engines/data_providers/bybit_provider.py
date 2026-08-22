@@ -56,11 +56,28 @@ class BybitProvider(MarketDataProvider):
             logger.debug(f"Bybit OHLCV error ({symbol}): {e}")
             return pd.DataFrame()
 
+    async def get_order_book(self, symbol: str) -> Optional[Dict[str, Any]]:
+        try:
+            return await self.exchange.fetch_order_book(symbol, limit=20)
+        except Exception as e:
+            logger.debug(f"Bybit order book error ({symbol}): {e}")
+            return None
+
+    async def get_recent_trades(self, symbol: str) -> Optional[List[Dict[str, Any]]]:
+        try:
+            return await self.exchange.fetch_trades(symbol, limit=50)
+        except Exception as e:
+            logger.debug(f"Bybit trades error ({symbol}): {e}")
+            return None
+
     async def health_check(self) -> Dict[str, Any]:
         try:
-            # More robust health check using a common ticker
+            # More robust health check using a common ticker + latency (LOT F)
+            start = datetime.now()
             await self.exchange.fetch_ticker('BTC/USDT')
-            return {"provider": self.source_name, "status": "ONLINE"}
+            latency = (datetime.now() - start).total_seconds() * 1000
+            return {"provider": self.source_name, "status": "ONLINE",
+                    "latency_ms": int(latency)}
         except Exception as e:
             return {"provider": self.source_name, "status": "ERROR", "message": str(e)}
 

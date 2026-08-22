@@ -23,8 +23,8 @@ def test_correlation_risk():
     assert res["allowed"] == True
 
 @pytest.mark.asyncio
-async def test_trailing_stop_logic():
-    db = DatabaseManager("data/test_lot9.db")
+async def test_trailing_stop_logic(tmp_path):
+    db = DatabaseManager(str(tmp_path / "test_lot9.db"))
     with db._get_connection() as conn:
         conn.execute("DELETE FROM trades")  # hermetic test run
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('trailing_stop_active', 'true')")
@@ -58,8 +58,8 @@ async def test_trailing_stop_logic():
     assert updated["sl"] == 105.0
 
 @pytest.mark.asyncio
-async def test_partial_tp_and_breakeven():
-    db = DatabaseManager("data/test_lot9_partial.db")
+async def test_partial_tp_and_breakeven(tmp_path):
+    db = DatabaseManager(str(tmp_path / "test_lot9_partial.db"))
     with db._get_connection() as conn:
         conn.execute("DELETE FROM trades")  # hermetic test run
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('partial_tp_ratio', '1.0')")
