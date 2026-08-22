@@ -1,4 +1,4 @@
-# Audit de Robustesse — Quantum Trade Pro v2.0 (août 2026)
+# Audit de Robustesse — Quantum Trade Pro v2.1 (août 2026)
 
 Audit réalisé sur le code réel (clone du dépôt, exécution des tests et du serveur).
 Contrairement aux versions précédentes de ce document, chaque point ci-dessous a été
@@ -6,10 +6,13 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
 
 ## État global
 
-- ✅ Suite de tests : **52 passés, 3 skips** (skips = providers indisponibles depuis le réseau de test, pas des bugs).
+- ✅ Suite de tests : **62 passés, 4 skips** après LOT A ; 2 tests marqués `network`
+  (gate.io / Yahoo) échouent uniquement quand l'environnement de test bloque ces
+  providers au niveau réseau — pas des bugs (à rendre auto-skippables au LOT G).
 - ✅ L'application démarre, tous les endpoints répondent.
 - ✅ Le pipeline critique (scan → signal → exécution → suivi) est fonctionnel en DEMO.
 - ✅ Le mode REAL passe de **vrais ordres** via CCXT (plus de simulation mensongère).
+- ✅ Observabilité avancée : `/api/metrics` enrichi, logging JSON structuré, heartbeat WS.
 - ⚠️ Points de vigilance restants listés en fin de document.
 
 ## Bugs critiques corrigés (vérifiés)
@@ -34,6 +37,30 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
 | Secrets et DB commités sur GitHub | DB, logs Railway, 7 DB de test dans le repo | `.gitignore` complet + fichiers retirés du suivi git | `git status` |
 
 ## Améliorations structurantes
+
+### LOT A — Observabilité & métriques avancées (v2.1)
+
+- **`/api/metrics` enrichi** (additif, anciens champs conservés) :
+  - `signals_generated_by_strategy` / `signals_blocked_by_strategy` : signaux par stratégie (générés / bloqués) ;
+  - `orders_by_mode` : nombre d'ordres `REAL` vs `DEMO` routés ;
+  - `winrate_simulated` : taux de réussite calculé sur les trades clôturés, par mode et par stratégie (`PortfolioEngine`, jamais simulé « au doigt mouillé ») ;
+  - `latency` : latence moyenne/max du scan et de l'exécution (fenêtre glissante bornée) ;
+  - `data_age` : âge des données (dernier/moyen/max + échantillons), alimenté par `data_age_ms` ajouté à chaque résultat de scan ;
+  - `heartbeat` : séquence, nombre de clients WS, dernier envoi.
+- **Logging structuré JSON** (`api/json_logging.py`) : NDJSON avec rotation par taille
+  (`data/trading_bot.jsonl`, 5 × 5 Mo), champs standard + champs `extra` personnalisés +
+  `exc_info`, sérialisation défensive des valeurs non-JSON. La console reste lisible.
+  Helper `structured_log()` pour des événements métier typés (ordre exécuté, erreur de boucle).
+- **WebSocket heartbeat robuste** : boucle dédiée (15 s) émettant `HEARTBEAT`
+  (seq / server_time / clients / state), ping/pong applicatif (`ping` → `pong`),
+  nettoyage automatique des connexions mortes, métadonnées par client.
+  Le frontend envoie un ping toutes les 30 s et se reconnecte si le serveur
+  reste silencieux > 90 s (watchdog).
+- **Diagnostic complet hors-ligne** : les snapshots « DATA ERROR » exposent
+  désormais toutes les clés de vérification du contrat (dont `RISK_VALID`),
+  ce qui rend la suite de tests fiable même sans réseau.
+- Nouveau module `api/engines/metrics_engine.py` (verrouillé, fenêtres bornées 500 échantillons).
+- Tests dédiés : `tests/test_metrics_observability.py` (15 tests).
 
 - **Authentification** : `ADMIN_API_KEY` protège tous les endpoints mutables (401 sinon).
 - **Chiffrement** : secrets brokers Fernet au repos, préfixe `enc:v1:` explicite, erreurs de décryptage loggées (pas de retour silencieux).

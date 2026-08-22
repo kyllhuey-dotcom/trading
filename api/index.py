@@ -17,8 +17,9 @@ import json
 import logging
 import time
 from datetime import datetime
-from logging.handlers import RotatingFileHandler
 
+from api.json_logging import setup_json_file_handler, structured_log
+from api.engines.metrics_engine import MetricsEngine
 from api.engines.db_manager import DatabaseManager
 from api.engines.data_engine import DataEngine
 from api.engines.analysis_engine import AnalysisEngine
@@ -39,13 +40,24 @@ from api.engines.backtest_engine import BacktestEngine
 # --------------------------------------------------------------------------- #
 # 1. Logging                                                                   #
 # --------------------------------------------------------------------------- #
+# Console stays human-readable; the rotating FILE handler is structured NDJSON
+# so logs can be ingested by any JSON-capable tool (LOT A — observability).
 os.makedirs("data", exist_ok=True)
-log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-file_handler = RotatingFileHandler("data/trading_bot.log", maxBytes=5 * 1024 * 1024, backupCount=5)
-file_handler.setFormatter(log_formatter)
+console_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 console_handler = logging.StreamHandler()
-console_handler.setFormatter(log_formatter)
-logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
+console_handler.setFormatter(console_formatter)
+
+json_file_handler = setup_json_file_handler(
+    path=os.getenv("LOG_FILE", "data/trading_bot.jsonl"),
+    max_bytes=int(os.getenv("LOG_MAX_BYTES", 5 * 1024 * 1024)),
+    backup_count=int(os.getenv("LOG_BACKUP_COUNT", 5)),
+)
+
+root_logger = logging.getLogger()
+root_logger.handlers.clear()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(console_handler)
+root_logger.addHandler(json_file_handler)
 logger = logging.getLogger("QuantumTradePro")
 
 # --------------------------------------------------------------------------- #
@@ -54,6 +66,8 @@ logger = logging.getLogger("QuantumTradePro")
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
 TESTING = os.getenv("TESTING", "false").lower() == "true"
 PORT = int(os.getenv("PORT", 8000))
+# WebSocket heartbeat cadence (accelerated in tests so coverage stays fast)
+HEARTBEAT_INTERVAL_S = float(os.getenv("HEARTBEAT_INTERVAL_S", "2.0" if TESTING else "15.0"))
 
 # --------------------------------------------------------------------------- #
 # 3. System core                                                               #
@@ -97,6 +111,10 @@ metrics_state: Dict[str, Any] = {
     "start_time": _started_at.isoformat(),
 }
 
+# Advanced observability (LOT A): latency, data age, per-strategy outcome,
+# REAL vs DEMO orders. Additive — the legacy counters above are untouched.
+metrics_engine = MetricsEngine()
+
 # --------------------------------------------------------------------------- #
 # 4. Live settings (reloaded from DB with TTL)                                 #
 # --------------------------------------------------------------------------- #
@@ -136,16 +154,53 @@ settings_provider = SettingsProvider(db_manager)
 # 5. WebSocket connection manager                                              #
 # --------------------------------------------------------------------------- #
 class ConnectionManager:
+    """WebSocket hub: per-client metadata, dead-client pruning, heartbeat (LOT A)."""
+
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        self.connection_meta: Dict[WebSocket, Dict[str, Any]] = {}
+        self.heartbeat_seq = 0
+        self.last_heartbeat_at: Optional[str] = None
+        self._meta_counter = 0
 
     async def connect(self, ws: WebSocket):
         await ws.accept()
         self.active_connections.append(ws)
+        self._meta_counter += 1
+        self.connection_meta[ws] = {
+            "client_id": f"ws-{self._meta_counter:04d}",
+            "connected_at": datetime.now().isoformat(),
+            "messages_received": 0,
+        }
 
     def disconnect(self, ws: WebSocket):
         if ws in self.active_connections:
             self.active_connections.remove(ws)
+        self.connection_meta.pop(ws, None)
+
+    def note_activity(self, ws: WebSocket):
+        meta = self.connection_meta.get(ws)
+        if meta:
+            meta["messages_received"] += 1
+
+    @property
+    def client_count(self) -> int:
+        return len(self.active_connections)
+
+    def heartbeat_status(self) -> Dict[str, Any]:
+        return {
+            "seq": self.heartbeat_seq,
+            "clients": self.client_count,
+            "last_sent_at": self.last_heartbeat_at,
+        }
+
+    async def send_personal(self, ws: WebSocket, message: str) -> bool:
+        try:
+            await ws.send_text(message)
+            return True
+        except Exception:
+            self.disconnect(ws)
+            return False
 
     async def broadcast(self, message: str):
         dead = []
@@ -156,6 +211,21 @@ class ConnectionManager:
                 dead.append(connection)
         for ws in dead:
             self.disconnect(ws)
+
+    async def broadcast_heartbeat(self) -> Dict[str, Any]:
+        """Explicit server heartbeat: proves liveness even with zero market traffic."""
+        self.heartbeat_seq += 1
+        self.last_heartbeat_at = datetime.now().isoformat()
+        payload = {
+            "type": "HEARTBEAT",
+            "seq": self.heartbeat_seq,
+            "server_time": self.last_heartbeat_at,
+            "timestamp_ms": int(time.time() * 1000),
+            "clients": self.client_count,
+            "state": state_machine.current_state.value,
+        }
+        await self.broadcast(json.dumps(payload))
+        return payload
 
 
 manager = ConnectionManager()
@@ -227,6 +297,7 @@ async def tick_scanner():
     results = await scanner_engine.scan_all()
     async with state_lock:
         metrics_state["total_scans"] += 1
+        metrics_engine.record_scan(scanner_engine.last_scan_duration, results)
         bot_state["latest_scan"] = results
         bot_state["engine_stats"].update({
             "markets": len(results),
@@ -275,22 +346,30 @@ async def tick_scanner():
         risk_data = risk_engine.calculate_position_size(
             balance, sig["entry"], sig["sl"], sig["direction"],
             symbol=res["symbol"], active_positions=active)
+        strat = sig.get("strategy", "structure")
         if not risk_data.get("allowed"):
             db_manager.archive_signal(sig, "BLOCKED", risk_data.get("reason") or "risk")
+            metrics_engine.record_signal_blocked(strat)
             continue
 
+        exec_start = time.time()
         exec_res = await execution_router.execute(mode, sig, risk_data, ticker)
+        exec_latency_ms = (time.time() - exec_start) * 1000.0
         if exec_res.get("success"):
             metrics_state["total_trades"] += 1
-            strat = sig.get("strategy", "structure")
             metrics_state["signals_by_strategy"][strat] = metrics_state["signals_by_strategy"].get(strat, 0) + 1
+            metrics_engine.record_execution(strat, mode, success=True, latency_ms=exec_latency_ms)
             db_manager.archive_signal(sig, "EXECUTED", "")
+            structured_log(logger, logging.INFO, "ORDER_EXECUTED",
+                           event="order_executed", symbol=res["symbol"], mode=mode,
+                           strategy=strat, latency_ms=round(exec_latency_ms, 2))
             asyncio.create_task(notification_engine.notify("ORDER_OPEN", {
                 "symbol": res["symbol"],
                 "entry_price": sig["entry"],
                 "quantity": risk_data["quantity"],
             }))
         else:
+            metrics_engine.record_execution(strat, mode, success=False, latency_ms=exec_latency_ms)
             db_manager.archive_signal(sig, "BLOCKED", exec_res.get("reason") or "execution")
             logger.warning(f"Execution blocked for {res['symbol']}: {exec_res.get('reason')}")
 
@@ -358,8 +437,15 @@ async def loop_wrapper(func, interval: float, name: str):
             await func()
         except Exception as e:
             metrics_state["total_errors"] += 1
-            logger.error(f"Loop Error ({name}): {e}")
+            metrics_engine.record_error()
+            structured_log(logger, logging.ERROR, "LOOP_ERROR",
+                           event="loop_error", loop=name, error=str(e))
         await asyncio.sleep(interval)
+
+
+async def tick_heartbeat():
+    """15s — explicit WebSocket heartbeat + dead-client pruning (LOT A)."""
+    await manager.broadcast_heartbeat()
 
 
 async def emergency_stop_logic(reason: str = "Manual trigger"):
@@ -392,8 +478,31 @@ def _empty_snapshot(market_id: str, status_display: str) -> Dict[str, Any]:
                  "blocking_event": None, "next_events": [], "status": status_display},
         "analysis": None,
         "signal": {"status": "NO_TRADE", "reason": status_display, "score": 0, "market_id": market_id},
-        "diagnosis": {"main_blocker": "DATA_VALID", "main_reason": status_display,
-                      "checks": {"DATA_VALID": "FAIL"}, "secondary_blockers": []},
+        "diagnosis": {
+            "main_blocker": "DATA_VALID",
+            "main_reason": status_display,
+            # Full check contract even when no data is available (offline-safe):
+            # non-evaluable checks are reported as FAIL, evaluation-dependent
+            # checks are reported as VALIDATED_AT_EXECUTION.
+            "checks": {
+                "DATA_VALID": "FAIL",
+                "DAY_ALLOWED": "FAIL",
+                "SESSION_ALLOWED": "FAIL",
+                "NEWS_CLEAR": "FAIL",
+                "MARKET_OPEN": "FAIL",
+                "NOT_RANGE": "FAIL",
+                "TREND_VALID": "FAIL",
+                "STRUCTURE_VALID": "FAIL",
+                "SIGNAL_VALID": "FAIL",
+                "SPREAD_VALID": "FAIL",
+                "LIQUIDITY_VALID": "FAIL",
+                "RISK_VALID": "Validated at execution time",
+                "LEVERAGE_VALID": "Validated at execution time",
+                "BROKER_VALID": "Validated at execution time",
+                "SYSTEM_ARMED": "Validated at execution time",
+            },
+            "secondary_blockers": [],
+        },
     }
 
 
@@ -668,7 +777,10 @@ async def manual_order(body: Dict[str, Any] = Body(...)):
         "leverage": min(notional / bot_state["balance"], risk_engine.max_leverage) if bot_state["balance"] > 0 else 1.0,
         "estimated_fees": notional * 0.001,
     }
+    exec_start = time.time()
     res = await execution_router.execute(bot_state["mode"], signal, risk_data, ticker)
+    metrics_engine.record_execution("manual", bot_state["mode"], bool(res.get("success")),
+                                    latency_ms=(time.time() - exec_start) * 1000.0)
     if res.get("success"):
         metrics_state["total_trades"] += 1
         db_manager.log_audit("INFO", "MANUAL_ORDER", f"Manual {direction} {market_id} qty={quantity}")
@@ -796,12 +908,32 @@ async def get_performance(mode: str = "DEMO"):
 
 @app.get("/api/metrics")
 async def get_metrics():
+    core = metrics_engine.snapshot()
+    # Simulated winrate = win rate computed on CLOSED (paper/real) trades,
+    # per strategy and per mode. Guarded: metrics must never 500 the endpoint.
+    winrate_simulated: Dict[str, Any] = {}
+    for mode in ("DEMO", "REAL"):
+        try:
+            winrate_simulated[mode] = portfolio_engine.get_performance_report(mode)
+        except Exception as e:
+            structured_log(logger, logging.WARNING, "METRICS_WINRATE_FAILED",
+                           event="metrics_winrate_failed", mode=mode, error=str(e))
+            winrate_simulated[mode] = None
     return {
         **metrics_state,
         "uptime_s": int((datetime.now() - _started_at).total_seconds()),
         "scanner_duration_s": scanner_engine.last_scan_duration,
         "state": state_machine.current_state.value,
         "recent_orders": execution_router.order_history[-20:],
+        # ---- LOT A: advanced observability (additive fields) ----
+        "signals_generated_by_strategy": core["signals_generated_by_strategy"],
+        "signals_blocked_by_strategy": core["signals_blocked_by_strategy"],
+        "orders_by_mode": core["orders_by_mode"],
+        "winrate_simulated": winrate_simulated,
+        "latency": core["latency"],
+        "data_age": core["data_age"],
+        "heartbeat": manager.heartbeat_status(),
+        "total_errors": core["total_errors"],
     }
 
 
@@ -855,8 +987,24 @@ async def websocket_endpoint(ws: WebSocket):
     await manager.connect(ws)
     try:
         while True:
-            await ws.receive_text()
+            message = await ws.receive_text()
+            manager.note_activity(ws)
+            # Application-level ping/pong (LOT A): browsers/proxies can rely on
+            # it even when protocol-level pings are not forwarded.
+            try:
+                data = json.loads(message) if message else {}
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(data, dict) and data.get("type") == "ping":
+                await manager.send_personal(ws, json.dumps({
+                    "type": "pong",
+                    "seq": data.get("seq"),
+                    "timestamp_ms": int(time.time() * 1000),
+                    "server_time": datetime.now().isoformat(),
+                }))
     except WebSocketDisconnect:
+        manager.disconnect(ws)
+    except Exception:
         manager.disconnect(ws)
 
 
@@ -889,6 +1037,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(loop_wrapper(tick_scanner, 5.0, "tick_scanner")),
         asyncio.create_task(loop_wrapper(tick_management, 1.0, "tick_management")),
         asyncio.create_task(loop_wrapper(tick_broadcaster, 1.0, "tick_broadcaster")),
+        asyncio.create_task(loop_wrapper(tick_heartbeat, HEARTBEAT_INTERVAL_S, "tick_heartbeat")),
     ]
     yield
     logger.info("QUANTUM TRADE PRO SHUTTING DOWN...")

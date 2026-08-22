@@ -997,9 +997,14 @@
         function connectWS() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            let lastHeartbeat = Date.now();
             ws.onmessage = (event) => {
                 let data;
                 try { data = JSON.parse(event.data); } catch (e) { return; }
+                if (data.type === 'HEARTBEAT') {
+                    lastHeartbeat = Date.now();
+                    return;
+                }
                 if (data.type === 'ACCOUNT_STREAM') {
                     updateStatus(data);
                     updateAccountUI(data);
@@ -1011,7 +1016,26 @@
                     if (activeTab === 'dashboard') update();
                 }
             };
-            ws.onclose = () => setTimeout(connectWS, 3000);
+            // Application-level ping every 30s + watchdog: reconnect if the
+            // server stops heartbeating (LOT A — robust WS heartbeat).
+            ws.onopen = () => {
+                lastHeartbeat = Date.now();
+                ws.pingTimer = setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'ping', seq: Date.now() }));
+                    }
+                }, 30000);
+                ws.watchdog = setInterval(() => {
+                    if (Date.now() - lastHeartbeat > 90000 && ws.readyState === WebSocket.OPEN) {
+                        ws.close(); // onclose triggers the reconnect
+                    }
+                }, 15000);
+            };
+            ws.onclose = () => {
+                clearInterval(ws.pingTimer);
+                clearInterval(ws.watchdog);
+                setTimeout(connectWS, 3000);
+            };
         }
 
         /* ------------------------------------------------------------------ *

@@ -175,6 +175,10 @@ class ScannerEngine:
                 diagnosis = self._build_diagnosis(symbol, info, ticker, df_ltf, ltf_analysis,
                                                   news_status, signal)
 
+                data_age_ms = None
+                if isinstance(ticker.get("timestamp"), (int, float)):
+                    data_age_ms = max(0, int(datetime.now().timestamp() * 1000) - int(ticker["timestamp"]))
+
                 return {
                     "symbol": symbol,
                     "asset_class": info.get("asset_class"),
@@ -184,6 +188,7 @@ class ScannerEngine:
                     "spread": float(ticker.get("spread", 0) or 0),
                     "volume": float(ticker.get("volume", 0) or 0),
                     "status": ticker.get("status"),
+                    "data_age_ms": data_age_ms,
                     "trend": ltf_analysis.get("trend"),
                     "structure": ltf_analysis.get("is_hh") and "HH/HL" or
                                  (ltf_analysis.get("is_ll") and "LH/LL" or "Neutral"),
