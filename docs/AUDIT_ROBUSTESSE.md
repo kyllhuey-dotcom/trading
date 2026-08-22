@@ -1,3 +1,18 @@
+# Audit de Robustesse — Quantum Trade Pro v2.3 (août 2026)
+
+## Lots 1–8 (v2.3)
+
+| Lot | Sujet | Tests |
+|---|---|---|
+| 1 | Global Radar | `tests/test_radar.py` |
+| 2 | Market Hub | `tests/test_market_hub.py` |
+| 3 | Trade Terminal | `tests/test_trade_terminal.py` |
+| 4 | Settings hot-reload | `tests/test_settings_hotreload.py` |
+| 5 | i18n | `tests/test_i18n.py` |
+| 6 | UX polish | `tests/test_ui_polish.py` |
+| 7 | Low-latency providers | `tests/test_low_latency.py` |
+| 8 | Institutional ≥80 | `tests/test_institutional.py` |
+
 # Audit de Robustesse — Quantum Trade Pro v2.2 (août 2026)
 
 Audit réalisé sur le code réel (clone du dépôt, exécution des tests et du serveur).

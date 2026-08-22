@@ -2,6 +2,8 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
+> **v2.3** — Desk radar/hub/terminal, i18n, exécution institutionnelle ≥80 jusqu'à 10 slots, throttle per-symbol.
+
 > **v2.2** — LOT P « Rentabilité » : seuil de score appliqué à toutes les stratégies, filtre coûts/volatilité, circuit breaker séries de pertes, scaling anti-martingale, time stop, audit de rentabilité (`scripts/profit_audit.py`). Suite : 204 passés / 6 skips réseau.
 
 ---

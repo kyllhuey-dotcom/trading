@@ -43,7 +43,8 @@ sont indisponibles, auquel cas `status_display = "DATA ERROR"`) :
   "performance": { "total_trades": 0, "win_rate": 0, "profit_factor": 0, "total_pnl": 0 },
   "broker_info": { "connected_brokers": [], "broker_count": 0, "emergency_stop": false },
   "broker_connected": false,
-  "best_setups": []
+  "best_setups": [],
+  "execution_intent": { "code": "IDLE", "message": "Waiting for institutional setup ≥ 80" }
 }
 ```
 
@@ -64,13 +65,22 @@ Objet par classe d'actif (`CRYPTO`, `FOREX`, `INDICES`, `COMMODITIES`, `STOCKS`,
 `FUTURES`, `BONDS`, `ETFS`) ; chaque entrée : `market_id`, `display_symbol`,
 `name`, `price` (= `last`), `bid/ask/spread/volume`, `market_status`, `leverage_max`.
 
-### `GET /api/scanner`
+### `GET /api/scanner?sort=score&order=desc&filter=all`
 ```json
 { "assets": [ { "symbol": "btc_usdt", "asset_class": "CRYPTO", "price": 60000.0,
                 "score": 85, "tradable": true, "trend": "BULLISH", "signal_data": {...},
                 "diagnosis": {...}, "reason": "..." } ],
-  "duration_s": 3.4 }
+  "duration_s": 3.4, "sort": "score", "order": "desc", "filter": "all" }
 ```
+
+### `POST /api/execute-signal` 🔐
+`{ "market_id": "btc_usdt" }` — refuse score < min_signal_score / delayed Yahoo / déjà ouvert.
+
+### `GET /api/orderbook?market_id=`
+`{ market_id, display_symbol, bids, asks, available, data_age_ms, realtime_source }`
+
+### `GET /api/ohlcv?market_id=&timeframe=1m&limit=60`
+`{ candles:[{t,o,h,l,c,v}], bos, choch, last_high, last_low, trend }`
 
 ### `GET /api/diagnose?market_id=btc_usdt`
 ```json
@@ -122,7 +132,7 @@ Réponse : `{ success, balance }`.
 ### `GET /api/settings`
 ```json
 { "max_risk_pct": "1.0", "max_leverage": "20", "max_daily_loss_pct": "3.0",
-  "cool_down_mins": "30", "max_open_positions": "3", "trailing_stop_active": "true",
+  "cool_down_mins": "30", "max_open_positions": "10", "language": "en", "trailing_stop_active": "true",
   "max_spread_pct": "0.5", "min_signal_score": "80", "risk_reward_ratio": "2.0",
   "trailing_stop_distance_atr": "1.5", "emergency_stop_drawdown_pct": "10.0",
   "auto_arm_on_startup": "false", "active_strategies": "structure,arbitrage,tape,liquidity",
@@ -133,6 +143,7 @@ Réponse : `{ success, balance }`.
 ### `POST /api/settings` 🔐
 Corps = dictionnaire `{ clé: valeur }`. Les réglages sont appliqués **à chaud**
 (risque, seuil de score, stratégies actives, scanner).
+Réponse : `{ success: true, applied, errors, message: "Parameters deployed live" }`.
 
 ## 5. Brokers & wallets
 
@@ -166,5 +177,5 @@ Corps = dictionnaire `{ clé: valeur }`. Les réglages sont appliqués **à chau
 
 Messages poussés par le serveur :
 - `{ "type": "ACCOUNT_STREAM", balance, equity, daily_pnl, drawdown, active_trades, is_running, armed, mode, stats, status }` (toutes les 1 s)
-- `{ "type": "MARKET_UPDATE", market_id, display_symbol, price, status, timestamp }` (toutes les 1 s)
+- `{ "type": "MARKET_UPDATE", market_id, display_symbol, price, status, timestamp, data_age_ms }` (toutes les 1 s)
 - `{ "type": "SCAN_COMPLETED", duration_s, stats }` (après chaque scan)
