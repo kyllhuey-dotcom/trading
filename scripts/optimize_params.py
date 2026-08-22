@@ -41,9 +41,17 @@ def load_audit(path: Optional[str]) -> Optional[Dict[str, Any]]:
         return None
 
 
-def main() -> None:
-    balance = float(sys.argv[1]) if len(sys.argv) > 1 else 0.0
-    audit_path = sys.argv[2] if len(sys.argv) > 2 else None
+def main(argv: Optional[list[str]] = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    try:
+        balance = float(args[0]) if args else 0.0
+    except (TypeError, ValueError, OverflowError):
+        print("error: balance must be numeric", file=sys.stderr)
+        return 2
+    if balance < 0 or balance == float("inf") or balance != balance:
+        print("error: balance must be a finite number >= 0", file=sys.stderr)
+        return 2
+    audit_path = args[1] if len(args) > 1 else None
     audit = load_audit(audit_path)
 
     print("=" * 78)
@@ -76,7 +84,8 @@ def main() -> None:
                 print(f"        {r['recommend']}")
 
     print("\n" + "=" * 78)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

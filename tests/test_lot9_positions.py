@@ -1,6 +1,4 @@
 import pytest
-import pandas as pd
-import asyncio
 from api.engines.risk_engine import RiskEngine
 from api.engines.execution_engine import ExecutionEngine
 from api.engines.db_manager import DatabaseManager
@@ -15,12 +13,12 @@ def test_correlation_risk():
     
     # Check BTC again - should be blocked
     res = risk.check_correlation("BTC_USDT", active)
-    assert res["allowed"] == False
+    assert not res["allowed"]
     assert "Correlation" in res["reason"]
     
     # Check SOL - should be allowed (total 2 < 5)
     res = risk.check_correlation("SOL_USDT", active)
-    assert res["allowed"] == True
+    assert res["allowed"]
 
 @pytest.mark.asyncio
 async def test_trailing_stop_logic(tmp_path):
@@ -93,6 +91,6 @@ async def test_partial_tp_and_breakeven(tmp_path):
     # SL should be at least at entry (Break-even or Trailing)
     assert updated["sl"] >= 100.0
     # Metadata should show partial TP hit
-    assert updated["metadata"]["partial_tp_hit"] == True
+    assert updated["metadata"]["partial_tp_hit"]
     # Balance should have increased by (110-100)*1.0 = 10€
     assert portfolio.get_balance("DEMO") > 1000.0

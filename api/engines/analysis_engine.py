@@ -1,6 +1,5 @@
-import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any
 
 class AnalysisEngine:
     def __init__(self, window: int = 5):

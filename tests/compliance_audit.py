@@ -1,13 +1,13 @@
 import asyncio
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 
 # Add the current directory to sys.path
 sys.path.append(os.getcwd())
 
-from api.engines.news_engine import NewsEngine, SessionFilter
+from api.engines.news_engine import SessionFilter
 from api.engines.market_universe import MarketUniverse
 from api.engines.risk_engine import RiskEngine
 
@@ -32,7 +32,8 @@ def test_rule_19_compliance():
         expected = day_code in [1, 2, 3]
         status = "PASS" if is_allowed == expected else "FAIL"
         print(f"  - {day_name}: {'Allowed' if is_allowed else 'Blocked'} -> {status}")
-        if status == "FAIL": return False
+        if status == "FAIL":
+            return False
     return True
 
 def test_market_hours():
@@ -40,9 +41,9 @@ def test_market_hours():
     mu = MarketUniverse()
     
     # Forex on Weekend (Europe/London)
-    london_tz = pytz.timezone("Europe/London")
+    pytz.timezone("Europe/London")
     # A Saturday
-    saturday = datetime(2026, 8, 22, 12, 0, 0) 
+    datetime(2026, 8, 22, 12, 0, 0)
     
     # This requires mocking datetime.now() or passing it to the function
     # Let's check our implementation of get_market_status

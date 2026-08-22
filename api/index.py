@@ -15,6 +15,7 @@ import os
 import asyncio
 import json
 import logging
+import math
 import time
 from datetime import datetime
 
@@ -491,15 +492,22 @@ async def tick_management():
 
     quotes = await data_engine.layer.get_all_quotes(symbols, data_engine.universe)
     tickers = {q.symbol: q.model_dump() for q in quotes}
-    # also index by market_id
+    # Also index by market_id/display symbol, but only when the quote actually
+    # belongs to that market. The previous nested loop assigned the last quote
+    # to every position in a multi-symbol portfolio.
     for mid in symbols:
         info = data_engine.universe.get_info(mid) or {}
-        ds = info.get("display_symbol")
-        for q in quotes:
-            dumped = q.model_dump()
+        display_symbol = info.get("display_symbol")
+        provider_symbols = set((info.get("providers") or {}).values())
+        expected_symbols = {mid, display_symbol, *provider_symbols}
+        for quote in quotes:
+            if quote.symbol not in expected_symbols:
+                continue
+            dumped = quote.model_dump()
             tickers[mid] = dumped
-            if ds:
-                tickers[ds] = dumped
+            if display_symbol:
+                tickers[display_symbol] = dumped
+            break
 
     if mode == "DEMO":
         await demo_execution.process_pending_orders(mode, tickers)
@@ -749,7 +757,7 @@ async def get_scanner(sort: str = "score", order: str = "desc", filter: str = "a
 @app.get("/api/markets")
 async def get_markets(sort: str = "score", order: str = "desc"):
     overview = await data_engine.get_market_overview()
-    for cat, items in overview.items():
+    for items in overview.values():
         for item in items:
             item["price"] = item.get("last")
     return enrich_overview(overview, bot_state.get("latest_scan") or [], sort=sort, order=order)
@@ -848,15 +856,21 @@ async def manual_order(body: Dict[str, Any] = Body(...)):
     if not ticker:
         return {"success": False, "reason": "No market data available"}
 
-    entry = float(ticker.get("last") or 0)
-    if entry <= 0:
+    try:
+        entry = float(ticker.get("last") or 0)
+    except (TypeError, ValueError, OverflowError):
+        entry = 0.0
+    if not math.isfinite(entry) or entry <= 0:
         return {"success": False, "reason": "Invalid price"}
 
     # SL / TP defaults: 1.5 ATR stop, 2R target
     atr = 0.0
-    sl = body.get("sl")
-    tp = body.get("tp")
-    if not sl or not tp:
+    try:
+        sl = float(body["sl"]) if body.get("sl") not in (None, "") else None
+        tp = float(body["tp"]) if body.get("tp") not in (None, "") else None
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(400, "sl and tp must be numeric") from None
+    if sl is None or tp is None:
         try:
             df = await data_engine.fetch_ohlcv(market_id, timeframe='1m', limit=50)
             if not df.empty:
@@ -864,20 +878,32 @@ async def manual_order(body: Dict[str, Any] = Body(...)):
                 atr = float(tr.tail(14).mean()) if len(tr) >= 14 else 0.0
         except Exception:
             pass
-    if not sl:
+    if sl is None:
         if atr > 0:
             sl = entry - (atr * 1.5) if direction == "BUY" else entry + (atr * 1.5)
         else:
             sl = entry * (0.98 if direction == "BUY" else 1.02)
-    if not tp:
+    if tp is None:
         dist = abs(entry - sl) or (entry * 0.01)
         tp = entry + (dist * 2.0) if direction == "BUY" else entry - (dist * 2.0)
-    sl, tp = float(sl), float(tp)
 
     order_type = normalize_order_type(body.get("order_type"))
-    limit_price = body.get("limit_price")
-    stop_price = body.get("stop_price")
-    quantity = float(body.get("quantity", 0) or 0)
+    try:
+        limit_price = (float(body["limit_price"])
+                       if body.get("limit_price") not in (None, "") else None)
+        stop_price = (float(body["stop_price"])
+                      if body.get("stop_price") not in (None, "") else None)
+        quantity = float(body.get("quantity", 0) or 0)
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(400, "quantity and trigger prices must be numeric") from None
+    if not all(math.isfinite(value) for value in (
+        quantity, sl, tp, *(value for value in (limit_price, stop_price) if value is not None)
+    )):
+        raise HTTPException(400, "order values must be finite")
+    if order_type == "LIMIT" and limit_price is None:
+        raise HTTPException(400, "limit_price is required for a LIMIT order")
+    if order_type == "STOP" and stop_price is None:
+        raise HTTPException(400, "stop_price is required for a STOP order")
     if body.get("risk_based") and quantity <= 0:
         sl_for_size = float(sl)
         quantity = risk_based_quantity(bot_state["balance"], risk_engine.max_risk_pct, entry, sl_for_size)
@@ -969,9 +995,12 @@ async def demo_reset():
 
 @app.post("/api/demo/balance", dependencies=[Depends(require_admin)])
 async def demo_balance(body: Dict[str, Any] = Body(...)):
-    amount = float(body.get("balance", 0))
-    if amount < 0:
-        raise HTTPException(400, "balance must be >= 0")
+    try:
+        amount = float(body.get("balance", 0))
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(400, "balance must be a finite number >= 0") from None
+    if not math.isfinite(amount) or amount < 0:
+        raise HTTPException(400, "balance must be a finite number >= 0")
     portfolio_engine.set_balance("DEMO", amount)
     risk_engine.update_peak(amount)
     db_manager.log_audit("INFO", "DEMO_BALANCE", f"Demo balance provisioned to {amount}")
@@ -1120,11 +1149,20 @@ async def get_health():
 
 @app.post("/api/backtest", dependencies=[Depends(require_admin)])
 async def run_backtest(body: Dict[str, Any] = Body(...)):
-    market_id = body.get("market_id", "btc_usdt")
-    timeframe = body.get("timeframe", "1h")
-    limit = int(body.get("limit", 300))
-    strategy = body.get("strategy", "structure")
-    initial_balance = float(body.get("initial_balance", 10000.0))
+    market_id = str(body.get("market_id", "btc_usdt"))
+    timeframe = str(body.get("timeframe", "1h"))
+    strategy = str(body.get("strategy", "structure")).lower()
+    try:
+        limit = int(body.get("limit", 300))
+        initial_balance = float(body.get("initial_balance", 10000.0))
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(400, "limit and initial_balance must be numeric") from None
+    if limit < 50 or limit > 5000:
+        raise HTTPException(400, "limit must be between 50 and 5000")
+    if not math.isfinite(initial_balance) or initial_balance <= 0:
+        raise HTTPException(400, "initial_balance must be a positive finite number")
+    if strategy not in {"structure", "arbitrage", "tape", "liquidity"}:
+        raise HTTPException(400, "Unknown backtest strategy")
 
     df = await data_engine.fetch_ohlcv(market_id, timeframe, limit)
     if df.empty:
@@ -1306,18 +1344,21 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(loop_wrapper(tick_broadcaster, 1.0, "tick_broadcaster")),
         asyncio.create_task(loop_wrapper(tick_heartbeat, HEARTBEAT_INTERVAL_S, "tick_heartbeat")),
     ]
-    yield
-    logger.info("QUANTUM TRADE PRO SHUTTING DOWN...")
-    for t in tasks:
-        t.cancel()
     try:
-        await broker_connector.shutdown()
-    except Exception:
-        pass
-    try:
-        await data_engine.shutdown()
-    except Exception:
-        pass
+        yield
+    finally:
+        logger.info("QUANTUM TRADE PRO SHUTTING DOWN...")
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        try:
+            await broker_connector.shutdown()
+        except Exception as exc:
+            logger.warning("Broker shutdown failed: %s", exc)
+        try:
+            await data_engine.shutdown()
+        except Exception as exc:
+            logger.warning("Market-data shutdown failed: %s", exc)
 
 
 app.router.lifespan_context = lifespan

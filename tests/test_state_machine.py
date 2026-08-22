@@ -1,4 +1,3 @@
-import pytest
 from api.engines.state_machine import StateMachine, BotState
 
 def test_state_machine_transitions():

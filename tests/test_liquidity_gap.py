@@ -1,4 +1,3 @@
-import pytest
 import pandas as pd
 from api.engines.strategies.liquidity_gap import LiquidityGapStrategy
 

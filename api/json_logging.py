@@ -17,7 +17,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 # LogRecord attributes that are already handled explicitly — never re-emitted
 # from `extra` to avoid clobbering the payload.

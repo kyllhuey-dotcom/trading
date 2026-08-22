@@ -6,15 +6,13 @@ Covers:
 - rate-limit middleware behavior (healthz exempt, 429 JSON body);
 - REAL-mode warning: /api/status real_warning field + /api/mode warning.
 """
-import asyncio
 import os
 
 os.environ["TESTING"] = "true"
 
-import pytest
 from fastapi.testclient import TestClient
 
-from api.index import app, rate_limit_middleware, rate_limiter
+from api.index import app, rate_limit_middleware
 from api.rate_limit import SlidingWindowRateLimiter
 
 client = TestClient(app)

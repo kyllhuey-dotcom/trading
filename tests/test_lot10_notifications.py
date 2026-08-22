@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 from api.engines.notification_engine import NotificationEngine
 
 @pytest.mark.asyncio

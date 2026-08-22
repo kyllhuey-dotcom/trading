@@ -8,14 +8,12 @@ Covers:
 - GET /api/metrics enriched payload (backwards-compatible)
 - Empty-snapshot diagnosis keeps the full check contract (offline-safe)
 """
-import asyncio
 import json
 import logging
 import os
 
 os.environ["TESTING"] = "true"
 
-import pytest
 from fastapi.testclient import TestClient
 
 from api.engines.metrics_engine import MetricsEngine

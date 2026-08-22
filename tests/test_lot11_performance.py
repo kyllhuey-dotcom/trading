@@ -1,4 +1,3 @@
-import pytest
 from api.engines.portfolio_engine import PortfolioEngine
 from api.engines.db_manager import DatabaseManager
 

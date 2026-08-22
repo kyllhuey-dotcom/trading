@@ -1,4 +1,3 @@
-import pytest
 import pandas as pd
 from api.engines.strategies.micro_arbitrage import MicroArbitrageStrategy
 

@@ -1,6 +1,4 @@
-import pytest
 import pandas as pd
-import numpy as np
 from api.engines.analysis_engine import AnalysisEngine
 from api.engines.risk_engine import RiskEngine
 from api.engines.signal_engine import SignalEngine
@@ -10,7 +8,7 @@ def test_risk_position_sizing():
     risk = RiskEngine(max_risk_pct=1.0, max_leverage=20)
     # Case: 1000€ balance, entry 100, SL 95. Risk 1% (10€). Distance 5. Qty 2. Notional 200. Leverage 0.2.
     res = risk.calculate_position_size(balance=1000.0, entry=100.0, stop_loss=95.0)
-    assert res["allowed"] == True
+    assert res["allowed"]
     assert res["quantity"] == 2.0
     assert res["leverage"] == 0.2
 

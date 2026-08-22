@@ -5,10 +5,7 @@ from .data_providers.gate_provider import GateProvider
 from .data_providers.binance_provider import BinanceProvider
 from .data_providers.yahoo_provider import YahooProvider
 from .data_health import DataHealthMonitor
-from typing import Dict, Any, List, Optional
-import asyncio
-import pandas as pd
-import json
+from typing import Dict, Any, List
 from datetime import datetime
 
 class DataEngine:
@@ -85,7 +82,8 @@ class DataEngine:
     async def broadcast_market_update(self, market_id: str):
         """Rule 20, 22: Broadcast a specific market update to the bus."""
         info = self.universe.get_info(market_id)
-        if not info: return
+        if not info:
+            return
         
         # Simple polling-to-broadcast for demonstration (WS native Lot 12)
         ticker = await self.fetch_ticker(market_id)

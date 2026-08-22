@@ -80,8 +80,8 @@ class DataLayer:
             if hasattr(sub, "broadcast"):
                 try:
                     await sub.broadcast(json.dumps(update_data))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Market-data subscriber broadcast failed: %s", exc)
 
     async def _fetch_quote_with_timeout(self, provider: MarketDataProvider,
                                         psymbol: str) -> Optional[TickerModel]:
@@ -136,10 +136,12 @@ class DataLayer:
         """
         Fetches OHLCV with fallback logic.
         """
-        if not catalog: return pd.DataFrame()
+        if not catalog:
+            return pd.DataFrame()
         
         info = catalog.get_info(symbol_id)
-        if not info: return pd.DataFrame()
+        if not info:
+            return pd.DataFrame()
 
         self._prune_failure_cache()
         for pid, psymbol in prioritize_providers(info.get("providers", {}).items()):
@@ -164,7 +166,8 @@ class DataLayer:
 
     async def get_order_book(self, market_id: str, catalog: Any) -> Optional[Dict[str, Any]]:
         info = catalog.get_info(market_id)
-        if not info: return None
+        if not info:
+            return None
         for pid, psymbol in prioritize_providers(info.get("providers", {}).items()):
             cache_key = f"ob:{pid}:{psymbol}"
             if self._in_cooldown(cache_key):
@@ -177,15 +180,17 @@ class DataLayer:
                     if ob:
                         self._record_success(cache_key)
                         return ob
-                except Exception as e:
-                    logger.debug(f"Order book failed ({pid}:{psymbol}): {e}")
+                    self._record_failure(cache_key)
+                except Exception as exc:
+                    logger.debug("Order book failed (%s:%s): %s", pid, psymbol, exc)
                     self._record_failure(cache_key)
                     continue
         return None
 
     async def get_trades(self, market_id: str, catalog: Any) -> Optional[List[Dict[str, Any]]]:
         info = catalog.get_info(market_id)
-        if not info: return None
+        if not info:
+            return None
         for pid, psymbol in prioritize_providers(info.get("providers", {}).items()):
             cache_key = f"tr:{pid}:{psymbol}"
             if self._in_cooldown(cache_key):
@@ -198,8 +203,9 @@ class DataLayer:
                     if t:
                         self._record_success(cache_key)
                         return t
-                except Exception as e:
-                    logger.debug(f"Recent trades failed ({pid}:{psymbol}): {e}")
+                    self._record_failure(cache_key)
+                except Exception as exc:
+                    logger.debug("Recent trades failed (%s:%s): %s", pid, psymbol, exc)
                     self._record_failure(cache_key)
                     continue
         return None
@@ -258,5 +264,21 @@ class DataLayer:
         return [r for r in results if r is not None]
 
     async def get_health(self) -> List[Dict[str, Any]]:
-        tasks = [p.health_check() for p in self.providers.values()]
-        return await asyncio.gather(*tasks)
+        async def check(provider_id: str, provider: MarketDataProvider) -> Dict[str, Any]:
+            try:
+                result = await asyncio.wait_for(
+                    provider.health_check(), timeout=self.provider_timeout_s,
+                )
+                if isinstance(result, dict):
+                    return result
+                return {"provider": provider_id, "status": "ERROR",
+                        "error": "invalid health response"}
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                return {"provider": provider_id, "status": "OFFLINE", "error": str(exc)}
+
+        return await asyncio.gather(*(
+            check(provider_id, provider)
+            for provider_id, provider in self.providers.items()
+        ))

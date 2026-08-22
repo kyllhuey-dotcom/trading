@@ -6,7 +6,6 @@ BrokerConnector (fake adapters), NotificationEngine (fake httpx),
 YahooProvider (fake yfinance), RiskEngine lifecycle extras, MarketUniverse
 session logic with a fixed clock.
 """
-import asyncio
 from datetime import datetime as real_datetime
 
 import pandas as pd

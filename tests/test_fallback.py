@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 from api.engines.data_layer import DataLayer
 from api.engines.market_universe import MarketUniverse
 
