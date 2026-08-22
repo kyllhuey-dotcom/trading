@@ -183,6 +183,9 @@ class ScannerEngine:
 
                 return {
                     "symbol": symbol,
+                    "display_symbol": info.get("display_symbol"),
+                    "strategy": signal.get("strategy") or raw_signal.get("strategy") or "structure",
+                    "direction": signal.get("direction") or raw_signal.get("direction"),
                     "asset_class": info.get("asset_class"),
                     "name": info.get("name"),
                     "price": float(ticker.get("last", 0)),

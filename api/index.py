@@ -38,6 +38,11 @@ from api.engines.diagnostic_engine import DiagnosticEngine
 from api.engines.news_aggregator import NewsAggregator
 from api.engines.notification_engine import NotificationEngine
 from api.engines.backtest_engine import BacktestEngine
+from api.engines.radar import prepare_radar
+from api.engines.market_hub import enrich_overview
+from api.engines.order_types import normalize_order_type, risk_based_quantity
+from api.engines.settings_schema import validate_settings, ensure_defaults
+from api.engines.institutional_executor import select_candidates, describe_intent
 
 # --------------------------------------------------------------------------- #
 # 1. Logging                                                                   #
@@ -152,11 +157,14 @@ class SettingsProvider:
         self._cache: Dict[str, str] = {}
         self._ts = 0.0
 
+    def invalidate(self) -> None:
+        self._ts = 0.0
+
     def get(self) -> Dict[str, str]:
         now = time.time()
         if now - self._ts > self.ttl:
             try:
-                self._cache = self.db.get_settings()
+                self._cache = ensure_defaults(self.db.get_settings())
                 self._ts = now
             except Exception as e:
                 logger.warning(f"Settings reload failed: {e}")
@@ -183,6 +191,7 @@ class SettingsProvider:
         strategies = [x.strip() for x in s.get("active_strategies", "structure").split(",") if x.strip()]
         signal_engine.set_active_strategies(strategies)
         scanner_engine.apply_settings(s)
+        bot_state["language"] = s.get("language", "en")
 
 
 settings_provider = SettingsProvider(db_manager)
@@ -342,11 +351,23 @@ async def tick_scanner():
             "signals": len([r for r in results if r.get("score", 0) >= 80]),
             "tradable": len([r for r in results if r.get("tradable")]),
         })
-        bot_state["best_setups"] = sorted(results, key=lambda r: r.get("score", 0), reverse=True)[:5]
+        bot_state["best_setups"] = prepare_radar(results)[:5]
         armed = bot_state["armed"] and bot_state["is_running"]
         active = list(bot_state["active_trades"])
         mode = bot_state["mode"]
         balance = bot_state["balance"]
+        running = bot_state["is_running"]
+
+    try:
+        min_score = float(settings.get("min_signal_score", 80))
+    except ValueError:
+        min_score = 80.0
+    candidates = select_candidates(results, min_score, {p.get("symbol") for p in active},
+                                   risk_engine.max_open_positions)
+    intent = describe_intent(running, bot_state["armed"], len(candidates), len(active),
+                             risk_engine.max_open_positions, min_score)
+    bot_state["execution_intent"] = intent
+    metrics_engine.record_institutional(intent.get("code"), n_active=len(active))
 
     try:
         await manager.broadcast(json.dumps({
@@ -360,7 +381,7 @@ async def tick_scanner():
     if not armed:
         return
 
-    for res in results:
+    for res in candidates:
         if not res.get("tradable"):
             continue
         if len(active) >= risk_engine.max_open_positions:
@@ -410,10 +431,13 @@ async def tick_scanner():
             metrics_state["total_trades"] += 1
             metrics_state["signals_by_strategy"][strat] = metrics_state["signals_by_strategy"].get(strat, 0) + 1
             metrics_engine.record_execution(strat, mode, success=True, latency_ms=exec_latency_ms)
+            metrics_engine.record_institutional("EXECUTING", n_active=len(active) + 1, trades_above=1)
             db_manager.archive_signal(sig, "EXECUTED", "")
             structured_log(logger, logging.INFO, "ORDER_EXECUTED",
                            event="order_executed", symbol=res["symbol"], mode=mode,
                            strategy=strat, latency_ms=round(exec_latency_ms, 2))
+            if exec_res.get("position"):
+                active.append(exec_res["position"])
             asyncio.create_task(notification_engine.notify("ORDER_OPEN", {
                 "symbol": res["symbol"],
                 "entry_price": sig["entry"],
@@ -429,14 +453,25 @@ async def tick_management():
     """1s — update positions (SL/TP/trailing in DEMO, reconciliation in REAL)."""
     mode = bot_state["mode"]
     active = bot_state["active_trades"]
-    if not active:
+    pending_ids = [p.get("market_id") for p in getattr(demo_execution, "pending_orders", []) if p.get("market_id")]
+    symbols = list({*(t["symbol"] for t in active), *pending_ids})
+    if not symbols:
         return
 
-    symbols = [t["symbol"] for t in active]
     quotes = await data_engine.layer.get_all_quotes(symbols, data_engine.universe)
     tickers = {q.symbol: q.model_dump() for q in quotes}
+    # also index by market_id
+    for mid in symbols:
+        info = data_engine.universe.get_info(mid) or {}
+        ds = info.get("display_symbol")
+        for q in quotes:
+            dumped = q.model_dump()
+            tickers[mid] = dumped
+            if ds:
+                tickers[ds] = dumped
 
     if mode == "DEMO":
+        await demo_execution.process_pending_orders(mode, tickers)
         await demo_execution.update_active_positions(mode, tickers)
         async with state_lock:
             bot_state["active_trades"] = demo_execution.active_positions
@@ -663,6 +698,7 @@ async def get_status(market_id: str = "btc_usdt"):
         "broker_info": broker_connector.get_status(),
         "broker_connected": broker_connector.get_status()["broker_count"] > 0,
         "best_setups": bot_state["best_setups"],
+        "execution_intent": bot_state.get("execution_intent"),
     }
 
 
@@ -672,30 +708,35 @@ async def get_history(mode: str = "DEMO", limit: int = 100):
 
 
 @app.get("/api/scanner")
-async def get_scanner():
-    return {"assets": bot_state["latest_scan"], "duration_s": scanner_engine.last_scan_duration}
+async def get_scanner(sort: str = "score", order: str = "desc", filter: str = "all"):
+    assets = prepare_radar(bot_state.get("latest_scan") or [], sort=sort, order=order, filter_mode=filter)
+    return {"assets": assets, "duration_s": scanner_engine.last_scan_duration,
+            "sort": sort, "order": order, "filter": filter}
 
 
 @app.get("/api/markets")
-async def get_markets():
+async def get_markets(sort: str = "score", order: str = "desc"):
     overview = await data_engine.get_market_overview()
     for cat, items in overview.items():
         for item in items:
             item["price"] = item.get("last")
-    return overview
+    return enrich_overview(overview, bot_state.get("latest_scan") or [], sort=sort, order=order)
 
 
 @app.get("/api/settings")
 async def get_settings():
-    return db_manager.get_settings()
+    return ensure_defaults(db_manager.get_settings())
 
 
 @app.post("/api/settings", dependencies=[Depends(require_admin)])
 async def save_settings(new_settings: Dict[str, str] = Body(...)):
-    db_manager.save_settings(new_settings)
+    cleaned, errors = validate_settings(new_settings)
+    db_manager.save_settings(cleaned)
+    settings_provider.invalidate()
     settings_provider.apply()
-    db_manager.log_audit("INFO", "SETTINGS_UPDATED", f"Updated {len(new_settings)} settings")
-    return {"success": True}
+    db_manager.log_audit("INFO", "SETTINGS_UPDATED", f"Updated {len(cleaned)} settings")
+    return {"success": True, "applied": cleaned, "errors": errors,
+            "message": "Parameters deployed live"}
 
 
 @app.post("/api/start", dependencies=[Depends(require_admin)])
@@ -801,7 +842,13 @@ async def manual_order(body: Dict[str, Any] = Body(...)):
         tp = entry + (dist * 2.0) if direction == "BUY" else entry - (dist * 2.0)
     sl, tp = float(sl), float(tp)
 
-    quantity = float(body.get("quantity", 0))
+    order_type = normalize_order_type(body.get("order_type"))
+    limit_price = body.get("limit_price")
+    stop_price = body.get("stop_price")
+    quantity = float(body.get("quantity", 0) or 0)
+    if body.get("risk_based") and quantity <= 0:
+        sl_for_size = float(sl)
+        quantity = risk_based_quantity(bot_state["balance"], risk_engine.max_risk_pct, entry, sl_for_size)
     if quantity <= 0:
         return {"success": False, "reason": "quantity must be positive"}
 
@@ -827,6 +874,9 @@ async def manual_order(body: Dict[str, Any] = Body(...)):
         "strategy": "manual",
         "setup_type": "MANUAL_ORDER",
         "timestamp": datetime.now().isoformat(),
+        "order_type": order_type,
+        "limit_price": float(limit_price) if limit_price not in (None, "") else None,
+        "stop_price": float(stop_price) if stop_price not in (None, "") else None,
     }
     notional = quantity * entry
     risk_data = {
@@ -1012,6 +1062,7 @@ async def get_metrics():
         "data_age": core["data_age"],
         "heartbeat": manager.heartbeat_status(),
         "total_errors": core["total_errors"],
+        "institutional": core.get("institutional"),
     }
 
 
@@ -1057,6 +1108,112 @@ async def diagnose(market_id: str = "btc_usdt"):
     snapshot = await get_market_snapshot(market_id)
     return {"market_id": market_id, "diagnosis": snapshot["diagnosis"],
             "signal": snapshot["signal"], "news": snapshot["news"]}
+
+
+async def _execute_signal_for_market(market_id: str) -> Dict[str, Any]:
+    if not market_id or not data_engine.universe.get_info(market_id):
+        raise HTTPException(400, f"Unknown market_id: {market_id}")
+    settings = settings_provider.get()
+    try:
+        min_score = float(settings.get("min_signal_score", 80))
+    except ValueError:
+        min_score = 80.0
+    scan_hit = next((a for a in (bot_state.get("latest_scan") or []) if a.get("symbol") == market_id), None)
+    sig = (scan_hit or {}).get("signal_data") if scan_hit else None
+    if not sig:
+        snap = await get_market_snapshot(market_id)
+        sig = snap.get("signal") or {}
+    score = float((scan_hit or {}).get("score") or sig.get("score") or 0)
+    if score < min_score:
+        return {"success": False, "reason": f"Score {score} below min_signal_score {min_score}"}
+    if sig.get("status") != "SIGNAL_DETECTED" or not sig.get("entry"):
+        return {"success": False, "reason": "No SIGNAL_DETECTED / missing data"}
+    allow_delayed = settings.get("allow_delayed_data_trading", "false").lower() == "true"
+    scalp = data_engine.check_scalping_allowed(market_id, allow_delayed)
+    if not scalp["allowed"]:
+        return {"success": False, "reason": scalp["reason"]}
+    active = bot_state.get("active_trades") or []
+    if any(p.get("symbol") == market_id for p in active):
+        return {"success": False, "reason": "Position already open"}
+    info = data_engine.universe.get_info(market_id) or {}
+    ticker = await data_engine.fetch_ticker(market_id)
+    if not ticker:
+        return {"success": False, "reason": "No market data available"}
+    risk_data = risk_engine.calculate_position_size(
+        bot_state["balance"], sig["entry"], sig["sl"], sig.get("direction", "BUY"),
+        symbol=market_id, active_positions=active, market_info=info)
+    if not risk_data.get("allowed"):
+        return {"success": False, "reason": risk_data.get("reason") or "risk"}
+    return await execution_router.execute(bot_state["mode"], sig, risk_data, ticker)
+
+
+@app.post("/api/execute-signal", dependencies=[Depends(require_admin)])
+async def execute_signal_api(body: Dict[str, Any] = Body(...)):
+    market_id = body.get("market_id")
+    if not market_id:
+        raise HTTPException(400, "market_id is required")
+    return await _execute_signal_for_market(str(market_id))
+
+
+@app.get("/api/orderbook")
+async def get_orderbook(market_id: str = "btc_usdt"):
+    info = data_engine.universe.get_info(market_id)
+    if not info:
+        raise HTTPException(400, f"Unknown market_id: {market_id}")
+    book = await data_engine.fetch_order_book(market_id)
+    ticker = await data_engine.fetch_ticker(market_id)
+    now_ms = int(time.time() * 1000)
+    age = None
+    if ticker and ticker.get("timestamp"):
+        age = max(0, now_ms - int(ticker["timestamp"]))
+    bids = (book or {}).get("bids") or []
+    asks = (book or {}).get("asks") or []
+    return {
+        "market_id": market_id,
+        "display_symbol": info.get("display_symbol"),
+        "bids": bids[:15],
+        "asks": asks[:15],
+        "available": bool(bids or asks),
+        "data_age_ms": age,
+        "realtime_source": data_engine.is_realtime_capable(market_id),
+    }
+
+
+@app.get("/api/ohlcv")
+async def get_ohlcv(market_id: str = "btc_usdt", timeframe: str = "1m", limit: int = 60):
+    info = data_engine.universe.get_info(market_id)
+    if not info:
+        raise HTTPException(400, f"Unknown market_id: {market_id}")
+    df = await data_engine.fetch_ohlcv(market_id, timeframe=timeframe, limit=limit)
+    candles = []
+    if df is not None and not getattr(df, "empty", True):
+        cols = {c.lower(): c for c in df.columns}
+        tcol = cols.get("timestamp") or cols.get("time")
+        for _, row in df.tail(limit).iterrows():
+            tval = row[tcol] if tcol else 0
+            try:
+                t_i = int(tval)
+            except Exception:
+                t_i = 0
+            candles.append({
+                "t": t_i,
+                "o": float(row[cols.get("open", "Open")]),
+                "h": float(row[cols.get("high", "High")]),
+                "l": float(row[cols.get("low", "Low")]),
+                "c": float(row[cols.get("close", "Close")]),
+                "v": float(row[cols.get("volume", "Volume")]) if (cols.get("volume") or "Volume" in df.columns) else 0.0,
+            })
+    analysis = analysis_engine.identify_structure(df) if df is not None and not getattr(df, "empty", True) else {}
+    return {
+        "market_id": market_id,
+        "timeframe": timeframe,
+        "candles": candles,
+        "bos": bool(analysis.get("bos")),
+        "choch": bool(analysis.get("choch")),
+        "last_high": analysis.get("last_high") or (candles[-1]["h"] if candles else None),
+        "last_low": analysis.get("last_low") or (candles[-1]["l"] if candles else None),
+        "trend": analysis.get("trend"),
+    }
 
 
 # ---- WebSocket + static ---------------------------------------------------- #
