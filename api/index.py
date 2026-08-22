@@ -19,6 +19,7 @@ import time
 from datetime import datetime
 
 from api.json_logging import setup_json_file_handler, structured_log
+from api.engines.exchange_constraints import normalize_order
 from api.engines.metrics_engine import MetricsEngine
 from api.engines.db_manager import DatabaseManager
 from api.engines.data_engine import DataEngine
@@ -345,7 +346,8 @@ async def tick_scanner():
 
         risk_data = risk_engine.calculate_position_size(
             balance, sig["entry"], sig["sl"], sig["direction"],
-            symbol=res["symbol"], active_positions=active)
+            symbol=res["symbol"], active_positions=active,
+            market_info=info)
         strat = sig.get("strategy", "structure")
         if not risk_data.get("allowed"):
             db_manager.archive_signal(sig, "BLOCKED", risk_data.get("reason") or "risk")
@@ -777,6 +779,25 @@ async def manual_order(body: Dict[str, Any] = Body(...)):
         "leverage": min(notional / bot_state["balance"], risk_engine.max_leverage) if bot_state["balance"] > 0 else 1.0,
         "estimated_fees": notional * 0.001,
     }
+
+    # LOT E: exchange-aware normalization for manual orders too — the broker
+    # rejects lot/tick violations, so floor the quantity and round prices
+    # before routing (both modes, for DEMO realism and REAL safety).
+    normalized = normalize_order(quantity, entry, direction,
+                                 sl=sl, tp=tp, info=info)
+    if not normalized["allowed"]:
+        return {"success": False, "reason": normalized["reason"] or "Exchange constraint violation"}
+    risk_data["quantity"] = normalized["quantity"]
+    risk_data["leverage"] = min(normalized["notional"] / bot_state["balance"],
+                                risk_engine.max_leverage) if bot_state["balance"] > 0 else 1.0
+    risk_data["estimated_fees"] = normalized["notional"] * 0.001
+    signal["entry"] = normalized["entry"]
+    signal["sl"] = normalized["sl"]
+    signal["tp"] = normalized["tp"]
+    if normalized["adjusted"]:
+        risk_data["quantity_rounded"] = True
+        risk_data["adjustments"] = normalized["adjustments"]
+
     exec_start = time.time()
     res = await execution_router.execute(bot_state["mode"], signal, risk_data, ticker)
     metrics_engine.record_execution("manual", bot_state["mode"], bool(res.get("success")),
