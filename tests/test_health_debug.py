@@ -16,7 +16,12 @@ async def test_gate_ticker():
     _require_network()
     gate = ccxt_async.gate({'enableRateLimit': True})
     try:
-        t = await gate.fetch_ticker('BTC/USDT')
+        try:
+            t = await gate.fetch_ticker('BTC/USDT')
+        except (ccxt.RateLimitExceeded, ccxt.NetworkError, ccxt.ExchangeNotAvailable,
+                ccxt.RequestTimeout, ccxt.AuthenticationError, ccxt.PermissionDenied) as e:
+            pytest.skip(f"Gate unavailable: {type(e).__name__}")
+            return
         assert t['last'] and t['last'] > 0
     finally:
         await gate.close()

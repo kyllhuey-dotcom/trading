@@ -6,9 +6,10 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
 
 ## État global
 
-- ✅ Suite de tests : **62 passés, 4 skips** après LOT A ; 2 tests marqués `network`
-  (gate.io / Yahoo) échouent uniquement quand l'environnement de test bloque ces
-  providers au niveau réseau — pas des bugs (à rendre auto-skippables au LOT G).
+- ✅ Suite de tests : **179 passés, 6 skips** (skips = tests `network` dont le
+  provider est indisponible — ils s'auto-skip proprement désormais).
+- ✅ Couverture : **83 % sur `api/engines`** (engines critiques), 76 % sur `api/`
+  (portes CI : 80 % / 60 % dans `scripts/validate.sh`).
 - ✅ L'application démarre, tous les endpoints répondent.
 - ✅ Le pipeline critique (scan → signal → exécution → suivi) est fonctionnel en DEMO.
 - ✅ Le mode REAL passe de **vrais ordres** via CCXT (plus de simulation mensongère).
@@ -61,6 +62,72 @@ Contrairement aux versions précédentes de ce document, chaque point ci-dessous
   ce qui rend la suite de tests fiable même sans réseau.
 - Nouveau module `api/engines/metrics_engine.py` (verrouillé, fenêtres bornées 500 échantillons).
 - Tests dédiés : `tests/test_metrics_observability.py` (15 tests).
+
+### LOT B — Arbitrage micro-temporel
+
+- `DataLayer.get_cross_quotes` : timeout strict par provider (5 s), cache d'échec,
+  metadata de timing par quote (`latency_ms`, `received_at`, `age_ms`).
+- `MicroArbitrageStrategy` : porte de fraîcheur (quotes périmées écartées),
+  porte de synchronisation (dispersion max entre quotes → NO_TRADE),
+  score de confiance 0-100 (spread + fraîcheur + synchro), `min_confidence` optionnel.
+- Rétrocompatible : quotes sans timing = fraîches. Tests : `tests/test_arbitrage_robustness.py`.
+
+### LOT C — Tape reading
+
+- Imbalance pondéré par la profondeur (10 niveaux, poids décroissants),
+  velocity proportionnelle signée (clamp ±40), multiplicateur de conviction
+  (alignement ×1.15 / conflit ×0.85).
+- **Seuil dynamique piloté par l'ATR** (clampé 15-60, fallback au seuil de
+  base sans OHLCV) : marchés calmes = plus sensible, marchés violents = plus strict.
+- Tests : `tests/test_tape_reading_robustness.py` (mocks orderbook/trades/volatilités).
+
+### LOT D — Liquidity gap
+
+- Détection enrichie : trous de prix (15 niveaux), spread élargi bloquant,
+  profil de volume (confirmation « côté mince », discount 25 % sinon).
+- **Stop logique anticipatif** : SL sous le dernier cluster de liquidité
+  (au-dessus pour les shorts), TP en 2R, fallback % conservé.
+- Tests : `tests/test_liquidity_gap_robustness.py` (13 tests + régressions).
+
+### LOT E — Sizing & contraintes d'exchange
+
+- Nouveau module `api/engines/exchange_constraints.py` : arrondis Decimal sûrs
+  (quantité floor au lot, prix au tick, SL/TP protecteurs), portes min_notional.
+- `RiskEngine.calculate_position_size(market_info=…)` (optionnel, rétrocompatible) :
+  quantité floored, levier/notional recalculés, min notional vérifié.
+- `CCXTAdapter.get_market_constraints` (parsing offline des marchés CCXT),
+  ordres manuels normalisés (DEMO + REAL).
+- Tests : `tests/test_exchange_constraints.py` (17 tests).
+
+### LOT F — Data & providers
+
+- `DataLayer` : timeouts par provider sur tous les chemins, cooldown d'échec à
+  **escalade exponentielle** (5 min → 60 min max), reset au succès.
+- **Garde anti-scalping sur données différées** : les instruments Yahoo
+  (~15 min de retard) sont bloqués pour l'exécution automatique
+  (`NON_REALTIME_SOURCE`), opt-out explicite `allow_delayed_data_trading`.
+- Health check précis : ONLINE/DEGRADED/SLOW/ERROR selon latence, historique
+  par provider (checks, échecs consécutifs, dernier OK), latence Gate/Bybit.
+- Tests : `tests/test_providers_hardening.py` (9 tests offline).
+
+### LOT G — Couverture & CI
+
+- **Couverture engines critiques : 83 %** (objectif ≥ 80 %), avec mocks complets
+  hors réseau : `tests/mocks.py` (orderbooks, trades, tickers, cross-quotes,
+  exchange ccxt factice, engines factices), `tests/test_engine_coverage.py`
+  (scanner, router, signal, exécution, diagnostic, univers, providers ccxt,
+  DB manager) et `tests/test_offline_engine_coverage.py` (news/calendrier,
+  backtest, broker connector, notifications, Yahoo, risque, sessions avec
+  horloge fixée).
+- **Tests réseau auto-skippables** : les tests `network` se skip proprement
+  quand Gate/Yahoo/Binance sont inaccessibles (plus d'échecs d'environnement).
+- **Isolation totale** : plus aucun test n'écrit dans `data/` du dépôt
+  (bases temporaires `tmp_path` partout).
+- **Code mort supprimé** : `data_providers/crypto_provider.py` (imports
+  cassés) et `market_catalog.py` (doublon inutilisé de MarketUniverse).
+- **`scripts/validate.sh` plus strict** : porte de couverture 60 % globale +
+  80 % sur `api/engines`, scan de secrets, check d'entrée applicative.
+- **Bybit** : `get_order_book` / `get_recent_trades` implémentés (parité Gate/Binance).
 
 - **Authentification** : `ADMIN_API_KEY` protège tous les endpoints mutables (401 sinon).
 - **Chiffrement** : secrets brokers Fernet au repos, préfixe `enc:v1:` explicite, erreurs de décryptage loggées (pas de retour silencieux).
