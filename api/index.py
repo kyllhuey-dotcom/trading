@@ -42,6 +42,7 @@ from api.engines.radar import prepare_radar
 from api.engines.market_hub import enrich_overview
 from api.engines.order_types import normalize_order_type, risk_based_quantity
 from api.engines.settings_schema import validate_settings, ensure_defaults
+from api.engines.capital_profiles import resolve_bracket, profile_overrides
 from api.engines.institutional_executor import select_candidates, describe_intent
 
 # --------------------------------------------------------------------------- #
@@ -135,6 +136,7 @@ bot_state: Dict[str, Any] = {
     "is_running": False, "latest_scan": [], "active_trades": [], "best_setups": [],
     "engine_stats": {"markets": 0, "scanned": 0, "signals": 0, "tradable": 0},
     "selected_market": "btc_usdt",
+    "capital_profile": {"mode": "manual", "bracket": None, "balance": 0.0, "applied": False},
 }
 
 metrics_state: Dict[str, Any] = {
@@ -180,6 +182,7 @@ class SettingsProvider:
             pass
         # LOT P: wire the profit levers that were previously dead settings
         signal_engine.set_risk_reward(s.get("risk_reward_ratio", 2.0))
+        signal_engine.set_atr_stop_multiplier(s.get("atr_stop_multiplier", 1.5))
         signal_engine.set_alpha_override(s.get("alpha_override_enabled", "false").lower() == "true")
         try:
             signal_engine.set_cost_params(
@@ -188,6 +191,34 @@ class SettingsProvider:
                 max_cost_ratio=float(s.get("max_cost_ratio", 0.5)))
         except ValueError:
             pass
+
+        # Capital-aware profile (small-account support).
+        #   manual -> the user's explicit settings always win (only reported).
+        #   auto   -> the bracket overrides the risk/signal tuning params so the
+        #             bot adapts itself to the size of the account.
+        mode = s.get("capital_profile_mode", "manual").lower()
+        balance = bot_state.get("balance", 0.0) or 0.0
+        bracket = resolve_bracket(balance)
+        if mode == "auto":
+            ov = profile_overrides(balance)
+            risk_engine.max_risk_pct = float(ov["risk_pct"])
+            risk_engine.max_leverage = float(ov["max_leverage"])
+            risk_engine.max_open_positions = int(ov["max_open_positions"])
+            risk_engine.min_trade_notional = float(ov["min_trade_notional"])
+            signal_engine.set_min_score(int(ov["min_signal_score"]))
+            signal_engine.set_risk_reward(ov["risk_reward_ratio"])
+            signal_engine.set_atr_stop_multiplier(ov["atr_stop_multiplier"])
+            try:
+                signal_engine.set_cost_params(max_cost_ratio=float(ov["max_cost_ratio"]))
+            except ValueError:
+                pass
+        bot_state["capital_profile"] = {
+            "mode": mode,
+            "bracket": bracket.name,
+            "balance": balance,
+            "applied": mode == "auto",
+        }
+
         strategies = [x.strip() for x in s.get("active_strategies", "structure").split(",") if x.strip()]
         signal_engine.set_active_strategies(strategies)
         scanner_engine.apply_settings(s)
@@ -699,6 +730,7 @@ async def get_status(market_id: str = "btc_usdt"):
         "broker_connected": broker_connector.get_status()["broker_count"] > 0,
         "best_setups": bot_state["best_setups"],
         "execution_intent": bot_state.get("execution_intent"),
+        "capital_profile": bot_state.get("capital_profile"),
     }
 
 

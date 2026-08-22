@@ -13,3 +13,4 @@ Plan d'exécution lot par lot (chaque lot est testé avant de passer au suivant)
 | 7 | Déploiement & repo : Railway (volume, healthcheck), requirements dev, nettoyage | ✅ |
 | 8 | Documentation : README, contrat API réel, audits honnêtes | ✅ |
 | 9 | Validation finale : suite complète, serveur live, endpoints, rapport | ✅ |
+| 10 (LOT Q) | Petits capitaux (1 $→10 $), profils capital-aware (MICRO/RETAIL/STANDARD), stop ATR paramétrable, optimisation pilotée par l'audit | ✅ |

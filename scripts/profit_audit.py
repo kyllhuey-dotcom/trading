@@ -13,10 +13,20 @@ Usage:
     python3 scripts/profit_audit.py [path/to/quantum_trade.db]
 """
 import json
+import os
 import sqlite3
 import sys
 from collections import defaultdict
 from typing import Any, Dict, List
+
+# Make the repo root importable regardless of the current working directory,
+# so `from api.engines.capital_profiles import ...` always resolves.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from api.engines.capital_profiles import recommend_from_audit
+except Exception:  # allow the script to run as a standalone tool
+    recommend_from_audit = None
 
 ASSUMED_ROUND_TRIP_COSTS_PCT = 0.20   # 2 × (0.05 % fee + 0.05 % slippage)
 MAX_COST_RATIO = 0.5                  # same default as the bot's cost filter
@@ -145,9 +155,41 @@ def print_report(stats: Dict[str, Any]) -> None:
     print("=" * 78)
 
 
+def print_recommendations(stats: Dict[str, Any], balance: float = 0.0) -> None:
+    """Print audit-driven optimization recommendations (capital-aware)."""
+    if recommend_from_audit is None:
+        print("\n[optimization] api.engines.capital_profiles unavailable — skipping.")
+        return
+    rec = recommend_from_audit(stats, balance)
+    print("\n" + "-" * 78)
+    print("AUDIT-DRIVEN OPTIMIZATION RECOMMENDATIONS")
+    print("-" * 78)
+    print(f"Account bracket: {rec['bracket']} (balance ≈ {rec.get('account_balance', balance):+.2f})")
+    print(f"Targets (realistic): win rate >= {rec['targets']['min_win_rate_pct']}%, "
+          f"RR >= {rec['targets']['min_realized_rr']}, "
+          f"expectancy >= {rec['targets']['min_expectancy_r']}R, "
+          f"profit factor >= {rec['targets']['min_profit_factor']}.")
+    print(f"Health verdict: {rec['health_verdict']}")
+    if rec.get("best_strategy", {}).get("name"):
+        best = rec["best_strategy"]
+        print(f"Best strategy: {best['name']} (expectancy {best['expectancy']:+.3f}R)")
+    print("\nRecommended settings (start from these, then refine):")
+    for k, v in rec["recommended_settings"].items():
+        print(f"  {k:<22} {v}")
+    if rec.get("per_strategy"):
+        print("\nPer-strategy actions:")
+        for strat, r in rec["per_strategy"].items():
+            print(f"  {strat:<12} {r['verdict']:<10} -> {r['action']}")
+            print(f"      {r['recommend']}")
+    print("-" * 78)
+
+
 def main() -> None:
     db_path = sys.argv[1] if len(sys.argv) > 1 else "data/quantum_trade.db"
-    print_report(analyze_db(db_path))
+    balance = float(sys.argv[2]) if len(sys.argv) > 2 else 0.0
+    stats = analyze_db(db_path)
+    print_report(stats)
+    print_recommendations(stats, balance)
 
 
 if __name__ == "__main__":
