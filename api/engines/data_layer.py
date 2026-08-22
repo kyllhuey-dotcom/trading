@@ -22,6 +22,10 @@ class DataLayer:
         self.subscribers: List[Any] = [] # WebSocket managers or other engines
         self.failure_cache: Dict[str, float] = {} # {psymbol: timestamp}
         self.failure_cooldown = 300 # 5 minutes cooldown for failed symbols
+        # LOT B: strict per-provider timeout for cross-provider quotes.
+        # Micro-arbitrage needs *contemporaneous* quotes; a provider that
+        # answers too slowly must be dropped rather than waited on.
+        self.provider_timeout_s = 5.0
 
     def register_provider(self, provider_id: str, provider: MarketDataProvider):
         self.providers[provider_id] = provider
@@ -142,25 +146,60 @@ class DataLayer:
                     continue
         return None
 
-    async def get_cross_quotes(self, market_id: str, catalog: Any) -> List[Dict[str, Any]]:
-        """Fetch quotes from all available providers for a single market (Lot 5)."""
+    async def get_cross_quotes(self, market_id: str, catalog: Any,
+                               timeout_s: Optional[float] = None) -> List[Dict[str, Any]]:
+        """
+        Fetch quotes from all available providers for a single market (Lot 5).
+
+        LOT B hardening:
+        - strict per-provider timeout (a slow provider can no longer stall the batch);
+        - each quote carries `latency_ms` (fetch duration), `received_at` (epoch ms)
+          and `age_ms` (data age vs provider timestamp) so the arbitrage strategy
+          can score confidence and drop unsynchronized quotes;
+        - failed providers go into the failure cache (cooldown, like other paths).
+        """
         info = catalog.get_info(market_id)
-        if not info: return []
-        
+        if not info:
+            return []
+
         provider_list = list(info.get("providers", {}).items())
-        tasks = []
-        for pid, psymbol in provider_list:
-            if pid in self.providers:
-                tasks.append(self.providers[pid].get_quote(psymbol))
-        
-        quotes = await asyncio.gather(*tasks, return_exceptions=True)
-        results = []
-        for i, q in enumerate(quotes):
-            if isinstance(q, TickerModel):
-                d = q.model_dump()
-                d["provider"] = provider_list[i][0]
-                results.append(d)
-        return results
+        timeout = timeout_s if timeout_s is not None else self.provider_timeout_s
+        now = time.time()
+        self._prune_failure_cache()
+
+        async def _fetch_one(pid: str, psymbol: str) -> Optional[Dict[str, Any]]:
+            provider = self.providers.get(pid)
+            if provider is None:
+                return None
+            cache_key = f"cross:{pid}:{psymbol}"
+            if cache_key in self.failure_cache:
+                if now - self.failure_cache[cache_key] < self.failure_cooldown:
+                    return None
+                del self.failure_cache[cache_key]
+
+            start = time.time()
+            try:
+                quote = await asyncio.wait_for(provider.get_quote(psymbol), timeout=timeout)
+            except Exception:
+                self.failure_cache[cache_key] = time.time()
+                return None
+            if not isinstance(quote, TickerModel):
+                self.failure_cache[cache_key] = time.time()
+                return None
+
+            elapsed_ms = (time.time() - start) * 1000.0
+            received_at = int(time.time() * 1000)
+            d = quote.model_dump()
+            d["provider"] = pid
+            d["latency_ms"] = round(elapsed_ms, 2)
+            d["received_at"] = received_at
+            ts = d.get("timestamp")
+            d["age_ms"] = round(max(0.0, float(received_at - ts)), 2) if ts else 0.0
+            return d
+
+        tasks = [_fetch_one(pid, psymbol) for pid, psymbol in provider_list]
+        results = await asyncio.gather(*tasks)
+        return [r for r in results if r is not None]
 
     async def get_health(self) -> List[Dict[str, Any]]:
         tasks = [p.health_check() for p in self.providers.values()]
