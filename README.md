@@ -33,7 +33,7 @@ cp .env.example .env        # puis remplissez ADMIN_API_KEY et FERNET_KEY
 export $(cat .env | xargs)  # ou utilisez votre gestionnaire d'env
 
 # 3. Lancement
-python3 api/index.py
+python3 -m api.index
 # → http://localhost:8000
 ```
 

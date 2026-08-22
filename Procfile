@@ -1,1 +1,1 @@
-web: export PYTHONPATH=. && python3 api/index.py
+web: python3 -m api.index
