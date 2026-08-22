@@ -900,7 +900,7 @@
 
     <script>
         lucide.createIcons();
-        
+
         let selectedSymbol = 'btc_usdt';
         let ws;
         let currentFilter = 'ALL';
@@ -908,15 +908,79 @@
         let botIsMode = 'DEMO';
         let botIsRunning = false;
         let botIsArmed = false;
+        let lastScanDuration = 0;
+        let metricsCache = null;
+        let metricsFetchedAt = 0;
 
         const LOGOS = {
             'GATE': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>',
             'BINANCE': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="#F3BA2F"><path d="M16.624 13.9202l2.711 2.71172.7117-2.7117-2.7117-2.7117zm-4.624-4.624l2.7117 2.7117 2.7117-2.7117-2.7117-2.7117zm-4.624 4.624l2.7117 2.7117 2.7117-2.7117-2.7117-2.7117zm4.624 4.624l2.7117 2.7117 2.7117-2.7117-2.7117-2.7117z"/></svg>',
             'BYBIT': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="#F7A600"><path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm0-18.182c-4.418 0-8 3.582-8 8s3.582 8 8 8 8-3.582 8-8-3.582-8-8-8z"/></svg>',
+            'KRAKEN': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="#5741D9"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.6l7.4 3.7-7.4 3.7-7.4-3.7L12 4.6zM4.6 10.7l6.4 3.2v5.2l-6.4-3.2v-5.2zm14.8 0v5.2l-6.4 3.2v-5.2l6.4-3.2z"/></svg>',
+            'OKX': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="#121212"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>',
+            'PRIMEXBT': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="#FF4D00"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>',
             'METAMASK': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="#E2761B"><path d="M22.05 3.63L12.55 2.13L12.28 2.09C12.1 2.03 11.9 2.03 11.72 2.09L11.45 2.13L1.95 3.63L1.31 10.37L12 22L22.69 10.37L22.05 3.63Z"/></svg>',
             'PHANTOM': '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="#AB9FF2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>'
         };
 
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '--';
+            return String(str).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function fmtPrice(v) {
+            if (v === null || v === undefined || isNaN(v)) return '--';
+            return Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+        }
+
+        function fmtMoney(v) {
+            if (v === null || v === undefined || isNaN(v)) return '0.00';
+            return Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        /* ------------------------------------------------------------------ *
+         *  API layer (with optional admin key + retry on 401/403)            *
+         * ------------------------------------------------------------------ */
+        let apiKey = localStorage.getItem('qtp-api-key') || '';
+        let askingForKey = false;
+
+        async function fetchAPI(endpoint, method = 'GET', body = null, _retried = false) {
+            try {
+                const url = `/api${endpoint}`;
+                const options = { method };
+                const headers = {};
+                if (apiKey) headers['X-API-Key'] = apiKey;
+                if (body) { headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
+                options.headers = headers;
+                const res = await fetch(url, options);
+                if ((res.status === 401 || res.status === 403) && !_retried) {
+                    const key = await askForApiKey();
+                    if (key) {
+                        apiKey = key;
+                        localStorage.setItem('qtp-api-key', key);
+                        return await fetchAPI(endpoint, method, body, true);
+                    }
+                    return null;
+                }
+                return await res.json();
+            } catch (e) { return null; }
+        }
+
+        function askForApiKey() {
+            if (askingForKey) return Promise.resolve(null);
+            askingForKey = true;
+            return new Promise(resolve => {
+                const key = window.prompt('🔐 This action requires the admin API key.\nEnter ADMIN_API_KEY (set by the server):', '');
+                askingForKey = false;
+                resolve(key ? key.trim() : null);
+            });
+        }
+
+        /* ------------------------------------------------------------------ *
+         *  Theme                                                             *
+         * ------------------------------------------------------------------ */
         function updateThemeUI() {
             const isDark = document.body.classList.contains('dark');
             const icon = document.querySelector('#theme-toggle i');
@@ -927,34 +991,50 @@
         }
         updateThemeUI();
 
+        /* ------------------------------------------------------------------ *
+         *  WebSocket                                                         *
+         * ------------------------------------------------------------------ */
         function connectWS() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
             ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
+                let data;
+                try { data = JSON.parse(event.data); } catch (e) { return; }
                 if (data.type === 'ACCOUNT_STREAM') {
                     updateStatus(data);
                     updateAccountUI(data);
                 } else if (data.type === 'MARKET_UPDATE') {
                     handleMarketUpdate(data);
                 } else if (data.type === 'SCAN_COMPLETED') {
+                    if (data.duration_s !== undefined) lastScanDuration = data.duration_s;
                     if (activeTab === 'scanner') updateScanner();
                     if (activeTab === 'dashboard') update();
                 }
             };
-            ws.onclose = () => setTimeout(connectWS, 2000);
+            ws.onclose = () => setTimeout(connectWS, 3000);
         }
 
+        /* ------------------------------------------------------------------ *
+         *  Rendering                                                         *
+         * ------------------------------------------------------------------ */
         function updateAccountUI(s) {
+            const mode = s.mode || 'DEMO';
+            const currency = mode === 'REAL' ? '$' : '€';
             const hBal = document.getElementById('header-balance');
             const dBal = document.getElementById('dash-balance');
             const dEq = document.getElementById('dash-equity');
-            const mode = s.mode || 'DEMO';
-            const currency = mode === 'REAL' ? '$' : '€';
+            if (hBal) hBal.innerText = `${fmtMoney(s.balance)} ${currency}`;
+            if (dBal) dBal.innerText = `${fmtMoney(s.balance)} ${currency}`;
+            if (dEq) dEq.innerText = `${fmtMoney(s.equity)} ${currency}`;
 
-            if (hBal) hBal.innerText = `${s.balance.toLocaleString()} ${currency}`;
-            if (dBal) dBal.innerText = `${s.balance.toLocaleString()} ${currency}`;
-            if (dEq) dEq.innerText = `${s.equity.toLocaleString()} ${currency}`;
+            const daily = document.getElementById('dash-daily-pnl');
+            if (daily) {
+                const v = Number(s.daily_pnl || 0);
+                daily.innerText = `${v >= 0 ? '+' : ''}${fmtMoney(v)} ${currency}`;
+                daily.className = `metric-value mt-0.5 ${v >= 0 ? 'text-accent-green' : 'text-accent-red'}`;
+            }
+            const dd = document.getElementById('dash-drawdown');
+            if (dd) dd.innerText = `${(s.drawdown || 0).toFixed(2)}%`;
 
             const activePos = document.getElementById('active-pos-list');
             if (activePos && s.active_trades) {
@@ -963,30 +1043,30 @@
                         <div class="card-premium border-2 border-accent-blue/30 shadow-lg transition-all">
                             <div class="flex justify-between items-start mb-4">
                                 <div>
-                                    <h3 class="font-black text-sm tracking-tight mb-0.5">${(p.display_symbol || p.symbol).toUpperCase()}</h3>
-                                    <p class="text-[9px] font-bold text-secondary uppercase tracking-widest">${p.direction} • ${p.quantity.toFixed(4)} UNITS</p>
+                                    <h3 class="font-black text-sm tracking-tight mb-0.5">${escapeHtml((p.display_symbol || p.symbol || '').toUpperCase())}</h3>
+                                    <p class="text-[9px] font-bold text-secondary uppercase tracking-widest">${escapeHtml(p.direction)} • ${Number(p.quantity || 0).toFixed(4)} UNITS</p>
                                 </div>
                                 <div class="text-right">
-                                    <p class="font-black text-sm uppercase tracking-widester ${p.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">${p.pnl >= 0 ? '+' : ''}${p.pnl.toFixed(2)} ${currency}</p>
+                                    <p class="font-black text-sm uppercase ${(p.pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}">${(p.pnl || 0) >= 0 ? '+' : ''}${fmtMoney(p.pnl)} ${currency}</p>
                                 </div>
                             </div>
                             <div class="grid grid-cols-3 gap-4 pt-3 border-t border-black/5 dark:border-white/5">
-                                <div><p class="text-[7px] font-black text-secondary uppercase">Entry</p><p class="font-black text-xs">${p.entry_price.toLocaleString()}</p></div>
-                                <div><p class="text-[7px] font-black text-secondary uppercase">Target</p><p class="font-black text-xs text-green-500">${p.tp ? p.tp.toLocaleString() : '--'}</p></div>
-                                <div><p class="text-[7px] font-black text-secondary uppercase">Stop</p><p class="font-black text-xs text-red-500">${p.sl ? p.sl.toLocaleString() : '--'}</p></div>
+                                <div><p class="text-[7px] font-black text-secondary uppercase">Entry</p><p class="font-black text-xs">${fmtPrice(p.entry_price)}</p></div>
+                                <div><p class="text-[7px] font-black text-secondary uppercase">Target</p><p class="font-black text-xs text-green-500">${p.tp ? fmtPrice(p.tp) : '--'}</p></div>
+                                <div><p class="text-[7px] font-black text-secondary uppercase">Stop</p><p class="font-black text-xs text-red-500">${p.sl ? fmtPrice(p.sl) : '--'}</p></div>
                             </div>
                         </div>
                     `).join('');
                 } else {
                     activePos.innerHTML = '<div class="py-12 text-center opacity-30 flex flex-col items-center gap-2"><i data-lucide="box" class="w-6 h-6"></i><p class="font-black text-[10px] uppercase">No Active Market Exposure</p></div>';
-                    lucide.createIcons();
                 }
+                lucide.createIcons();
             }
         }
 
         function updateStatus(data) {
             const stText = document.getElementById('system-status-text');
-            if (stText) stText.innerText = data.status.replace(/_/g, ' ');
+            if (stText) stText.innerText = (data.status || (data.is_running ? 'RUNNING' : 'OFFLINE')).replace(/_/g, ' ');
             const dot = document.getElementById('status-dot');
             if (dot) {
                 dot.className = 'w-2.5 h-2.5 rounded-full shadow-lg transition-all duration-500 ' + (data.is_running ? 'bg-green-500 animate-pulse' : 'bg-slate-400');
@@ -994,33 +1074,170 @@
         }
 
         function handleMarketUpdate(data) {
+            if (!data || !data.market_id) return;
             if (data.market_id === selectedSymbol) {
                 const priceEl = document.getElementById('trading-live-price');
-                if (priceEl) {
-                    priceEl.innerText = data.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4});
-                }
+                if (priceEl && data.price !== undefined && data.price !== null) priceEl.innerText = fmtPrice(data.price);
             }
             document.querySelectorAll(`[data-price-id="${data.market_id}"]`).forEach(el => {
-                el.innerText = data.price.toLocaleString(undefined, {minimumFractionDigits: 2});
+                if (data.price !== undefined && data.price !== null) el.innerText = fmtPrice(data.price);
             });
         }
 
+        function renderDiagnosis(d) {
+            const blocker = document.getElementById('diag-main-blocker');
+            const reason = document.getElementById('diag-reason');
+            const checklist = document.getElementById('diag-checklist');
+            const icon = document.getElementById('diag-icon');
+            if (!d) return;
+            if (blocker) blocker.innerText = (d.main_blocker || 'NONE').replace(/_/g, ' ');
+            if (reason) reason.innerText = d.main_reason || 'No blocker. System is clear.';
+            if (icon) {
+                const ok = (d.main_blocker || 'NONE') === 'NONE';
+                icon.className = 'w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ' + (ok ? 'bg-green-500/10' : 'bg-red-500/10');
+                icon.innerHTML = `<i data-lucide="${ok ? 'check' : 'alert-triangle'}" class="w-4 h-4 ${ok ? 'text-green-500' : 'text-red-500'}"></i>`;
+                lucide.createIcons();
+            }
+            if (checklist && d.checks) {
+                const skip = ['RISK_VALID', 'LEVERAGE_VALID', 'BROKER_VALID', 'SYSTEM_ARMED'];
+                checklist.innerHTML = Object.entries(d.checks)
+                    .filter(([k]) => !skip.includes(k))
+                    .map(([k, v]) => {
+                        const ok = v === 'PASS';
+                        return `<div class="flex flex-col items-center gap-0.5 px-1 py-1.5 rounded-lg ${ok ? 'bg-green-500/10' : 'bg-red-500/10'}">
+                            <span class="w-1.5 h-1.5 rounded-full ${ok ? 'bg-green-500' : 'bg-red-500'}"></span>
+                            <span class="text-[6.5px] font-black uppercase tracking-tighter ${ok ? 'text-green-500' : 'text-red-500'}">${k.replace(/_/g, ' ')}</span>
+                        </div>`;
+                    }).join('');
+            }
+        }
+
+        function renderSignal(sig) {
+            const box = document.getElementById('trading-signal-box');
+            if (!box) return;
+            if (!sig || sig.status !== 'SIGNAL_DETECTED') {
+                box.innerHTML = `<div class="text-center">
+                    <p class="text-secondary font-medium text-xs italic mb-1">${sig && sig.reason ? escapeHtml(sig.reason) : 'Awaiting market trigger...'}</p>
+                    ${sig ? `<p class="text-[9px] font-black text-secondary uppercase tracking-widest">Score ${sig.score || 0}/100</p>` : ''}
+                </div>`;
+                return;
+            }
+            const isBuy = sig.direction === 'BUY';
+            box.innerHTML = `<div class="text-center">
+                <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-1">${escapeHtml(sig.strategy || 'structure')} strategy</p>
+                <p class="text-2xl font-black ${isBuy ? 'text-green-500' : 'text-red-500'}">${isBuy ? 'BUY ▲' : 'SELL ▼'}</p>
+                <p class="text-[10px] font-bold text-secondary mt-1">Entry ${fmtPrice(sig.entry)} • SL ${fmtPrice(sig.sl)} • TP ${fmtPrice(sig.tp)}</p>
+                <p class="text-[9px] font-black text-secondary uppercase tracking-widest mt-2">Score ${sig.score}/100 • ${escapeHtml(sig.confidence || 'HIGH')}</p>
+            </div>`;
+        }
+
+        function renderBlockers(d, news) {
+            const el = document.getElementById('terminal-blockers');
+            if (!el) return;
+            const blockers = [];
+            if (d && d.checks) {
+                const skip = ['RISK_VALID', 'LEVERAGE_VALID', 'BROKER_VALID', 'SYSTEM_ARMED'];
+                for (const [k, v] of Object.entries(d.checks)) {
+                    if (v === 'FAIL' && !skip.includes(k)) blockers.push(k.replace(/_/g, ' '));
+                }
+            }
+            if (news && !news.news_ok) blockers.push('HIGH-IMPACT NEWS WINDOW');
+            if (news && !news.session_ok) blockers.push('OUTSIDE TRADING SESSION');
+            el.innerHTML = blockers.length
+                ? blockers.map(b => `<div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
+                        <i data-lucide="shield-x" class="w-3.5 h-3.5 text-red-500"></i>
+                        <span class="text-[9px] font-black uppercase tracking-widest text-red-500">${escapeHtml(b)}</span>
+                    </div>`).join('')
+                : '<div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20"><i data-lucide="shield-check" class="w-3.5 h-3.5 text-green-500"></i><span class="text-[9px] font-black uppercase tracking-widest text-green-500">All security layers clear</span></div>';
+            lucide.createIcons();
+        }
+
+        function renderIndicators(a) {
+            if (!a) return;
+            const rsi = document.getElementById('ind-rsi');
+            const ema = document.getElementById('ind-ema');
+            const atr = document.getElementById('ind-atr');
+            if (rsi && a.indicators) rsi.innerText = Number(a.indicators.rsi || 0).toFixed(1);
+            if (ema && a.indicators) ema.innerText = a.indicators.ema_cross || '--';
+            if (atr) atr.innerText = a.atr ? Number(a.atr).toFixed(4) : '--';
+        }
+
+        function renderCalendar(news) {
+            const el = document.getElementById('dashboard-calendar');
+            if (!el) return;
+            if (!news || !news.next_events || news.next_events.length === 0) {
+                el.innerHTML = '<p class="text-secondary font-medium text-[8px] italic">No high-impact events on the horizon.</p>';
+                return;
+            }
+            el.innerHTML = news.next_events.slice(0, 5).map(e => `
+                <div class="flex items-center justify-between px-2 py-1.5 rounded-lg bg-black/[0.03] dark:bg-white/[0.03]">
+                    <div class="flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full ${e.impact === 'High' ? 'bg-red-500' : 'bg-orange-400'}"></span>
+                        <span class="text-[9px] font-bold">${escapeHtml(e.currency || '')} ${escapeHtml(e.event || e.title || '')}</span>
+                    </div>
+                    <span class="text-[8px] font-black text-secondary">${escapeHtml(e.time || '')}</span>
+                </div>`).join('');
+        }
+
+        function renderBestSetups(setups) {
+            const el = document.getElementById('best-setups-list');
+            if (!el) return;
+            if (!setups || setups.length === 0) {
+                el.innerHTML = '<p class="text-secondary font-medium text-[9px] italic">Scanning...</p>';
+                return;
+            }
+            el.innerHTML = setups.slice(0, 5).map(s => `
+                <div class="flex items-center justify-between px-2 py-1.5 rounded-lg bg-black/[0.03] dark:bg-white/[0.03] cursor-pointer" onclick="selectMarket('${escapeHtml(s.symbol)}')">
+                    <div>
+                        <span class="text-[10px] font-black">${escapeHtml((s.symbol || '').toUpperCase().replace('_', '/'))}</span>
+                        <span class="text-[8px] font-bold text-secondary uppercase ml-1">${escapeHtml(s.trend || '--')}</span>
+                    </div>
+                    <span class="text-[10px] font-black ${(s.score || 0) >= 80 ? 'text-green-500' : 'text-secondary'}">${s.score || 0}</span>
+                </div>`).join('');
+        }
+
+        async function refreshMetrics() {
+            const now = Date.now();
+            if (metricsCache && now - metricsFetchedAt < 10000) return;
+            metricsCache = await fetchAPI('/metrics');
+            metricsFetchedAt = now;
+        }
+
+        function renderAuditLogs() {
+            const el = document.getElementById('terminal-audit-logs');
+            if (!el || !metricsCache) return;
+            const orders = metricsCache.recent_orders || [];
+            if (orders.length === 0) {
+                el.innerHTML = '<p class="text-secondary opacity-50 italic">No executions yet. The journal will appear here.</p>';
+                return;
+            }
+            el.innerHTML = orders.slice().reverse().map(o => `
+                <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-black/[0.03] dark:bg-white/[0.03]">
+                    <div class="flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full ${o.success ? 'bg-green-500' : 'bg-red-500'}"></span>
+                        <span class="font-black uppercase">${o.success ? 'FILLED' : 'BLOCKED'} • ${escapeHtml(o.mode)}</span>
+                        <span class="text-secondary">${escapeHtml((o.symbol || '').toUpperCase())} ${escapeHtml(o.direction || '')}</span>
+                    </div>
+                    <span class="text-secondary text-[8px]">${o.time ? new Date(o.time).toLocaleTimeString() : ''}</span>
+                </div>`).join('');
+        }
+
         async function updateHistory() {
-            const h = await fetchAPI("/history?mode=" + botIsMode);
+            const h = await fetchAPI('/history?mode=' + botIsMode);
             const histBody = document.getElementById('history-table-body');
             if (histBody && h) {
                 histBody.innerHTML = h.map(t => `
                     <tr class="hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors">
                         <td class="py-5 px-8 flex flex-col">
-                            <span class="font-black text-sm">${(t.display_symbol || t.symbol).toUpperCase()}</span>
+                            <span class="font-black text-sm">${escapeHtml((t.display_symbol || t.symbol || '').toUpperCase())}</span>
                             <span class="text-[9px] text-secondary font-bold uppercase">${t.close_time ? new Date(t.close_time).toLocaleString() : '--'}</span>
                         </td>
                         <td class="py-5 text-center">
-                            <span class="px-2 py-0.5 rounded text-[10px] font-black ${t.direction === 'BUY' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">${t.direction}</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-black ${t.direction === 'BUY' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">${escapeHtml(t.direction)}</span>
                         </td>
-                        <td class="py-5 text-right font-black tabular-nums">${t.entry_price.toLocaleString()}</td>
-                        <td class="py-5 text-right font-black tabular-nums">${t.exit_price.toLocaleString()}</td>
-                        <td class="py-5 pr-8 text-right font-black tabular-nums ${t.pnl >= 0 ? 'text-green-500' : 'text-red-500'}">${t.pnl.toLocaleString()} €</td>
+                        <td class="py-5 text-right font-black tabular-nums">${fmtPrice(t.entry_price)}</td>
+                        <td class="py-5 text-right font-black tabular-nums">${fmtPrice(t.exit_price)}</td>
+                        <td class="py-5 pr-8 text-right font-black tabular-nums ${(t.pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}">${fmtMoney(t.pnl)} ${botIsMode === 'REAL' ? '$' : '€'}</td>
                     </tr>
                 `).join('');
             }
@@ -1030,18 +1247,19 @@
             const data = await fetchAPI('/scanner');
             const scannerBody = document.getElementById('scanner-table-body');
             if (scannerBody && data && data.assets) {
+                if (data.duration_s !== undefined) lastScanDuration = data.duration_s;
                 scannerBody.innerHTML = data.assets.map(a => `
-                    <tr class="group hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer" onclick="selectMarket('${a.symbol}')">
+                    <tr class="group hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer" onclick="selectMarket('${escapeHtml(a.symbol)}')">
                         <td class="py-5 px-8 flex flex-col">
-                            <span class="font-black text-sm">${a.symbol.toUpperCase().replace('_', '/')}</span>
-                            <span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${a.name || '--'}</span>
+                            <span class="font-black text-sm">${escapeHtml((a.symbol || '').toUpperCase().replace('_', '/'))}</span>
+                            <span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${escapeHtml(a.name || '--')}</span>
                         </td>
-                        <td class="py-5 text-right font-black tabular-nums">${a.price ? a.price.toLocaleString() : '--'}</td>
-                        <td class="py-5 text-right font-bold ${a.change >= 0 ? 'text-green-500' : 'text-red-500'}">${a.change ? (a.change >= 0 ? '+' : '') + a.change.toFixed(2) + '%' : '0.00%'}</td>
+                        <td class="py-5 text-right font-black tabular-nums">${fmtPrice(a.price)}</td>
+                        <td class="py-5 text-right font-bold ${(a.change || 0) >= 0 ? 'text-green-500' : 'text-red-500'}">${a.change != null ? ((a.change >= 0 ? '+' : '') + Number(a.change).toFixed(2) + '%') : '0.00%'}</td>
                         <td class="py-5 text-center">
-                            <span class="text-[10px] font-black uppercase tracking-widest ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}">${a.trend || '--'}</span>
+                            <span class="text-[10px] font-black uppercase tracking-widest ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}">${escapeHtml(a.trend || '--')}</span>
                         </td>
-                        <td class="py-5 text-center"><span class="status-badge bg-black/5 dark:bg-white/5 text-secondary text-[8px]">${a.status || 'LIVE'}</span></td>
+                        <td class="py-5 text-center"><span class="status-badge bg-black/5 dark:bg-white/5 text-secondary text-[8px]">${escapeHtml(a.status || 'LIVE')}</span></td>
                         <td class="py-5 pr-8 text-right"><div class="flex items-center justify-end gap-3"><span class="font-black text-sm">${a.score || 0}</span><div class="w-12 h-1 bg-black/5 rounded-full overflow-hidden"><div class="h-full bg-accent-blue" style="width: ${a.score || 0}%"></div></div></div></td>
                     </tr>
                 `).join('');
@@ -1049,34 +1267,129 @@
         }
 
         async function update() {
-            const s = await fetchAPI("/status?market_id=" + selectedSymbol);
+            const s = await fetchAPI('/status?market_id=' + selectedSymbol);
             if (!s) return;
-            botIsRunning = s.is_running;
-            botIsArmed = s.armed;
-            botIsMode = s.mode;
-            
+            botIsRunning = !!s.is_running;
+            botIsArmed = !!s.armed;
+            botIsMode = s.mode || 'DEMO';
+
             updateStatus(s);
             updateAccountUI(s);
-            if (activeTab === 'history') updateHistory();
-            if (activeTab === 'scanner') updateScanner();
 
-            document.getElementById('header-balance').innerText = `${s.balance.toLocaleString()} ${s.mode === 'REAL' ? '$' : '€'}`;
-            document.getElementById('bot-mode-display').innerText = `${s.mode} MODE ACTIVE` + (s.mode === 'REAL' ? ' (BETA)' : '');
-            
+            const hBal = document.getElementById('header-balance');
+            const modeDisp = document.getElementById('bot-mode-display');
+            const symHeader = document.getElementById('active-symbol-header');
+            if (hBal) hBal.innerText = `${fmtMoney(s.balance)} ${s.mode === 'REAL' ? '$' : '€'}`;
+            if (modeDisp) modeDisp.innerText = `${s.mode} MODE ${s.is_running ? '• RUNNING' : ''}`;
+            if (symHeader) symHeader.innerText = (s.selected_market || selectedSymbol).toUpperCase().replace('_', '/');
+
+            // Engine health
+            const engStatus = document.getElementById('eng-status');
+            if (engStatus) {
+                engStatus.innerText = s.is_running ? 'ONLINE' : 'STANDBY';
+                engStatus.className = `status-badge ${s.is_running ? 'bg-green-500/10 text-green-500' : 'bg-slate-500/10 text-slate-500'}`;
+            }
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.innerText = v; };
+            const st = s.stats || {};
+            set('eng-markets', st.markets ?? '--');
+            set('eng-scanned', st.scanned ?? '--');
+            set('eng-analyzing', st.scanned ?? '--');
+            set('eng-signals', st.signals ?? '--');
+            const tradableEl = document.getElementById('eng-tradable');
+            if (tradableEl) {
+                tradableEl.innerText = st.tradable ?? '--';
+                tradableEl.className = `status-badge ${(st.tradable || 0) > 0 ? 'bg-green-500/10 text-green-500' : 'bg-slate-500/10 text-slate-500'}`;
+            }
+            set('eng-duration', `${(lastScanDuration || 0).toFixed(1)}s`);
+
+            // Arm / mode UI
+            const armBtn = document.getElementById('arm-toggle-btn');
+            const armLabel = document.getElementById('arm-label');
+            const armDot = document.getElementById('arm-status-indicator');
+            if (armBtn) armBtn.innerText = s.armed ? 'DISARM EXECUTION ENGINE' : 'ARM EXECUTION ENGINE';
+            if (armBtn) armBtn.className = `w-full py-5 rounded-2xl font-black text-sm active:scale-95 transition-all shadow-xl ${s.armed ? 'bg-accent-orange text-black' : 'bg-black text-white dark:bg-white dark:text-black'}`;
+            if (armLabel) { armLabel.innerText = s.armed ? 'ARMED' : 'DISARMED'; armLabel.className = `text-[10px] font-black uppercase tracking-widest ${s.armed ? 'text-accent-orange' : 'text-red-500'}`; }
+            if (armDot) armDot.className = `w-1.5 h-1.5 rounded-full ${s.armed ? 'bg-accent-orange animate-pulse' : 'bg-red-500'}`;
+            const demoBtn = document.getElementById('mode-demo-btn');
+            const liveBtn = document.getElementById('mode-live-btn');
+            if (demoBtn) demoBtn.className = `switch-option ${s.mode === 'DEMO' ? 'active' : ''}`;
+            if (liveBtn) liveBtn.className = `switch-option ${s.mode === 'REAL' ? 'active' : ''}`;
+            const startBtn = document.getElementById('main-toggle-btn');
+            if (startBtn) startBtn.innerHTML = `<i data-lucide="${s.is_running ? 'pause' : 'play'}" class="w-4 h-4 fill-current"></i><span>${s.is_running ? 'STOP SYSTEM' : 'START SYSTEM'}</span>`;
+            lucide.createIcons();
+
+            // Trading terminal
+            const symEl = document.getElementById('trading-active-symbol');
+            const classEl = document.getElementById('trading-asset-class');
+            if (symEl) symEl.innerText = (s.asset_info && s.asset_info.display_symbol) || (s.selected_market || '').toUpperCase();
+            if (classEl && s.asset_info) classEl.innerText = `${s.asset_info.asset_class} • ${s.asset_info.name || ''}`;
+            if (s.ticker) {
+                const priceEl = document.getElementById('trading-live-price');
+                if (priceEl && s.ticker.last != null) priceEl.innerText = fmtPrice(s.ticker.last);
+                const statusTag = document.getElementById('market-status-tag');
+                if (statusTag) {
+                    statusTag.innerText = s.ticker.status || 'LIVE';
+                    statusTag.className = `text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${s.ticker.status === 'LIVE' ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'}`;
+                }
+            }
+
+            // Intelligence panels
             if (s.analysis) {
                 const a = s.analysis;
-                document.getElementById('ana-trend').innerText = a.trend || 'NEUTRAL';
-                document.getElementById('ana-trend').className = `font-black text-sm ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}`;
-                document.getElementById('ana-struct').innerText = (a.is_hh ? 'HH/HL' : (a.is_ll ? 'LH/LL' : 'CONSOLIDATION'));
-                document.getElementById('ana-mom').innerText = `${(a.momentum || 0).toFixed(4)}%`;
-                document.getElementById('ana-vol').innerText = a.volatility || 'LOW';
+                const trendEl = document.getElementById('ana-trend');
+                if (trendEl) { trendEl.innerText = a.trend || 'NEUTRAL'; trendEl.className = `font-black text-sm ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}`; }
+                set('ana-struct', a.is_hh ? 'HH/HL' : (a.is_ll ? 'LH/LL' : 'CONSOLIDATION'));
+                set('ana-mom', `${(a.momentum || 0).toFixed(4)}%`);
+                set('ana-vol', a.volatility || 'LOW');
+                renderIndicators(a);
             }
+
+            renderSignal(s.signal);
+            renderDiagnosis(s.diagnosis);
+            renderBlockers(s.diagnosis, s.news);
+            renderCalendar(s.news);
+            renderBestSetups(s.best_setups);
+
+            // Provisioning cards
+            const provDemo = document.getElementById('prov-demo-val');
+            if (provDemo && s.demo_balance != null) provDemo.innerText = `${fmtMoney(s.demo_balance)} €`;
+            const provReal = document.getElementById('prov-real-val');
+            if (provReal && s.real_balance != null) provReal.innerText = `${fmtMoney(s.real_balance)} $`;
+            const provBrokers = document.getElementById('prov-broker-count');
+            if (provBrokers && s.broker_info) provBrokers.innerText = s.broker_info.broker_count || 0;
+
+            // News + audit (throttled)
+            await refreshMetrics();
+            renderAuditLogs();
+            if (activeTab === 'history') updateHistory();
+            if (activeTab === 'scanner') updateScanner();
+            if (activeTab === 'positions') updateAccountUI(s);
+        }
+
+        async function updateNews() {
+            const data = await fetchAPI('/news');
+            const el = document.getElementById('terminal-news-list');
+            if (!el || !data || !data.news) return;
+            if (data.news.length === 0) {
+                el.innerHTML = '<p class="text-secondary font-medium text-xs italic text-center py-4">No news items right now.</p>';
+                return;
+            }
+            el.innerHTML = data.news.slice(0, 12).map(n => `
+                <div class="flex flex-col gap-1 px-3 py-2 rounded-xl bg-black/[0.03] dark:bg-white/[0.03]">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-[8px] font-black uppercase tracking-wider ${n.impact === 'CRITICAL' ? 'text-red-500' : (n.impact === 'HIGH' ? 'text-orange-500' : 'text-secondary')}">${escapeHtml(n.impact || 'LOW')}</span>
+                        <span class="text-[7px] font-bold text-secondary uppercase">${escapeHtml(n.source || '')}</span>
+                    </div>
+                    <p class="text-[10px] font-bold leading-snug">${escapeHtml(n.title || '')}</p>
+                    <span class="text-[8px] text-secondary">${n.timestamp ? new Date(n.timestamp).toLocaleString() : ''}</span>
+                </div>`).join('');
         }
 
         function showTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
-            document.getElementById(`tab-${tabId}`).classList.add('active');
+            const tab = document.getElementById(`tab-${tabId}`);
+            if (tab) tab.classList.add('active');
             activeTab = tabId;
             const sidebarItem = document.querySelector(`.sidebar-item[onclick*="${tabId}"]`);
             if (sidebarItem) sidebarItem.classList.add('active');
@@ -1084,37 +1397,79 @@
             if (tabId === 'scanner') updateScanner();
             if (tabId === 'brokers') updateBrokers();
             if (tabId === 'settings') loadSettings();
+            if (tabId === 'markets') initMarkets();
+            if (tabId === 'trading') updateNews();
+            if (tabId === 'positions') update();
         }
 
-        async function fetchAPI(endpoint, method = 'GET', body = null) {
-            try {
-                const url = `/api${endpoint}`;
-                const options = { method };
-                if (body) {
-                    options.headers = { 'Content-Type': 'application/json' };
-                    options.body = JSON.stringify(body);
-                }
-                const res = await fetch(url, options);
-                return await res.json();
-            } catch (e) { return null; }
+        /* ------------------------------------------------------------------ *
+         *  Markets                                                            *
+         * ------------------------------------------------------------------ */
+        function setMarketFilter(f) {
+            currentFilter = f;
+            document.querySelectorAll('#market-filters .switch-option').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('#market-filters .switch-option').forEach(el => {
+                if (el.innerText.trim() === f) el.classList.add('active');
+            });
+            initMarkets();
         }
 
-        async function updateBrokers() {
-            const brokers = await fetchAPI('/brokers');
-            const wallets = await fetchAPI('/wallets');
-            const table = document.getElementById('broker-status-table');
-            if (table && brokers) {
-                table.innerHTML = brokers.map(b => `
-                    <tr class="border-b border-black/5 dark:border-white/5 group hover:bg-black/[0.01]">
-                        <td class="py-4 px-6"><div class="flex items-center gap-3">${LOGOS[b.exchange_id.toUpperCase()] || ''}<span class="font-black">${b.broker_id}</span></div></td>
-                        <td class="py-4 px-6 font-bold text-secondary uppercase">${b.exchange_id}</td>
-                        <td class="py-4 px-6"><span class="status-badge ${b.is_active ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">${b.is_active ? 'READY' : 'INACTIVE'}</span></td>
-                        <td class="py-4 px-6 text-right"><button onclick="toggleBroker('${b.broker_id}', ${!b.is_active})" class="text-accent-blue font-black text-[9px] uppercase tracking-widest hover:underline">${b.is_active ? 'Disable' : 'Enable'}</button></td>
-                    </tr>
-                `).join('');
+        async function initMarkets() {
+            const grid = document.getElementById('markets-full-grid');
+            const res = await fetchAPI('/markets');
+            if (grid && res) {
+                let html = '';
+                const categories = ['CRYPTO', 'FOREX', 'INDICES', 'COMMODITIES', 'STOCKS', 'FUTURES', 'BONDS', 'ETFS'];
+                categories.forEach(cat => {
+                    if (currentFilter !== 'ALL' && cat !== currentFilter) return;
+                    if (!res[cat] || res[cat].length === 0) return;
+                    html += `<div class="col-span-full mt-4 border-b border-black/5 pb-2 text-[10px] font-black uppercase tracking-widest">${cat}</div>`;
+                    html += res[cat].map(m => `
+                        <div class="market-card" onclick="selectMarket('${escapeHtml(m.market_id || m.symbol)}')">
+                            <div class="flex flex-col"><span class="font-black text-sm">${escapeHtml((m.display_symbol || m.symbol || '').toUpperCase())}</span><span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${escapeHtml(m.name || '--')}</span></div>
+                            <p class="font-black text-sm mt-2" data-price-id="${escapeHtml(m.market_id || m.symbol)}">${fmtPrice(m.price)}</p>
+                        </div>
+                    `).join('');
+                });
+                grid.innerHTML = html || '<p class="text-secondary text-xs italic col-span-full">No data yet — the scanner is warming up.</p>';
             }
         }
 
+        function selectMarket(mid) {
+            selectedSymbol = mid;
+            showTab('trading');
+            update();
+        }
+
+        /* ------------------------------------------------------------------ *
+         *  Manual trading                                                     *
+         * ------------------------------------------------------------------ */
+        async function manualTrade(direction) {
+            const qty = parseFloat(document.getElementById('trade-qty').value);
+            const slRaw = document.getElementById('trade-sl').value;
+            const tpRaw = document.getElementById('trade-tp').value;
+            const sl = slRaw ? parseFloat(slRaw) : null;
+            const tp = tpRaw ? parseFloat(tpRaw) : null;
+            if (!qty || qty <= 0) { alert('Enter a valid lot size.'); return; }
+
+            const res = await fetchAPI('/order', 'POST', {
+                market_id: selectedSymbol,
+                direction: direction,
+                quantity: qty,
+                sl: sl,
+                tp: tp
+            });
+            if (res && res.success) {
+                update();
+            } else {
+                alert(`Order rejected: ${res && res.reason ? res.reason : 'unknown error'}`);
+            }
+            update();
+        }
+
+        /* ------------------------------------------------------------------ *
+         *  Settings / capital / lifecycle                                     *
+         * ------------------------------------------------------------------ */
         async function loadSettings() {
             const s = await fetchAPI('/settings');
             if (s) {
@@ -1135,56 +1490,188 @@
                 data[key] = el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value;
             });
             const res = await fetchAPI('/settings', 'POST', data);
-            if (res && res.success) alert("Settings saved successfully.");
+            if (res && res.success) alert('Settings deployed. Engines updated live.');
+            else alert('Failed to save settings (admin key required?).');
         }
 
-        async function selectMarket(mid) {
-            selectedSymbol = mid;
-            showTab('trading');
-            update();
+        async function setBalance() {
+            const input = document.getElementById('demo-bal-input');
+            const v = parseFloat(input.value);
+            if (isNaN(v) || v < 0) { alert('Enter a valid amount.'); return; }
+            const res = await fetchAPI('/demo/balance', 'POST', { balance: v });
+            if (res && res.success) update();
+            else alert('Failed to update balance (admin key required?).');
         }
 
+        async function quickProvision(v) {
+            const res = await fetchAPI('/demo/balance', 'POST', { balance: v });
+            if (res && res.success) update();
+            else alert('Failed to provision capital (admin key required?).');
+        }
+
+        async function resetAccount() {
+            if (!confirm('Wipe the entire DEMO trade journal and reset the balance to 10 000 €?')) return;
+            const res = await fetchAPI('/demo/reset', 'POST');
+            if (res && res.success) update();
+            else alert('Reset failed (admin key required?).');
+        }
+
+        async function resetEmergency() {
+            if (!confirm('Reset the emergency stop state and return the system to idle?')) return;
+            const res = await fetchAPI('/emergency-reset', 'POST');
+            if (res && res.success) update();
+            else alert('Reset failed (admin key required?).');
+        }
+
+        /* ------------------------------------------------------------------ *
+         *  Brokers & wallets                                                  *
+         * ------------------------------------------------------------------ */
+        async function updateBrokers() {
+            const data = await fetchAPI('/brokers');
+            const table = document.getElementById('broker-status-table');
+            if (table && data && data.brokers) {
+                if (data.brokers.length === 0) {
+                    table.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-secondary italic text-[10px]">No brokers configured.</td></tr>';
+                } else {
+                    table.innerHTML = data.brokers.map(b => `
+                        <tr class="border-b border-black/5 dark:border-white/5 group hover:bg-black/[0.01]">
+                            <td class="py-4 px-6"><div class="flex items-center gap-3">${LOGOS[(b.exchange_id || '').toUpperCase()] || ''}<span class="font-black">${escapeHtml(b.broker_id)}</span></div></td>
+                            <td class="py-4 px-6 font-bold text-secondary uppercase">${escapeHtml(b.exchange_id)}</td>
+                            <td class="py-4 px-6"><span class="status-badge ${b.is_active ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">${b.is_active ? 'READY' : 'INACTIVE'}</span></td>
+                            <td class="py-4 px-6 text-right flex gap-3 justify-end">
+                                <button onclick="toggleBroker('${escapeHtml(b.broker_id)}', ${!b.is_active})" class="text-accent-blue font-black text-[9px] uppercase tracking-widest hover:underline">${b.is_active ? 'Disable' : 'Enable'}</button>
+                                <button onclick="deleteBroker('${escapeHtml(b.broker_id)}')" class="text-red-500 font-black text-[9px] uppercase tracking-widest hover:underline">Remove</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            }
+            const wData = await fetchAPI('/wallets');
+            const walletList = document.getElementById('wallet-list');
+            if (walletList && wData && wData.wallets) {
+                if (wData.wallets.length === 0) {
+                    walletList.innerHTML = '<p class="text-secondary italic text-[10px]">No wallets synchronized.</p>';
+                } else {
+                    walletList.innerHTML = wData.wallets.map(w => `
+                        <div class="card-premium flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                ${LOGOS[w.provider] || ''}
+                                <div>
+                                    <p class="font-black text-xs">${escapeHtml(w.wallet_id)}</p>
+                                    <p class="text-[8px] font-bold text-secondary uppercase">${escapeHtml(w.provider)} • ${escapeHtml((w.address || '').slice(0, 10))}...</p>
+                                </div>
+                            </div>
+                            <button onclick="deleteWallet('${escapeHtml(w.wallet_id)}')" class="text-red-500 font-black text-[9px] uppercase tracking-widest hover:underline">Remove</button>
+                        </div>
+                    `).join('');
+                }
+            }
+        }
+
+        async function toggleBroker(id, isActive) {
+            const res = await fetchAPI(`/brokers/${encodeURIComponent(id)}/toggle`, 'POST', { is_active: isActive });
+            if (!res || !res.success) alert('Failed to toggle broker (admin key required?).');
+            updateBrokers();
+        }
+
+        async function deleteBroker(id) {
+            if (!confirm(`Remove broker "${id}" and its credentials?`)) return;
+            const res = await fetchAPI(`/brokers/${encodeURIComponent(id)}`, 'DELETE');
+            if (!res || !res.success) alert('Failed to remove broker (admin key required?).');
+            updateBrokers();
+        }
+
+        async function deleteWallet(id) {
+            if (!confirm(`Remove wallet "${id}"?`)) return;
+            const res = await fetchAPI(`/wallets/${encodeURIComponent(id)}`, 'DELETE');
+            if (!res || !res.success) alert('Failed to remove wallet (admin key required?).');
+            updateBrokers();
+        }
+
+        function setWalletProvider(p) {
+            const hidden = document.getElementById('selected-provider');
+            if (hidden) hidden.value = p;
+            ['METAMASK', 'PHANTOM', 'OKX'].forEach(pid => {
+                const el = document.getElementById(`p-${pid}`);
+                if (el) el.classList.toggle('active', pid === p);
+            });
+        }
+
+        /* ------------------------------------------------------------------ *
+         *  Event wiring                                                       *
+         * ------------------------------------------------------------------ */
         document.getElementById('theme-toggle').onclick = () => {
             document.body.classList.toggle('dark');
             localStorage.setItem('quantum-theme', document.body.classList.contains('dark') ? 'dark' : 'light');
             updateThemeUI();
         };
 
-        document.getElementById('mode-demo-btn').onclick = () => fetchAPI('/mode', 'POST').then(update);
-        document.getElementById('mode-live-btn').onclick = () => { if(confirm("Warning: REAL FUNDS will be used. Proceed?")) fetchAPI('/mode', 'POST').then(update); };
+        document.getElementById('mode-demo-btn').onclick = async () => {
+            if (botIsMode === 'DEMO') return;
+            const res = await fetchAPI('/mode', 'POST');
+            if (res && res.success) update();
+            else alert(res && res.message ? res.message : 'Mode switch failed.');
+        };
+
+        document.getElementById('mode-live-btn').onclick = async () => {
+            if (botIsMode === 'REAL') return;
+            if (!confirm('Warning: REAL FUNDS will be used. Proceed?')) return;
+            const res = await fetchAPI('/mode', 'POST');
+            if (res && res.success) update();
+            else alert(res && res.message ? res.message : 'Mode switch failed.');
+        };
+
         document.getElementById('main-toggle-btn').onclick = async () => {
             const target = !botIsRunning;
             const res = await fetchAPI(target ? '/start' : '/stop', 'POST');
             if (res && res.success) { botIsRunning = target; update(); }
+            else alert('Action failed (admin key required?).');
         };
-        document.getElementById('arm-toggle-btn').onclick = () => fetchAPI('/arm', 'POST').then(update);
-        document.getElementById('emergency-stop-btn').onclick = () => { if(confirm("Stop all systems?")) fetchAPI('/emergency-stop', 'POST').then(update); };
+
+        document.getElementById('arm-toggle-btn').onclick = async () => {
+            const res = await fetchAPI('/arm', 'POST');
+            if (res && res.armed !== undefined) { botIsArmed = res.armed; update(); }
+            else alert('Action failed (admin key required?).');
+        };
+
+        document.getElementById('emergency-stop-btn').onclick = () => {
+            if (confirm('Stop all systems?')) fetchAPI('/emergency-stop', 'POST').then(update);
+        };
+
+        document.getElementById('broker-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.target);
+            const payload = {
+                broker_id: fd.get('broker_id'),
+                exchange_id: fd.get('exchange_id'),
+                api_key: fd.get('api_key'),
+                api_secret: fd.get('api_secret'),
+                api_passphrase: null
+            };
+            const res = await fetchAPI('/brokers', 'POST', payload);
+            if (res && res.success) { alert('Broker connected.'); e.target.reset(); }
+            else alert(res && res.message ? res.message : 'Connection failed (check credentials / admin key).');
+            updateBrokers();
+        });
+
+        document.getElementById('wallet-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.target);
+            const res = await fetchAPI('/wallets', 'POST', {
+                wallet_id: fd.get('wallet_id'),
+                provider: fd.get('provider'),
+                address: fd.get('address')
+            });
+            if (res && res.success) { alert('Wallet synchronized.'); e.target.reset(); }
+            else alert('Wallet sync failed (admin key required?).');
+            updateBrokers();
+        });
 
         connectWS();
         initMarkets();
         update();
         setInterval(update, 2000);
 
-        async function initMarkets() {
-            const grid = document.getElementById('markets-full-grid');
-            const res = await fetchAPI('/markets');
-            if (grid && res) {
-                let html = '';
-                const categories = ['CRYPTO', 'FOREX', 'INDICES', 'COMMODITIES', 'STOCKS', 'FUTURES', 'BONDS', 'ETFS'];
-                categories.forEach(cat => {
-                    if (currentFilter !== 'ALL' && cat !== currentFilter) return;
-                    if (!res[cat] || res[cat].length === 0) return;
-                    html += `<div class="col-span-full mt-4 border-b border-black/5 pb-2 text-[10px] font-black uppercase tracking-widest">${cat}</div>`;
-                    html += res[cat].map(m => `
-                        <div class="market-card" onclick="selectMarket('${m.market_id || m.symbol}')">
-                            <div class="flex flex-col"><span class="font-black text-sm">${(m.display_symbol || m.symbol).toUpperCase()}</span><span class="text-[9px] font-bold text-secondary uppercase tracking-widest">${m.name || '--'}</span></div>
-                            <p class="font-black text-sm mt-2">${m.price ? m.price.toLocaleString() : '--'}</p>
-                        </div>
-                    `).join('');
-                });
-                grid.innerHTML = html;
-            }
-        }
     </script>
 </body>
 </html>

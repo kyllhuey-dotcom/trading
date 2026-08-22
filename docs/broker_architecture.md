@@ -1,27 +1,33 @@
-# Broker Architecture
+# Broker Architecture — v2.0
 
-This document describes the extensible broker adapter architecture (Rule 28, 29, 60).
+## Abstraction
+`BrokerAdapter` (ABC) impose l'interface unique pour toute cible d'exécution :
+`connect`, `get_balance`, `get_positions`, `execute_order` (market + SL/TP),
+`close_all_positions` (emergency exit), `cancel_order`, `get_status`, `close`.
 
-## Abstraction Layer
-The `BrokerAdapter` base class enforces a common interface for all execution targets.
+## Adaptateurs
+- **CCXTAdapter** : exécution réelle pour tout exchange CCXT (binance, gate, bybit,
+  kraken, okx…). L'ordre est réel (`create_order`), les SL/TP sont attachés en ordres
+  conditionnels (best-effort selon l'exchange), et l'emergency stop ferme positions et
+  ordres ouverts.
+- **PrimeXBTAdapter** : sous-classe CCXT (`primexbt` est supporté par CCXT —
+  l'ancienne affirmation « pas d'API publique » était incorrecte).
 
-## Execution Routing
-The `ExecutionRouter` handles the logic of directing trade requests to either the:
-1.  **DemoAdapter**: Real market data + Simulated execution.
-2.  **LiveAdapters**: Real market data + Real broker execution.
+## Routage
+- `ExecutionRouter` : DEMO → `ExecutionEngine` (papier), REAL → `BrokerConnector`.
+  Anti-doublon : throttle 5 s + `client_order_id` unique.
+- `BrokerConnector` : choisit le premier broker connecté ayant le symbole mappé
+  (`market_universe.broker_symbols`), exécute, puis **persiste la position REAL en DB**
+  (id `REAL-*`, métadonnées d'ordres brokers).
+- Réconciliation : toutes les secondes, les positions DB « OPEN » dont le broker n'a
+  plus trace sont fermées en DB (`BROKER_RECONCILED_CLOSE`) — jamais de fausse fermeture locale.
 
-## Adapters
+## Sécurité
+- Identifiants chiffrés Fernet au repos (table `broker_configs`).
+- `POST /api/mode` refuse le passage en REAL sans broker connecté ou si
+  l'emergency stop est actif.
+- Emergency stop : ferme tout sur tous les brokers connectés.
 
-### 1. CCXT Adapter
-Uses the `ccxt` library to support standard crypto exchanges like Binance, Gate.io, Bybit.
-- **Protocol**: REST + (Optional) WebSocket.
-- **Status**: Operational for Demo/Real.
-
-### 2. PrimeXBT Adapter
-- **Protocol**: Display Only (Rule 29).
-- **Official API**: Not available for retail bots in 2026.
-- **Integration**: Designed as a placeholder for official direct execution when available. Current usage is for analysis and manual execution assistance.
-
-### 3. Demo Adapter
-- **Simulation**: Uses real-time Bid/Ask quotes for fills.
-- **Fees**: Simulates slippage (0.01%) and broker commissions.
+## Wallets Web3
+- Adresses publiques enregistrées en DB (Metamask/Phantom/OKX).
+- Solde ETH via BlockCypher (lecture seule) — les wallets ne signent rien.

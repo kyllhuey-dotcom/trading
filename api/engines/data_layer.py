@@ -4,6 +4,9 @@ import pandas as pd
 import asyncio
 import json
 import time
+import logging
+
+logger = logging.getLogger("DataLayer")
 
 class DataIntegrityError(Exception):
     pass
@@ -11,7 +14,7 @@ class DataIntegrityError(Exception):
 class DataLayer:
     """
     Market Data Layer (Rule 2).
-    Independent architecture managing multiple data providers.
+    Independent architecture managing multiple data providers with fallback.
     """
     def __init__(self):
         self.providers: Dict[str, MarketDataProvider] = {}
@@ -22,6 +25,13 @@ class DataLayer:
 
     def register_provider(self, provider_id: str, provider: MarketDataProvider):
         self.providers[provider_id] = provider
+
+    def _prune_failure_cache(self) -> None:
+        """Drop expired entries so the cache cannot grow unbounded."""
+        if len(self.failure_cache) > 2000:
+            now = time.time()
+            self.failure_cache = {k: v for k, v in self.failure_cache.items()
+                                  if now - v < self.failure_cooldown}
 
     async def broadcast_update(self, update_data: Dict[str, Any]):
         """Rule 20: MarketDataBus implementation."""
@@ -38,6 +48,7 @@ class DataLayer:
         """
         results = []
         now = time.time()
+        self._prune_failure_cache()
         for mid in market_ids:
             info = catalog.get_info(mid)
             if not info: continue
@@ -61,17 +72,13 @@ class DataLayer:
                         if quote:
                             break
                         else:
-                            # Silently fail if fallback exists, only log if critical (Rule 3.4)
                             self.failure_cache[cache_key] = now
                     except Exception as e:
-                        # Log as warning/debug if it's a known delisted noise (Rule 3.4)
+                        # Known delisted-noise from yfinance stays silent, the rest is logged
                         if "possibly delisted" in str(e) or "No data found" in str(e):
-                            # Silence yfinance noise
                             pass
                         else:
-                            # Generic failure log reduced to warning
-                            # print(f"Provider {pid} failed for {psymbol}: {e}")
-                            pass
+                            logger.debug(f"Provider {pid} failed for {psymbol}: {e}")
                         self.failure_cache[cache_key] = now
             
             if quote:
@@ -117,7 +124,9 @@ class DataLayer:
                 try:
                     ob = await self.providers[pid].get_order_book(psymbol)
                     if ob: return ob
-                except: continue
+                except Exception as e:
+                    logger.debug(f"Order book failed ({pid}:{psymbol}): {e}")
+                    continue
         return None
 
     async def get_trades(self, market_id: str, catalog: Any) -> Optional[List[Dict[str, Any]]]:
@@ -128,7 +137,9 @@ class DataLayer:
                 try:
                     t = await self.providers[pid].get_recent_trades(psymbol)
                     if t: return t
-                except: continue
+                except Exception as e:
+                    logger.debug(f"Recent trades failed ({pid}:{psymbol}): {e}")
+                    continue
         return None
 
     async def get_cross_quotes(self, market_id: str, catalog: Any) -> List[Dict[str, Any]]:

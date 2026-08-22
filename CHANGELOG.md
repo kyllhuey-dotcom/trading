@@ -1,5 +1,30 @@
 # Changelog - Quantum Trade Pro
 
+## [2.0.0] - 2026-08-22 — Refonte complète (audit + corrections)
+### Fixed (critique)
+- **market_id propagé dans tous les signaux** — l'auto-trading était impossible (chaque ordre rejeté `MARKET_CLOSED`).
+- **Mode REAL réel** : ordres market via CCXT + SL/TP de protection + position persistée + réconciliation broker. (Avant : ordre simulé présenté comme "FILLED".)
+- **CCXTAdapter** : signature `(exchange_id, api_key, api_secret, passphrase)` corrigée (TypeError à l'ajout d'un broker).
+- **Emergency stop REAL** : `close_all_positions` implémenté sur tous les adaptateurs.
+- **RiskEngine** : validation du sens du SL, daily loss limit au niveau de l'ordre, cool-down appliqué, max positions depuis les settings, pic de drawdown persistant.
+- **Endpoints manquants réimplémentés** : `/api/markets`, `/api/brokers`, `/api/wallets`, `/api/performance`, `/api/metrics`, `/api/news`, `/api/health`, `/api/backtest`, `/api/diagnose`, `/api/order`, `/api/demo/*`.
+- **Crash JS corrigé** : `/api/status` renvoie le contrat complet ; frontend défensif.
+- **Réglages appliqués à chaud** : risque, seuil de score, stratégies actives, scanner (cache TTL 5 s).
+- **Tests** : 52 passés / 3 skips réseau ; suite isolée (DB temporaire) ; nouveaux tests de régression P0.
+
+### Security
+- Authentification `X-API-Key` (ADMIN_API_KEY) sur tous les endpoints mutables.
+- Secrets brokers chiffrés Fernet au repos (préfixe `enc:v1:`), erreurs de décryptage loggées.
+- `.gitignore` complet ; DB, logs, uploads et artefacts sensibles retirés du dépôt.
+
+### Changed
+- Boucles : fréquences assainies, timeouts stricts sur tous les appels réseau.
+- SQLite : connexions toujours fermées, ordre déterministe, `busy_timeout`.
+- Providers : Binance enregistré comme 3ᵉ fallback crypto ; logging structuré.
+- Code mort supprimé (`crypto_provider.py`, `market_catalog.py`) ; state machine, diagnostic engine, news aggregator, backtest branchés sur l'API.
+- Railway : volume `/app/data` persistant, healthcheck 30 s.
+- Documentation entièrement resynchronisée avec le code (README, contrat API, audits honnêtes).
+
 ## [1.4.0] - 2026-08-21
 ### Added
 - **Advanced Position Management**: Dynamic Trailing Stop, Partial Take-Profit (50%), and automatic Break-even.

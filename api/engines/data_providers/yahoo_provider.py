@@ -3,6 +3,9 @@ import pandas as pd
 import asyncio
 from .base_provider import MarketDataProvider, TickerModel
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 from typing import List, Optional, Dict, Any
 
 class YahooProvider(MarketDataProvider):
@@ -54,7 +57,7 @@ class YahooProvider(MarketDataProvider):
                 status="DELAYED" # Yahoo free API is delayed by 15min (Rule 6)
             )
         except Exception as e:
-            print(f"YahooProvider quote error ({symbol}): {e}")
+            logger.debug(f"YahooProvider quote error ({symbol}): {e}")
             return None
 
     async def get_ohlcv(self, symbol: str, timeframe: str = '1m', limit: int = 100) -> pd.DataFrame:
@@ -83,7 +86,7 @@ class YahooProvider(MarketDataProvider):
                 
             return df.tail(limit)
         except Exception as e:
-            print(f"YahooProvider OHLCV error ({symbol}): {e}")
+            logger.debug(f"YahooProvider OHLCV error ({symbol}): {e}")
             return pd.DataFrame()
 
     async def health_check(self) -> Dict[str, Any]:

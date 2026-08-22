@@ -2,6 +2,7 @@ from .data_layer import DataLayer
 from .market_universe import MarketUniverse
 from .data_providers.bybit_provider import BybitProvider
 from .data_providers.gate_provider import GateProvider
+from .data_providers.binance_provider import BinanceProvider
 from .data_providers.yahoo_provider import YahooProvider
 from .data_health import DataHealthMonitor
 from typing import Dict, Any, List, Optional
@@ -19,9 +20,10 @@ class DataEngine:
         self.layer = DataLayer()
         self.universe = MarketUniverse()
         
-        # Initialize Providers (Rule 10)
+        # Initialize Providers (Rule 10) — crypto gets 3-way redundancy
         self.crypto_primary = GateProvider() 
         self.crypto_backup = BybitProvider()
+        self.crypto_tertiary = BinanceProvider()
         self.forex_provider = YahooProvider("FOREX")
         self.index_provider = YahooProvider("INDICES")
         self.commodity_provider = YahooProvider("COMMODITIES")
@@ -33,6 +35,7 @@ class DataEngine:
         # Register in Layer
         self.layer.register_provider("gate", self.crypto_primary)
         self.layer.register_provider("bybit", self.crypto_backup)
+        self.layer.register_provider("binance", self.crypto_tertiary)
         self.layer.register_provider("yahoo_forex", self.forex_provider)
         self.layer.register_provider("yahoo_indices", self.index_provider)
         self.layer.register_provider("yahoo_commodities", self.commodity_provider)
@@ -72,7 +75,12 @@ class DataEngine:
     def _init_symbol_map(self):
         for market_id in self.universe.get_all_ids():
             info = self.universe.get_info(market_id)
-            # Register first available provider for each market in DataLayer mapping
+            # Automatic redundancy: every CRYPTO market can also fall back to Binance
+            # (same "XXX/USDT" symbol format as Gate/Bybit).
+            if info.get("asset_class") == "CRYPTO" and "binance" not in info.get("providers", {}):
+                primary = info.get("providers", {}).get("gate") or info.get("providers", {}).get("bybit")
+                if primary:
+                    info["providers"]["binance"] = primary
             for pid in info.get("providers", {}).keys():
                 if pid in self.layer.providers:
                     self.layer.symbol_map[market_id] = pid
@@ -145,3 +153,4 @@ class DataEngine:
     async def shutdown(self):
         await self.crypto_primary.close()
         await self.crypto_backup.close()
+        await self.crypto_tertiary.close()

@@ -3,6 +3,9 @@ import pandas as pd
 from typing import List, Optional, Dict, Any
 from .base_provider import MarketDataProvider, TickerModel
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 class GateProvider(MarketDataProvider):
     """
@@ -20,7 +23,7 @@ class GateProvider(MarketDataProvider):
             markets = await self.exchange.load_markets()
             return [symbol for symbol in markets if '/USDT' in symbol]
         except Exception as e:
-            print(f"Gate discovery error: {e}")
+            logger.debug(f"Gate discovery error: {e}")
             return []
 
     async def get_quote(self, symbol: str) -> Optional[TickerModel]:
@@ -42,7 +45,7 @@ class GateProvider(MarketDataProvider):
                 status="LIVE"
             )
         except Exception as e:
-            print(f"Gate quote error ({symbol}): {e}")
+            logger.debug(f"Gate quote error ({symbol}): {e}")
             return None
 
     async def get_ohlcv(self, symbol: str, timeframe: str = '1m', limit: int = 100) -> pd.DataFrame:
@@ -51,7 +54,7 @@ class GateProvider(MarketDataProvider):
             df = pd.DataFrame(ohlcv, columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
             return df
         except Exception as e:
-            print(f"Gate OHLCV error ({symbol}): {e}")
+            logger.debug(f"Gate OHLCV error ({symbol}): {e}")
             return pd.DataFrame()
 
     async def health_check(self) -> Dict[str, Any]:

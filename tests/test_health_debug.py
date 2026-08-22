@@ -1,33 +1,38 @@
-import ccxt.async_support as ccxt
-import asyncio
+import pytest
+import socket
+import ccxt
+import ccxt.async_support as ccxt_async
 
-async def test():
-    gate = ccxt.gate()
+
+def _require_network():
     try:
-        print("Testing Gate.io status...")
-        # try:
-        #     s = await gate.fetch_status()
-        #     print(f"Status: {s}")
-        # except Exception as e:
-        #     print(f"fetch_status failed: {e}")
-        
-        print("Testing Gate.io ticker...")
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+    except OSError:
+        pytest.skip("network unavailable")
+
+
+@pytest.mark.network
+async def test_gate_ticker():
+    _require_network()
+    gate = ccxt_async.gate({'enableRateLimit': True})
+    try:
         t = await gate.fetch_ticker('BTC/USDT')
-        print(f"Ticker: {t['last']}")
-    except Exception as e:
-        print(f"Gate.io error: {e}")
+        assert t['last'] and t['last'] > 0
     finally:
         await gate.close()
 
-    bybit = ccxt.bybit()
+
+@pytest.mark.network
+async def test_bybit_ticker():
+    _require_network()
+    bybit = ccxt_async.bybit({'enableRateLimit': True})
     try:
-        print("\nTesting Bybit ticker...")
-        t = await bybit.fetch_ticker('BTC/USDT')
-        print(f"Ticker: {t['last']}")
-    except Exception as e:
-        print(f"Bybit error: {e}")
+        try:
+            t = await bybit.fetch_ticker('BTC/USDT')
+        except (ccxt.RateLimitExceeded, ccxt.NetworkError, ccxt.ExchangeNotAvailable,
+                ccxt.RequestTimeout) as e:
+            pytest.skip(f"Bybit unavailable: {type(e).__name__}")
+            return
+        assert t['last'] and t['last'] > 0
     finally:
         await bybit.close()
-
-if __name__ == "__main__":
-    asyncio.run(test())

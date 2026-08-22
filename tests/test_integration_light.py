@@ -6,10 +6,14 @@ from api.index import app
 
 client = TestClient(app)
 
+
 def test_integration_healthz():
     response = client.get("/healthz")
     assert response.status_code == 200
-    assert response.json() == {"status": "OK"}
+    data = response.json()
+    assert data["status"] == "OK"
+    assert "uptime_s" in data
+
 
 def test_integration_status_endpoint():
     response = client.get("/api/status?market_id=btc_usdt")
@@ -17,3 +21,4 @@ def test_integration_status_endpoint():
     data = response.json()
     assert "status" in data
     assert "selected_market" in data
+    assert data["selected_market"] == "btc_usdt"

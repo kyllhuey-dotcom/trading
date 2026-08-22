@@ -1,26 +1,35 @@
-import asyncio
+import pytest
+import socket
 from api.engines.news_engine import NewsEngine
 
-async def test():
-    print("Testing NewsEngine (Economic Calendar Scraper)...")
-    engine = NewsEngine()
-    
-    status = await engine.check_trading_allowed(asset_class="CRYPTO")
-    print(f"Trading Allowed: {status['trading_allowed']}")
-    print(f"Day OK: {status['day_ok']}")
-    print(f"News OK: {status['news_ok']}")
-    print(f"Data Status: {status.get('status')}")
-    
-    if status['next_events']:
-        print(f"\nFound {len(status['next_events'])} events:")
-        for e in status['next_events']:
-            print(f"- {e['date']} {e['time']} {e['currency']} {e['impact']}: {e['event']}")
-    
-    # Dump raw cache to see what's inside
-    print(f"\nTotal events in cache: {len(engine.provider.cache)}")
-    if engine.provider.cache:
-        print("First event sample:")
-        print(engine.provider.cache[0])
 
-if __name__ == "__main__":
-    asyncio.run(test())
+def _require_network():
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+    except OSError:
+        pytest.skip("network unavailable")
+
+
+@pytest.mark.network
+async def test_news_engine_status():
+    _require_network()
+    engine = NewsEngine()
+    status = await engine.check_trading_allowed(asset_class="CRYPTO")
+
+    # The status must always carry the full contract
+    for key in ("trading_allowed", "day_ok", "news_ok", "session_ok", "next_events", "timestamp"):
+        assert key in status, f"missing key {key}"
+
+    # Crypto is 24/7 -> session must be allowed
+    assert status["session_ok"] is True
+    assert status["day_ok"] is True
+
+
+@pytest.mark.network
+async def test_session_filter_crypto_24_7():
+    _require_network()
+    engine = NewsEngine()
+    sf = engine.session_filter
+    for day in range(7):  # every day of the week
+        res = sf.is_trading_allowed(asset_class="CRYPTO")
+        assert res["session_ok"] is True

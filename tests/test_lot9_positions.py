@@ -25,10 +25,11 @@ def test_correlation_risk():
 @pytest.mark.asyncio
 async def test_trailing_stop_logic():
     db = DatabaseManager("data/test_lot9.db")
-    # Setup settings
     with db._get_connection() as conn:
+        conn.execute("DELETE FROM trades")  # hermetic test run
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('trailing_stop_active', 'true')")
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('trailing_stop_distance_atr', '1.0')")
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('partial_tp_ratio', '1.0')")
     
     portfolio = PortfolioEngine(db)
     risk = RiskEngine()
@@ -60,7 +61,9 @@ async def test_trailing_stop_logic():
 async def test_partial_tp_and_breakeven():
     db = DatabaseManager("data/test_lot9_partial.db")
     with db._get_connection() as conn:
+        conn.execute("DELETE FROM trades")  # hermetic test run
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('partial_tp_ratio', '1.0')")
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('trailing_stop_active', 'false')")
     
     portfolio = PortfolioEngine(db)
     portfolio.set_balance("DEMO", 1000.0)

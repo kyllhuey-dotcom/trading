@@ -52,11 +52,16 @@ class BacktestEngine:
                         pnl = (exit_price - active_position["entry"]) * active_position["qty"]
                     else:
                         pnl = (active_position["entry"] - exit_price) * active_position["qty"]
-                    
+                    # Round-trip fees (0.1% of notional, realistic taker model)
+                    fees = (active_position["entry"] * active_position["qty"] +
+                            exit_price * active_position["qty"]) * 0.0005
+                    pnl -= fees
+
                     balance += pnl
                     active_position["status"] = "CLOSED"
                     active_position["exit"] = exit_price
-                    active_position["pnl"] = pnl
+                    active_position["pnl"] = round(pnl, 6)
+                    active_position["fees"] = round(fees, 6)
                     active_position["close_time"] = str(current_bar.name)
                     trades.append(active_position)
                     active_position = None
