@@ -20,16 +20,19 @@ async def test_data_layer_fallback():
     layer = DataLayer()
     universe = MarketUniverse()
     
-    # Register a failing primary and a working backup
-    primary = MockProvider("Primary", fail=True)
-    backup = MockProvider("Backup", fail=False)
+    # LOT 7 provider priority is Binance > Bybit > Gate, so Bybit is the
+    # primary for btc_usdt and Gate the backup. Register the PRIMARY (bybit)
+    # as failing so the fallback to the backup (gate) actually happens.
+    primary = MockProvider("Bybit", fail=True)
+    backup = MockProvider("Gate", fail=False)
     
-    layer.register_provider("gate", primary)
-    layer.register_provider("bybit", backup)
+    layer.register_provider("bybit", primary)
+    layer.register_provider("gate", backup)
     
-    # btc_usdt has gate as primary and bybit as backup in my updated universe
     quotes = await layer.get_all_quotes(["btc_usdt"], universe)
     
     assert len(quotes) == 1
+    # bybit (primary) was tried first and failed, then gate (backup) answered.
     assert primary.call_count == 1
     assert backup.call_count == 1
+

@@ -63,7 +63,8 @@ def validate_settings(raw: Dict[str, Any]) -> Tuple[Dict[str, str], List[str]]:
                 s = str(value).strip().lower()
                 if s not in spec["choices"]:
                     cleaned[key] = spec["default"]
-                    errors.append(f"{key}: invalid language, defaulted to {spec['default']}")
+                    errors.append(f"{key}: invalid choice '{s}', expected one of "
+                                  f"{sorted(spec['choices'])} (defaulted to {spec['default']})")
                 else:
                     cleaned[key] = s
                 continue
