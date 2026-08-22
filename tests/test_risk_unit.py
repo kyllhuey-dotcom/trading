@@ -1,4 +1,3 @@
-import pytest
 from api.engines.risk_engine import RiskEngine
 
 def test_risk_sl_side_validation():

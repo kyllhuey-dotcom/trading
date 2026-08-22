@@ -3,6 +3,7 @@ from typing import Dict, Any, List, Optional
 import ccxt.async_support as ccxt
 import os
 import logging
+import math
 from datetime import datetime
 
 from ..exchange_constraints import parse_ccxt_market_constraints
@@ -50,10 +51,13 @@ class CCXTAdapter(BrokerAdapter):
             await self.client.load_markets()  # real connectivity + credential check
             logger.info(f"CCXT {self.exchange_id}: connected ({len(self.client.markets)} markets)")
             return True
-        except Exception as e:
-            logger.error(f"CCXT {self.exchange_id} Connection Error: {e}")
+        except Exception as exc:
+            logger.error("CCXT %s connection error: %s", self.exchange_id, exc)
             if self.client:
-                await self.client.close()
+                try:
+                    await self.client.close()
+                except Exception as close_exc:
+                    logger.warning("CCXT %s cleanup failed: %s", self.exchange_id, close_exc)
             self.client = None
             return False
 
@@ -107,31 +111,48 @@ class CCXTAdapter(BrokerAdapter):
                             sl: Optional[float] = None, tp: Optional[float] = None) -> Dict[str, Any]:
         if not self.client:
             return {"success": False, "reason": "BROKER_DISCONNECTED"}
+        normalized_side = str(side).lower()
         try:
-            order = await self.client.create_order(symbol, 'market', side.lower(), quantity)
+            quantity = float(quantity)
+        except (TypeError, ValueError):
+            return {"success": False, "reason": "INVALID_QUANTITY"}
+        if normalized_side not in {"buy", "sell"}:
+            return {"success": False, "reason": "INVALID_SIDE"}
+        if not math.isfinite(quantity) or quantity <= 0:
+            return {"success": False, "reason": "INVALID_QUANTITY"}
+        try:
+            order = await self.client.create_order(symbol, 'market', normalized_side, quantity)
             result = {
                 "success": True,
                 "broker_order_id": order.get("id"),
                 "status": order.get("status", "FILLED"),
                 "filled": order.get("filled"),
                 "average": order.get("average"),
-                "side": side.lower(),
+                "side": normalized_side,
                 "symbol": symbol,
                 "timestamp": datetime.now().isoformat(),
             }
 
-            # Attach SL/TP protection orders (best-effort, exchange dependent)
-            hedge_side = 'sell' if side.lower() == 'buy' else 'buy'
+            # Attach SL/TP protection orders (best-effort, exchange dependent).
+            # `reduceOnly` is essential: without it, a protection order can open
+            # a reverse position after the original position has already closed.
+            hedge_side = 'sell' if normalized_side == 'buy' else 'buy'
             try:
-                if tp:
-                    tp_order = await self.client.create_order(symbol, 'limit', hedge_side, quantity, tp)
+                if tp is not None:
+                    tp_order = await self.client.create_order(
+                        symbol, 'limit', hedge_side, quantity, float(tp),
+                        {'reduceOnly': True},
+                    )
                     result["tp_order_id"] = tp_order.get("id")
-                if sl:
-                    sl_order = await self.client.create_order(symbol, 'stop_loss', hedge_side, quantity, None, sl)
+                if sl is not None:
+                    sl_order = await self.client.create_order(
+                        symbol, 'stop_loss', hedge_side, quantity, None,
+                        {'stopPrice': float(sl), 'triggerPrice': float(sl), 'reduceOnly': True},
+                    )
                     result["sl_order_id"] = sl_order.get("id")
-            except Exception as e:
-                logger.warning(f"SL/TP attachment failed ({self.exchange_id}): {e}")
-                result["sl_tp_warning"] = str(e)
+            except Exception as exc:
+                logger.warning("SL/TP attachment failed (%s): %s", self.exchange_id, exc)
+                result["sl_tp_warning"] = str(exc)
 
             return result
         except Exception as e:
@@ -144,25 +165,39 @@ class CCXTAdapter(BrokerAdapter):
         if not self.client:
             return result
         try:
-            for p in await self.get_positions():
-                contracts = p.get("contracts")
+            positions = await self.get_positions()
+        except Exception as exc:  # defensive: adapters normally return [] on failure
+            positions = []
+            result["errors"].append(f"fetch positions: {exc}")
+        for position in positions:
+            try:
+                contracts = position.get("contracts")
                 if contracts is None:
                     continue
                 contracts = float(contracts)
                 if contracts <= 0:
                     continue
-                hedge = 'sell' if str(p.get("side", "")).lower() == 'long' else 'buy'
-                await self.client.create_order(p["symbol"], 'market', hedge, abs(contracts),
-                                               {'reduceOnly': True})
+                hedge = 'sell' if str(position.get("side", "")).lower() == 'long' else 'buy'
+                await self.client.create_order(
+                    position["symbol"], 'market', hedge, abs(contracts), None,
+                    {'reduceOnly': True},
+                )
                 result["closed_positions"] += 1
-        except Exception as e:
-            result["errors"].append(f"close positions: {e}")
+            except Exception as exc:
+                result["errors"].append(
+                    f"close position {position.get('symbol', '?')}: {exc}"
+                )
         try:
-            for o in await self.client.fetch_open_orders():
-                await self.client.cancel_order(o["id"], o.get("symbol"))
+            open_orders = await self.client.fetch_open_orders()
+        except Exception as exc:
+            open_orders = []
+            result["errors"].append(f"fetch open orders: {exc}")
+        for order in open_orders:
+            try:
+                await self.client.cancel_order(order["id"], order.get("symbol"))
                 result["cancelled_orders"] += 1
-        except Exception as e:
-            result["errors"].append(f"cancel orders: {e}")
+            except Exception as exc:
+                result["errors"].append(f"cancel order {order.get('id', '?')}: {exc}")
         return result
 
     async def cancel_order(self, order_id: str, symbol: Optional[str] = None) -> bool:

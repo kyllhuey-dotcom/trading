@@ -348,7 +348,7 @@ def test_profit_audit_stats(tmp_path):
 
 
 def test_profit_audit_empty_db(tmp_path):
-    db = DatabaseManager(str(tmp_path / "empty_audit.db"))
+    DatabaseManager(str(tmp_path / "empty_audit.db"))
     stats = analyze_db(str(tmp_path / "empty_audit.db"))
     assert stats["total_closed_trades"] == 0
     assert stats["modes"] == {}

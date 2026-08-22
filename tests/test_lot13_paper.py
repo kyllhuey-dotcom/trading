@@ -1,6 +1,5 @@
 import pytest
 import time
-import asyncio
 from api.engines.execution_engine import ExecutionEngine
 from api.engines.db_manager import DatabaseManager
 from api.engines.portfolio_engine import PortfolioEngine

@@ -2,11 +2,10 @@ import yfinance as yf
 import pandas as pd
 import asyncio
 from .base_provider import MarketDataProvider, TickerModel
-from datetime import datetime
 import logging
+from typing import List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
-from typing import List, Optional, Dict, Any
 
 class YahooProvider(MarketDataProvider):
     """
@@ -69,7 +68,8 @@ class YahooProvider(MarketDataProvider):
             ticker = await asyncio.to_thread(yf.Ticker, symbol)
             # Period calculation based on limit and timeframe
             period = "1d"
-            if timeframe in ['1h', '1d'] or limit > 100: period = "5d"
+            if timeframe in ['1h', '1d'] or limit > 100:
+                period = "5d"
             
             data = await asyncio.to_thread(ticker.history, period=period, interval=yf_tf)
             if data.empty:

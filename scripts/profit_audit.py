@@ -16,8 +16,7 @@ import json
 import os
 import sqlite3
 import sys
-from collections import defaultdict
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 # Make the repo root importable regardless of the current working directory,
 # so `from api.engines.capital_profiles import ...` always resolves.
@@ -184,13 +183,24 @@ def print_recommendations(stats: Dict[str, Any], balance: float = 0.0) -> None:
     print("-" * 78)
 
 
-def main() -> None:
-    db_path = sys.argv[1] if len(sys.argv) > 1 else "data/quantum_trade.db"
-    balance = float(sys.argv[2]) if len(sys.argv) > 2 else 0.0
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    db_path = args[0] if args else "data/quantum_trade.db"
+    try:
+        balance = float(args[1]) if len(args) > 1 else 0.0
+    except (TypeError, ValueError, OverflowError):
+        print("error: balance must be numeric", file=sys.stderr)
+        return 2
+    if balance < 0 or balance == float("inf") or balance != balance:
+        print("error: balance must be a finite number >= 0", file=sys.stderr)
+        return 2
     stats = analyze_db(db_path)
     print_report(stats)
+    if "error" in stats:
+        return 1
     print_recommendations(stats, balance)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

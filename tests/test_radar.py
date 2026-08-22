@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from api.engines.radar import sort_assets, filter_assets, enrich_radar_row, prepare_radar, format_data_age
+from api.engines.radar import sort_assets, filter_assets, enrich_radar_row, format_data_age
 from api.index import app, bot_state
 
 client = TestClient(app)

@@ -207,7 +207,7 @@ def recommend_from_audit(audit_stats: Optional[Dict[str, Any]],
     # Aggregate per strategy across modes (closing the strategy anyway if it
     # is structurally negative in every mode).
     agg: Dict[str, Dict[str, float]] = {}
-    for mode, m in modes.items():
+    for m in modes.values():
         for strat, s in (m.get("by_strategy") or {}).items():
             a = agg.setdefault(strat, {"trades": 0, "wins": 0, "pnl": 0.0,
                                        "avg_win": 0.0, "avg_loss": 0.0,

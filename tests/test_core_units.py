@@ -17,7 +17,6 @@ the helper logic the trading engines depend on:
 import asyncio
 import json
 import logging
-import math
 
 import pytest
 

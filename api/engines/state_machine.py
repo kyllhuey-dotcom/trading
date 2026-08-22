@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Set
 
 class BotState(str, Enum):
     STOPPED = "STOPPED"

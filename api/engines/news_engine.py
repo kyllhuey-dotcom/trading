@@ -1,6 +1,5 @@
 import httpx
-import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 from typing import List, Dict, Any, Optional
 
@@ -57,7 +56,8 @@ class EconomicCalendarProvider:
 
             # Handle Event
             title_cell = row.find('td', class_='calendar__event')
-            if not title_cell: continue
+            if not title_cell:
+                continue
             
             currency = row.find('td', class_='calendar__currency')
             impact_div = row.find('td', class_='calendar__impact').find('span')
@@ -69,8 +69,10 @@ class EconomicCalendarProvider:
             impact = "Low"
             if impact_div:
                 classes = impact_div.get('class', [])
-                if any('high' in c.lower() for c in classes): impact = "High"
-                elif any('medium' in c.lower() for c in classes): impact = "Medium"
+                if any('high' in c.lower() for c in classes):
+                    impact = "High"
+                elif any('medium' in c.lower() for c in classes):
+                    impact = "Medium"
 
             events.append({
                 "title": title_cell.text.strip(),
@@ -131,7 +133,7 @@ class EventRiskEngine:
                     blocking_event = event
                     blocking_event['time_utc'] = event_time
                     break
-            except Exception as e:
+            except Exception:
                 # print(f"Risk parsing error: {e}")
                 continue
                 
@@ -163,7 +165,8 @@ class SessionFilter:
         elif asset_class == "FOREX":
             # Monday 00:00 to Friday 22:00
             session_ok = (0 <= day_of_week <= 4)
-            if day_of_week == 4 and hour >= 22: session_ok = False
+            if day_of_week == 4 and hour >= 22:
+                session_ok = False
         else:
             session_ok = (9.0 <= current_time_float < 22.0) and (0 <= day_of_week <= 4)
         

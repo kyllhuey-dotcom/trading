@@ -1,10 +1,50 @@
-import httpx
-import feedparser
 import asyncio
-from typing import List, Dict, Any, Optional
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 import hashlib
+import logging
 import os
+from typing import Any, Dict, List
+
+import feedparser
+import httpx
+
+logger = logging.getLogger("NewsAggregator")
+
+CURRENCIES = ("USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD")
+ASSET_KEYWORDS = {
+    "GOLD": ("GOLD", "XAU"),
+    "OIL": ("OIL", "WTI", "BRENT"),
+    "BITCOIN": ("BTC", "BITCOIN"),
+    "ETHEREUM": ("ETH", "ETHEREUM"),
+    "SPX": ("S&P", "SP500", "SPX"),
+    "NASDAQ": ("NASDAQ", "NAS100"),
+}
+
+
+def _extract_mentions(title: str) -> tuple[List[str], List[str]]:
+    text = str(title or "").upper()
+    currencies = [currency for currency in CURRENCIES if currency in text]
+    assets = [asset for asset, keywords in ASSET_KEYWORDS.items()
+              if any(keyword in text for keyword in keywords)]
+    return currencies, assets
+
+
+def _timestamp_sort_key(value: Any) -> float:
+    """Best-effort ordering for RFC-2822, ISO-8601, and epoch timestamps."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        return parsedate_to_datetime(text).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+        except (TypeError, ValueError, OverflowError):
+            return 0.0
+
 
 class BaseNewsProvider:
     def __init__(self, name: str, source_url: str):
@@ -46,8 +86,8 @@ class ForexLiveNewsProvider(BaseNewsProvider):
                         "related_assets": self._extract_assets(entry.title)
                     })
                 return items
-            except Exception as e:
-                print(f"ForexLive Feed Error ({cat}): {e}")
+            except Exception as exc:
+                logger.warning("ForexLive feed error (%s): %s", cat, exc)
                 return []
 
         for cat, url in self.feeds.items():
@@ -60,28 +100,10 @@ class ForexLiveNewsProvider(BaseNewsProvider):
         return all_news
 
     def _extract_currencies(self, title: str) -> List[str]:
-        currencies = ["USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD"]
-        found = []
-        t = title.upper()
-        for c in currencies:
-            if c in t: found.append(c)
-        return found
+        return _extract_mentions(title)[0]
 
     def _extract_assets(self, title: str) -> List[str]:
-        assets_map = {
-            "GOLD": ["GOLD", "XAU"],
-            "OIL": ["OIL", "WTI", "BRENT"],
-            "BITCOIN": ["BTC", "BITCOIN"],
-            "ETHEREUM": ["ETH", "ETHEREUM"],
-            "SPX": ["S&P", "SP500", "SPX"],
-            "NASDAQ": ["NASDAQ", "NAS100"]
-        }
-        found = []
-        t = title.upper()
-        for asset, keywords in assets_map.items():
-            if any(k in t for k in keywords):
-                found.append(asset)
-        return found
+        return _extract_mentions(title)[1]
 
 class INGNewsProvider(BaseNewsProvider):
     """Rule 16: ING Think authorized analysis integration."""
@@ -111,33 +133,15 @@ class INGNewsProvider(BaseNewsProvider):
                         })
                     return news
                 return []
-        except Exception as e:
-            print(f"ING Think Provider Error: {e}")
+        except Exception as exc:
+            logger.warning("ING Think provider error: %s", exc)
             return []
 
     def _extract_currencies(self, title: str) -> List[str]:
-        currencies = ["USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD"]
-        found = []
-        t = title.upper()
-        for c in currencies:
-            if c in t: found.append(c)
-        return found
+        return _extract_mentions(title)[0]
 
     def _extract_assets(self, title: str) -> List[str]:
-        assets_map = {
-            "GOLD": ["GOLD", "XAU"],
-            "OIL": ["OIL", "WTI", "BRENT"],
-            "BITCOIN": ["BTC", "BITCOIN"],
-            "ETHEREUM": ["ETH", "ETHEREUM"],
-            "SPX": ["S&P", "SP500", "SPX"],
-            "NASDAQ": ["NASDAQ", "NAS100"]
-        }
-        found = []
-        t = title.upper()
-        for asset, keywords in assets_map.items():
-            if any(k in t for k in keywords):
-                found.append(asset)
-        return found
+        return _extract_mentions(title)[1]
 
 class NationalNewsProvider(BaseNewsProvider):
     """Rule 17: Configurable National/Global news integration."""
@@ -166,33 +170,15 @@ class NationalNewsProvider(BaseNewsProvider):
                         "related_assets": self._extract_assets(entry.title)
                     } for entry in feed.entries]
                 return []
-        except Exception as e:
-            print(f"National News Provider Error ({self.name}): {e}")
+        except Exception as exc:
+            logger.warning("National news provider error (%s): %s", self.name, exc)
             return []
 
     def _extract_currencies(self, title: str) -> List[str]:
-        currencies = ["USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD"]
-        found = []
-        t = title.upper()
-        for c in currencies:
-            if c in t: found.append(c)
-        return found
+        return _extract_mentions(title)[0]
 
     def _extract_assets(self, title: str) -> List[str]:
-        assets_map = {
-            "GOLD": ["GOLD", "XAU"],
-            "OIL": ["OIL", "WTI", "BRENT"],
-            "BITCOIN": ["BTC", "BITCOIN"],
-            "ETHEREUM": ["ETH", "ETHEREUM"],
-            "SPX": ["S&P", "SP500", "SPX"],
-            "NASDAQ": ["NASDAQ", "NAS100"]
-        }
-        found = []
-        t = title.upper()
-        for asset, keywords in assets_map.items():
-            if any(k in t for k in keywords):
-                found.append(asset)
-        return found
+        return _extract_mentions(title)[1]
 
 class NewsAggregator:
     """Rule 18, 19: Aggregates, deduplicates and ranks news impact."""
@@ -205,24 +191,43 @@ class NewsAggregator:
         self.cache: List[Dict[str, Any]] = []
 
     async def get_latest_news(self) -> List[Dict[str, Any]]:
-        tasks = [p.fetch_raw() for p in self.providers]
-        results = await asyncio.gather(*tasks)
-        
-        flat_list = [item for sublist in results for item in sublist]
-        
-        # Rule 19: Deduplication based on title hash
+        tasks = [provider.fetch_raw() for provider in self.providers]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        flat_list: List[Dict[str, Any]] = []
+        for provider, result in zip(self.providers, results, strict=True):
+            if isinstance(result, asyncio.CancelledError):
+                raise result
+            if isinstance(result, Exception):
+                logger.warning("News provider %s failed: %s", provider.name, result)
+                continue
+            if result:
+                flat_list.extend(item for item in result if isinstance(item, dict))
+
+        # Rule 19: normalize case/whitespace before title-based deduplication.
         seen_hashes = set()
         deduped = []
         for item in flat_list:
-            h = hashlib.md5(item['title'].encode()).hexdigest()
-            if h not in seen_hashes:
-                seen_hashes.add(h)
-                # Rule 20: Simple Impact Logic
-                item["impact"] = self._calculate_impact(item)
-                deduped.append(item)
-        
-        # Sort by latest
-        return sorted(deduped, key=lambda x: x['timestamp'], reverse=True)[:20]
+            title = str(item.get("title") or "").strip()
+            if not title:
+                continue
+            normalized_title = " ".join(title.casefold().split())
+            title_hash = hashlib.sha256(normalized_title.encode("utf-8")).digest()
+            if title_hash in seen_hashes:
+                continue
+            seen_hashes.add(title_hash)
+            enriched = dict(item)
+            enriched["title"] = title
+            enriched.setdefault("timestamp", datetime.now().isoformat())
+            enriched["impact"] = self._calculate_impact(enriched)
+            deduped.append(enriched)
+
+        self.cache = sorted(
+            deduped,
+            key=lambda item: _timestamp_sort_key(item.get("timestamp")),
+            reverse=True,
+        )[:20]
+        return list(self.cache)
 
     def _calculate_impact(self, item: Dict[str, Any]) -> str:
         title = item['title'].lower()

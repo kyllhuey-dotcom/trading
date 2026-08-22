@@ -1,7 +1,7 @@
 from .db_manager import DatabaseManager
 from .order_types import normalize_order_type, should_fill_now, serialize_pending
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import asyncio
 import time
 import uuid

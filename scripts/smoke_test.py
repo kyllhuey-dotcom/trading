@@ -1,9 +1,12 @@
 import httpx
-import time
 import sys
 
 
-def run_smoke_test(url="http://localhost:8000"):
+def run_smoke_test(url: str = "http://localhost:8000") -> bool:
+    url = str(url).rstrip("/")
+    if not url.startswith(("http://", "https://")):
+        print("Smoke-test URL must start with http:// or https://", file=sys.stderr)
+        return False
     print(f"Starting post-deployment smoke test on {url}...")
     checks = [
         ("/healthz", "GET", None, None),

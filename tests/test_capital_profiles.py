@@ -8,7 +8,6 @@ Covers:
 - RiskEngine small-capital sizing (removal of the hard-coded $10 notional floor);
 - SignalEngine ATR stop multiplier wiring into SL/TP.
 """
-import json
 import pandas as pd
 import pytest
 

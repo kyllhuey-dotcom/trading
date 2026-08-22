@@ -1,5 +1,5 @@
 """Institutional ≥80-only candidate selection (LOT 8)."""
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
 
 def select_candidates(results: List[Dict[str, Any]], min_score: float,

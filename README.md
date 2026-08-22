@@ -2,9 +2,11 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
-> **v2.3** — Desk radar/hub/terminal, i18n, exécution institutionnelle ≥80 jusqu'à 10 slots, throttle per-symbol.
+> **v2.4.1** — Audit intégral : sûreté CCXT/reduce-only, réconciliation broker fail-safe, backtest intrabar, validation stricte des ordres, agrégation news résiliente et couverture de toutes les fonctions exécutables. Suite : **355 passés / 6 skips réseau / 0 échec**.
 
-> **v2.2** — LOT P « Rentabilité » : seuil de score appliqué à toutes les stratégies, filtre coûts/volatilité, circuit breaker séries de pertes, scaling anti-martingale, time stop, audit de rentabilité (`scripts/profit_audit.py`). Suite : 204 passés / 6 skips réseau.
+> **v2.4** — Profils de capital MICRO/RETAIL/STANDARD et optimisation pilotée par l'audit.
+
+> **v2.3** — Desk radar/hub/terminal, i18n, exécution institutionnelle ≥80 jusqu'à 10 slots, throttle per-symbol.
 
 ---
 
@@ -52,7 +54,7 @@ pytest tests/ -q
 
 - La suite est **isolée** (base de données de test temporaire — votre base de prod n'est jamais touchée).
 - Les tests marqués `network` s'auto-skip si le réseau ou le provider est indisponible.
-- Couverture : **83 %** sur `api/engines` (porte CI 80 %), vérifiée par `scripts/validate.sh`.
+- Couverture : **89 % globale avec branches** (`api` + `scripts`, porte CI 85 %) et **92 % sur `api/engines`** (porte CI 80 %). Toutes les fonctions exécutables sont exercées au moins une fois.
 - Les données Yahoo (différées ~15 min) ne sont **pas** utilisées pour l'exécution automatique (garde anti-scalping, opt-out `allow_delayed_data_trading`).
 - **Audit de rentabilité** : `python3 scripts/profit_audit.py [chemin/vers/quantum_trade.db] [balance]` → win rate, espérance, RR réalisé et PnL par stratégie + détection des trades dont les frais dépassaient le risque + **recommandations d'optimisation** par stratégie (capital-aware).
 - **Petit capital (1 $ → 50 $+)** : `min_account_balance` et `min_trade_notional` sont configurables (défaut 1 $), et `capital_profile_mode=auto` fait choisir automatiquement au bot le profil adapté au solde (MICRO / RETAIL / STANDARD) — plus de plancher codé en dur à 10 $.

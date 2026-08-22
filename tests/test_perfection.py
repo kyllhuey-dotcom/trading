@@ -1,14 +1,9 @@
 import pytest
-import asyncio
 import pandas as pd
-import numpy as np
-import os
 from api.engines.risk_engine import RiskEngine
 from api.engines.signal_engine import SignalEngine
-from api.engines.execution_engine import ExecutionEngine
 from api.engines.analysis_engine import AnalysisEngine
 from api.engines.strategies.tape_reading import TapeReadingStrategy
-from api.engines.strategies.liquidity_gap import LiquidityGapStrategy
 from api.index import tick_capital, bot_state
 
 
@@ -26,7 +21,7 @@ def _clear_open_positions():
 def test_risk_math_and_limits():
     risk = RiskEngine(max_risk_pct=1.0, max_leverage=10)
     res = risk.calculate_position_size(balance=10000.0, entry=100.0, stop_loss=90.0)
-    assert res["allowed"] == True
+    assert res["allowed"]
     assert res["quantity"] == 10.0
 
 

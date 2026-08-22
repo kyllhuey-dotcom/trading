@@ -10,9 +10,7 @@ Regression tests for the critical P0 bugs fixed in v2.0:
  8. Live settings reload must change engine behavior
 """
 import pytest
-import asyncio
 import pandas as pd
-from unittest.mock import AsyncMock
 
 from api.engines.db_manager import DatabaseManager
 from api.engines.portfolio_engine import PortfolioEngine
@@ -21,7 +19,6 @@ from api.engines.signal_engine import SignalEngine
 from api.engines.execution_engine import ExecutionEngine
 from api.engines.broker_adapters.ccxt_adapter import CCXTAdapter
 from api.engines.broker_adapters.primexbt_adapter import PrimeXBTAdapter
-from api.engines.broker_adapters.base_adapter import BrokerAdapter
 import api.index as idx
 
 

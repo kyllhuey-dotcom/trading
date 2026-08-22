@@ -16,6 +16,7 @@ Compatible with the static per-instrument constraints of MarketUniverse
 `markets` structures (`precision.amount` / `precision.price` / `limits.cost.min`).
 """
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
+import math
 from typing import Any, Dict, Optional
 
 
@@ -132,18 +133,56 @@ def normalize_order(quantity: float, entry: float, direction: str = "BUY",
     When the instrument has no constraints, values pass through untouched.
     """
     constraints = constraints_from_info(info)
+    normalized_direction = str(direction or "").upper()
+    try:
+        quantity_f = float(quantity)
+        entry_f = float(entry)
+        sl_f = float(sl) if sl is not None else None
+        tp_f = float(tp) if tp is not None else None
+    except (TypeError, ValueError, OverflowError):
+        return {
+            "quantity": 0.0, "entry": 0.0, "sl": None, "tp": None,
+            "notional": 0.0, "allowed": False,
+            "reason": "Order values must be numeric", "adjusted": False,
+            "adjustments": [], "constraints": constraints,
+        }
     result: Dict[str, Any] = {
-        "quantity": float(quantity),
-        "entry": float(entry),
-        "sl": float(sl) if sl is not None else None,
-        "tp": float(tp) if tp is not None else None,
-        "notional": float(quantity) * float(entry),
+        "quantity": quantity_f,
+        "entry": entry_f,
+        "sl": sl_f,
+        "tp": tp_f,
+        "notional": quantity_f * entry_f,
         "allowed": True,
         "reason": None,
         "adjusted": False,
         "adjustments": [],
         "constraints": constraints,
     }
+    values = [quantity_f, entry_f, *(v for v in (sl_f, tp_f) if v is not None)]
+    if not all(math.isfinite(value) for value in values):
+        result.update(allowed=False, reason="Order values must be finite")
+        return result
+    if normalized_direction not in {"BUY", "SELL"}:
+        result.update(allowed=False, reason="direction must be BUY or SELL")
+        return result
+    if quantity_f <= 0:
+        result.update(allowed=False, reason="Quantity must be positive")
+        return result
+    if entry_f <= 0 or any(value is not None and value <= 0 for value in (sl_f, tp_f)):
+        result.update(allowed=False, reason="Order prices must be positive")
+        return result
+    if sl_f is not None and (
+        (normalized_direction == "BUY" and sl_f >= entry_f)
+        or (normalized_direction == "SELL" and sl_f <= entry_f)
+    ):
+        result.update(allowed=False, reason="Stop loss is on the wrong side of entry")
+        return result
+    if tp_f is not None and (
+        (normalized_direction == "BUY" and tp_f <= entry_f)
+        or (normalized_direction == "SELL" and tp_f >= entry_f)
+    ):
+        result.update(allowed=False, reason="Take profit is on the wrong side of entry")
+        return result
     if constraints is None:
         return result
 
@@ -169,7 +208,7 @@ def normalize_order(quantity: float, entry: float, direction: str = "BUY",
             value = result[field]
             if value is None:
                 continue
-            adjusted = round_protective(value, tick, direction)
+            adjusted = round_protective(value, tick, normalized_direction)
             if adjusted != value:
                 result[field] = adjusted
                 result["adjusted"] = True
@@ -178,8 +217,23 @@ def normalize_order(quantity: float, entry: float, direction: str = "BUY",
     result["quantity"] = qty
     result["notional"] = qty * result["entry"]
 
-    # 3. Hard gates
-    if qty <= 0:
+    # 3. Hard gates (including post-rounding SL/TP geometry).
+    rounded_sl, rounded_tp, rounded_entry = result["sl"], result["tp"], result["entry"]
+    invalid_sl = rounded_sl is not None and (
+        (normalized_direction == "BUY" and rounded_sl >= rounded_entry)
+        or (normalized_direction == "SELL" and rounded_sl <= rounded_entry)
+    )
+    invalid_tp = rounded_tp is not None and (
+        (normalized_direction == "BUY" and rounded_tp <= rounded_entry)
+        or (normalized_direction == "SELL" and rounded_tp >= rounded_entry)
+    )
+    if invalid_sl:
+        result["allowed"] = False
+        result["reason"] = "Stop loss is on the wrong side of entry after rounding"
+    elif invalid_tp:
+        result["allowed"] = False
+        result["reason"] = "Take profit is on the wrong side of entry after rounding"
+    elif qty <= 0:
         result["allowed"] = False
         result["reason"] = "Quantity rounds to zero (below minimum lot size)"
     elif min_notional and min_notional > 0 and result["notional"] < min_notional:

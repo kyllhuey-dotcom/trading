@@ -6,7 +6,6 @@ structure paths, ExecutionEngine lifecycle, DiagnosticEngine, MarketUniverse,
 DataEngine fetch orchestration, ccxt providers via FakeExchange, DB manager.
 """
 import asyncio
-import time
 
 import pandas as pd
 import pytest

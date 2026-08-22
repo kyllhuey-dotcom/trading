@@ -71,13 +71,15 @@ class GateProvider(MarketDataProvider):
     async def get_order_book(self, symbol: str) -> Optional[Dict[str, Any]]:
         try:
             return await self.exchange.fetch_order_book(symbol, limit=20)
-        except:
+        except Exception as exc:
+            logger.warning("Gate order book/trades fetch failed for %s: %s", symbol, exc)
             return None
 
     async def get_recent_trades(self, symbol: str) -> Optional[List[Dict[str, Any]]]:
         try:
             return await self.exchange.fetch_trades(symbol, limit=50)
-        except:
+        except Exception as exc:
+            logger.warning("Gate order book/trades fetch failed for %s: %s", symbol, exc)
             return None
 
     async def close(self):

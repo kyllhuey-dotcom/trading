@@ -66,8 +66,14 @@ class BrokerConnector:
 
         success = await adapter.connect()
         if success:
+            previous = self.active_adapters.get(broker_id)
             self.active_adapters[broker_id] = adapter
-            logger.info(f"Broker '{broker_id}' ({exchange_id}) connected")
+            if previous is not None and previous is not adapter:
+                try:
+                    await previous.close()
+                except Exception as exc:
+                    logger.warning("Could not close replaced broker '%s': %s", broker_id, exc)
+            logger.info("Broker '%s' (%s) connected", broker_id, exchange_id)
         else:
             await adapter.close()
         return success
@@ -227,12 +233,14 @@ class BrokerConnector:
             try:
                 positions = await adapter.get_positions()
                 live_symbols[bid] = set()
-                for p in positions:
+                for p in positions or []:
                     sym = (p.get("symbol") or "").split(":")[0]
                     if sym:
                         live_symbols[bid].add(sym)
-            except Exception:
-                live_symbols[bid] = set()
+            except Exception as exc:
+                # A broker/API outage is not evidence that every position was
+                # closed. Omit this broker from reconciliation and retry later.
+                logger.warning("Position reconciliation skipped for '%s': %s", bid, exc)
 
         closed = []
         for trade in db_open:

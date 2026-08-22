@@ -1,5 +1,3 @@
-import pytest
-from pydantic import BaseModel
 from api.models import MarketQuote
 
 def test_model_dump_compatibility():

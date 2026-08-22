@@ -1,5 +1,24 @@
 # Changelog - Quantum Trade Pro
 
+## [2.4.1] - 2026-08-22 — Audit intégral, sûreté d'exécution et tests exhaustifs
+
+### Fixed
+- Ordres SL/TP CCXT envoyés avec `reduceOnly` et paramètres `stopPrice`/`triggerPrice` corrects ; fermeture d'urgence corrigée (le dictionnaire `reduceOnly` était auparavant passé comme prix).
+- Réconciliation REAL fail-safe : une panne de `fetch_positions` ne clôture plus à tort toutes les positions locales.
+- Remplacement d'un broker sans fuite de connexion et fermeture/cancel d'urgence poursuivie même si un ordre individuel échoue.
+- Association multi-symboles corrigée dans `tick_management` : chaque position reçoit désormais son propre ticker au lieu du dernier ticker du lot.
+- Backtest isolé de l'état de risque live, sorties basées sur High/Low intrabar et hypothèse conservatrice lorsque SL et TP sont touchés sur la même bougie.
+- Validation stricte des quantités, prix, SL/TP, directions, valeurs non finies, soldes et paramètres de backtest.
+- Agrégateur de news résilient aux pannes partielles, déduplication normalisée et tri fiable des dates RFC/ISO.
+- Arrêt FastAPI garanti par `finally`, avec annulation **et attente** de toutes les tâches de fond.
+- Scripts `check_db.py`, `optimize_params.py`, `profit_audit.py` et `smoke_test.py` rendus importables, validés et testables sans effets de bord.
+
+### Tests & qualité
+- Nouveaux tests unitaires hors réseau pour les adaptateurs brokers, les providers de news, les scripts, les endpoints et les boucles de fond.
+- **355 tests passés, 6 skips réseau, 0 échec** ; toutes les **368 fonctions exécutables** sont exercées.
+- Couverture avec branches : **89,10 % globale** (`api` + `scripts`) ; couverture moteurs : **92,18 %**.
+- Pipeline renforcé : compilation, Ruff, `pip check`, scan de secrets, suite complète (y compris `test_lot2_data.py`), portes de couverture 85 % globale / 80 % moteurs.
+
 ## [2.4.0] - 2026-08-22 — LOT Q : Petits capitaux + profils capital-aware
 
 ### Added (petit capital & optimisation)
