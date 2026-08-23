@@ -262,7 +262,9 @@ def test_engine_activates_provider_with_env_key(monkeypatch):
     engine = DataEngine()
     assert engine.alpha_vantage_provider is not None
     assert "alpha_vantage" in engine.layer.providers
-    assert "alpha_vantage" in engine.REALTIME_PROVIDERS
+    # v2.10: Alpha Vantage free tier is DELAYED — not in REALTIME_PROVIDERS
+    assert "alpha_vantage" not in engine.REALTIME_PROVIDERS
+    assert engine.check_scalping_allowed("eur_usd").get("realtime") is False
     # forex markets get an alpha_vantage mapping (yahoo kept as fallback)
     info = engine.universe.get_info("eur_usd")
     assert info["providers"].get("alpha_vantage") == "EURUSD=X"
