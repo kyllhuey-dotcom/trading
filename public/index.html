@@ -487,6 +487,14 @@
                     <header class="mb-6">
                         <h2 class="font-black text-sm uppercase tracking-widest mb-1" data-i18n="radarTitle">Global Radar</h2>
                         <p class="text-xs text-secondary font-medium" data-i18n="radarSub">Unified scanning of all tracked instruments.</p>
+                        <div class="flex flex-wrap gap-3 mt-2 text-[10px] font-bold text-secondary">
+                            <span><span data-i18n="activeStrategy">Active strategy</span>: <strong data-i18n="strategyRsiName">RSI-14 Reversal</strong></span>
+                            <span><span data-i18n="riskRewardRsi">RSI target RR</span>: <strong>1.5</strong></span>
+                            <span><span data-i18n="scannerProgress">Scanner progress</span>: <strong id="radar-progress">0/127</strong></span>
+                            <span><span data-i18n="marketsUnavailable">Markets unavailable</span>: <strong id="radar-unavailable">0</strong></span>
+                            <span><span data-i18n="scannerError">Scanner error</span>: <strong id="radar-error">—</strong></span>
+                            <span><span data-i18n="lastScan">Last scan</span>: <strong id="radar-last-scan">—</strong></span>
+                        </div>
                         <div class="flex gap-2 mt-3">
                             <button class="btn-premium bg-black/5" data-radar-filter="ge80" onclick="setRadarFilter('ge80')">≥84</button>
                             <button class="btn-premium bg-black/5" data-radar-filter="ge90" onclick="setRadarFilter('ge90')">≥90</button>
@@ -992,7 +1000,7 @@
                                     <input type="range" id="set-min_signal_score" min="84" max="99" step="1" value="84" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-min_signal_score').innerText=this.value">
                                 </div>
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="riskReward">Risk/Reward Ratio</label><span class="text-[10px] font-bold text-accent-green" id="val-risk_reward_ratio">2.0</span></div>
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="riskRewardRsi">RSI target RR</label><span class="text-[10px] font-bold text-accent-green" id="val-risk_reward_ratio">1.5</span></div>
                                     <input type="range" id="set-risk_reward_ratio" min="1.0" max="5.0" step="0.1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-risk_reward_ratio').innerText=this.value">
                                 </div>
                                 <div class="flex items-center justify-between p-3 bg-black/[0.02] rounded-xl">
@@ -1595,6 +1603,11 @@
             const scannerBody = document.getElementById('scanner-table-body');
             if (!scannerBody || !data || !data.assets) return;
             if (data.duration_s !== undefined) lastScanDuration = data.duration_s;
+            const setRadar = (id, v) => { const el = document.getElementById(id); if (el) el.innerText = v; };
+            setRadar('radar-progress', data.progress || '0/0');
+            setRadar('radar-unavailable', data.markets_unavailable ?? 0);
+            setRadar('radar-error', data.scan_error || '—');
+            setRadar('radar-last-scan', data.last_scan ? new Date(data.last_scan).toLocaleString() : (data.last_scan_age_s != null ? `${Math.round(data.last_scan_age_s)}s` : '—'));
             const progressRow = data.scanning ? `
                 <tr><td colspan="9" class="py-5 text-center bg-blue-500/5">
                     <div class="skel mx-auto mb-2 w-40"></div>
@@ -1604,9 +1617,14 @@
                 const hot = (a.score || 0) >= 84;
                 const canTrade = a.tradable && hot;
                 const diagnosisReason = (a.diagnosis && a.diagnosis.main_reason) || a.reason || t('wait');
-                const sourceBadge = a.realtime_source
-                    ? `<span class="status-badge bg-green-500/10 text-green-500">${t('live')}</span>`
-                    : `<span class="status-badge bg-orange-500/10 text-orange-500">${t('delayed')}</span>`;
+                const st = String(a.status || a.data_source_label || '').toUpperCase();
+                const sourceBadge = st === 'DATA_UNAVAILABLE'
+                    ? `<span class="status-badge bg-slate-500/10 text-slate-500">DATA_UNAVAILABLE</span>`
+                    : (st === 'ERROR'
+                        ? `<span class="status-badge bg-red-500/10 text-red-500">ERROR</span>`
+                        : (a.realtime_source
+                            ? `<span class="status-badge bg-green-500/10 text-green-500">${t('live')}</span>`
+                            : `<span class="status-badge bg-orange-500/10 text-orange-500">${t('delayed')}</span>`));
                 return `
                 <tr title="${escapeHtml(diagnosisReason)}" class="group hover:bg-black/[0.01] transition-colors ${hot ? 'radar-row-institutional' : ''}">
                     <td class="py-4 px-6 cursor-pointer" onclick="selectMarket('${escapeHtml(a.symbol)}')"><span class="font-black">${escapeHtml(a.display_symbol || (a.symbol||'').toUpperCase())}</span><span class="block text-[8px] text-secondary mt-1 max-w-[180px] truncate">${escapeHtml(diagnosisReason)}</span></td>

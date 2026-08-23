@@ -267,7 +267,12 @@
             qtyInvalid: "Enter a valid lot size.",
             riskTooHigh: "Risk exceeds the allowed % of balance",
             tapToConfirm: "Tap again to confirm",
-            liveWarning: "LIVE EXECUTION IS EXPERIMENTAL — USE DEMO FOR STRATEGIES"
+            liveWarning: "LIVE EXECUTION IS EXPERIMENTAL — USE DEMO FOR STRATEGIES",
+            riskRewardRsi: "RSI target RR",
+            scannerProgress: "Scanner progress",
+            marketsUnavailable: "Markets unavailable",
+            scannerError: "Scanner error",
+            lastScan: "Last scan"
         },
         fr: {
             dashboard: "Tableau de bord",
@@ -536,7 +541,12 @@
             qtyInvalid: "Saisissez une quantité valide.",
             riskTooHigh: "Le risque dépasse le % autorisé du solde",
             tapToConfirm: "Cliquez à nouveau pour confirmer",
-            liveWarning: "LIVE EXECUTION IS EXPERIMENTAL — USE DEMO FOR STRATEGIES"
+            liveWarning: "LIVE EXECUTION IS EXPERIMENTAL — USE DEMO FOR STRATEGIES",
+            riskRewardRsi: "RR cible RSI",
+            scannerProgress: "Progression du scanner",
+            marketsUnavailable: "Marchés indisponibles",
+            scannerError: "Erreur du scanner",
+            lastScan: "Dernier scan"
         },
         es: {
             dashboard: "Panel",
@@ -805,7 +815,12 @@
             qtyInvalid: "Introduce un volumen válido.",
             riskTooHigh: "El riesgo supera el % permitido del saldo",
             tapToConfirm: "Pulsa de nuevo para confirmar",
-            liveWarning: "LIVE EXECUTION IS EXPERIMENTAL — USE DEMO FOR STRATEGIES"
+            liveWarning: "LIVE EXECUTION IS EXPERIMENTAL — USE DEMO FOR STRATEGIES",
+            riskRewardRsi: "RR objetivo RSI",
+            scannerProgress: "Progreso del escáner",
+            marketsUnavailable: "Mercados no disponibles",
+            scannerError: "Error del escáner",
+            lastScan: "Último escaneo"
         },
         de: {
             dashboard: "Dashboard",
@@ -1074,7 +1089,12 @@
             qtyInvalid: "Gültige Lot-Größe eingeben.",
             riskTooHigh: "Risiko überschreitet das erlaubte % des Kontos",
             tapToConfirm: "Zum Bestätigen erneut tippen",
-            liveWarning: "LIVE EXECUTION IS EXPERIMENTAL — USE DEMO FOR STRATEGIES"
+            liveWarning: "LIVE EXECUTION IS EXPERIMENTAL — USE DEMO FOR STRATEGIES",
+            riskRewardRsi: "RSI-Ziel-RR",
+            scannerProgress: "Scanner-Fortschritt",
+            marketsUnavailable: "Märkte nicht verfügbar",
+            scannerError: "Scannerfehler",
+            lastScan: "Letzter Scan"
         }
     };
 

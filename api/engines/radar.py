@@ -72,15 +72,28 @@ def enrich_radar_row(asset: Dict[str, Any]) -> Dict[str, Any]:
     row = dict(asset or {})
     sig = row.get("signal_data") or {}
     row["display_symbol"] = row.get("display_symbol") or sig.get("display_symbol") or str(row.get("symbol") or "").upper().replace("_", "/")
-    row["strategy"] = row.get("strategy") or sig.get("strategy") or "structure"
+    row["strategy"] = row.get("strategy") or sig.get("strategy") or "rsi"
     row["direction"] = row.get("direction") or sig.get("direction") or row.get("trend")
+    row["signal"] = row.get("signal") or sig.get("status") or "NO_TRADE"
+    status = str(row.get("status") or "").upper()
+    if not status:
+        row["status"] = "DATA_UNAVAILABLE" if not row.get("price") and not row.get("realtime_source") else "LIVE"
     # Radar rows are also an execution entry point. Legacy strategies may be
     # displayed for diagnostics, but their trade action is always disabled.
     row["auto_execution_allowed"] = str(row["strategy"]).lower() == "rsi"
     if not row["auto_execution_allowed"]:
         row["tradable"] = False
+    if str(row.get("status") or "").upper() in {"DATA_UNAVAILABLE", "ERROR", "STALE", "DELAYED"}:
+        row["tradable"] = False
     row["data_age_label"] = format_data_age(row.get("data_age_ms"))
-    row["data_source_label"] = "LIVE" if row.get("realtime_source") else "DELAYED"
+    if str(row.get("status") or "").upper() == "DATA_UNAVAILABLE":
+        row["data_source_label"] = "DATA_UNAVAILABLE"
+    elif str(row.get("status") or "").upper() == "ERROR":
+        row["data_source_label"] = "ERROR"
+    else:
+        row["data_source_label"] = "LIVE" if row.get("realtime_source") else "DELAYED"
+    row.setdefault("diagnosis", {})
+    row.setdefault("reason", (row.get("diagnosis") or {}).get("main_reason") or "DATA_UNAVAILABLE")
     return row
 
 

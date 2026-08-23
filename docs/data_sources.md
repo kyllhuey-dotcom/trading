@@ -1,3 +1,13 @@
+# Data Sources Registry — v2.9.1
+
+Plans gratuits uniquement. Aucune clé n'est hardcodée. LIVE/DELAYED dépend
+du timestamp réellement reçu, pas du nom du provider. Une donnée gratuite
+différée n'est jamais utilisée pour l'auto-trading RSI.
+
+Le chemin RSI ne demande que l'OHLCV et le ticker (pas de carnet, trades
+ou cross-quotes). Polygon/Marketstack restent non branchés (plans gratuits
+incompatibles avec l'exécution temps réel).
+
 # Data Sources Registry — v2.0
 
 | Provider | Classe(s) | Symbole(s) | Fraîcheur | Fallback |

@@ -5,7 +5,11 @@ from .strategies.micro_arbitrage import MicroArbitrageStrategy
 from .strategies.tape_reading import TapeReadingStrategy
 from .strategies.liquidity_gap import LiquidityGapStrategy
 from .strategies.rsi_mean_reversion import RSIMeanReversionStrategy
-from .constants import AUTO_EXECUTION_SCORE_FLOOR
+from .constants import (
+    AUTO_EXECUTION_SCORE_FLOOR,
+    DEFAULT_RSI_RISK_REWARD,
+    RSI_RISK_REWARD_BOUNDS,
+)
 
 
 class SignalEngine:
@@ -51,7 +55,7 @@ class SignalEngine:
             "arbitrage": MicroArbitrageStrategy(),
             "tape": TapeReadingStrategy(),
             "liquidity": LiquidityGapStrategy(),
-            "rsi": RSIMeanReversionStrategy(),
+            "rsi": RSIMeanReversionStrategy(risk_reward_ratio=DEFAULT_RSI_RISK_REWARD),
         }
         # RSI is the sole automatic strategy in v2.9. The other strategies
         # remain registered so their focused unit tests and explicit backtests
@@ -138,9 +142,24 @@ class SignalEngine:
         hi = 99
         return int(max(lo, min(hi, max(lo, int(base)) + int(delta))))
 
-    def effective_risk_reward(self, market_id: Optional[str]) -> float:
-        """Take-profit target (R multiple) for a market, tuned per market."""
+    def effective_risk_reward(self, market_id: Optional[str],
+                              strategy: Optional[str] = None) -> float:
+        """Take-profit target (R multiple) for a market, tuned per market.
+
+        RSI always uses a symmetric RR clamped to 1.0–2.0 with a 1.5 default.
+        """
         tuning = self.market_tuning.get(market_id or "", {}) or {}
+        if str(strategy or "").lower() == "rsi":
+            raw = tuning.get("risk_reward")
+            if raw in (None, ""):
+                value = DEFAULT_RSI_RISK_REWARD
+            else:
+                try:
+                    value = float(raw)
+                except (TypeError, ValueError):
+                    value = DEFAULT_RSI_RISK_REWARD
+            lo, hi = RSI_RISK_REWARD_BOUNDS
+            return max(lo, min(hi, value if value > 0 else DEFAULT_RSI_RISK_REWARD))
         value = float(tuning.get("risk_reward", self.risk_reward) or self.risk_reward)
         return value if 0.3 <= value <= 10.0 else self.risk_reward
 
@@ -185,6 +204,8 @@ class SignalEngine:
             return res
         res["status"] = "NO_TRADE"
         res["news_blocked"] = True
+        calendar_down = str(news_status.get("status") or "") == "DATA_UNAVAILABLE"
+        res["block_reason"] = "CALENDAR_UNAVAILABLE" if calendar_down else "NEWS_BLOCKED"
         res["reason"] = f"News/Session restricted — {res.get('reason', 'signal blocked')}"
         return res
 
@@ -209,6 +230,9 @@ class SignalEngine:
         if score < min_score:
             res["status"] = "NO_TRADE"
             res["reason"] = f"Below minimum score ({score}/{min_score})"
+            res["block_reason"] = (
+                "VOLATILE_THRESHOLD_89" if int(min_score) >= 89 else "SCORE_BELOW_84"
+            )
             res["min_score_applied"] = min_score
             return res
         res["min_score_applied"] = min_score
@@ -270,7 +294,7 @@ class SignalEngine:
             if strategy_mode == "rsi" and hasattr(strategy, "set_risk_reward"):
                 # RSI owns the fixed 0.1 ATR stop buffer; only the effective
                 # market RR is passed through from the existing tuning plumbing.
-                strategy.set_risk_reward(self.effective_risk_reward(market_id))
+                strategy.set_risk_reward(self.effective_risk_reward(market_id, "rsi"))
             res = strategy.generate_signal(
                 market_id=market_id or "unknown",
                 df=df,

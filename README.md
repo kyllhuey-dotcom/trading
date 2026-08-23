@@ -2,6 +2,11 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
+> **v2.9.1** — Stratégie automatique unique **RSI-14 Retournement** (BUY et
+> SELL, RR cible 1.5 borné 1.0–2.0). Scanner Railway persistant, Radar
+> univers-complet (`DATA_UNAVAILABLE` visible), APIs gratuites uniquement.
+> Le score n'est pas une probabilité. Aucune rentabilité n'est promise.
+>
 > **v2.6** — Robustesse production : calendrier économique JSON → HTML → cache SQLite 7 jours avec politique de panne explicite, dashboard 100 % local (aucun CDN), scan immédiat et incrémental crypto-first, intention d'exécution visible, Yahoo batché/caché, six sources crypto sans clé, providers tradfi optionnels, déduplication par sous-jacent et i18n en/fr/es/de complet. Suite : **390 passés / 6 skips réseau / 0 échec**.
 >
 > Les objectifs restent réalistes : **win rate ≥ 45 %**, **RR réalisé ≥ 1,5** et **espérance positive**. Aucun taux de réussite de 99 % n'est promis.
@@ -21,7 +26,7 @@ Bot de trading multi-marchés : données réelles, exécution papier réaliste, 
 | Domaine | Détails |
 |---|---|
 | **Marchés** | 127 sous-jacents uniques : crypto en cascade Binance → Bybit → OKX → Kraken → Coinbase → Gate (API publiques sans clé) ; tradfi via TwelveData/Finnhub si leurs clés sont présentes, puis Yahoo batché/caché en fallback différé |
-| **Stratégies** | Structure (BOS/CHoCH, HH/HL/LH/LL), micro-arbitrage inter-plateformes, tape reading (imbalance + delta), liquidity gap (order book) |
+| **Stratégies** | **Exécution auto : RSI-14 uniquement.** Structure, tape, liquidity et arbitrage restent importables/testables (backtest explicite) mais ne sont jamais exécutées automatiquement. |
 | **Optimisation par marché** | Tuning **par instrument et par classe d'actifs** (seuil d'entrée, TP, stop ATR) affiné par l'audit des trades ; adaptation au **régime de volatilité** (conservateur en marché volatil : seuil +5, stop ×1,25 → position réduite à risque égal) ; faisabilité des marchés par niveau de capital (1 $ → 50 $+) via `/api/optimization` |
 | **Gestion de risque** | Sizing par % de risque, plafond de levier, validation du sens du SL, limite de perte quotidienne au niveau de l'ordre, cool-down après perte, filtre de corrélation, max positions, drawdown global persistant, **circuit breaker séries de pertes + risque réduit après pertes (anti-martingale)**, filtre coûts/volatilité |
 | **Exécution** | Mode DEMO : papier réaliste (latence, slippage, rejets simulés) sur prix réels. Mode REAL : vrais ordres market via CCXT avec ordres SL/TP de protection, sizing arrondi aux contraintes d'exchange (lot/tick/min_notional), avertissement « experimental » explicite |

@@ -231,18 +231,41 @@ class DataEngine:
     async def get_market_overview(self) -> Dict[str, List[Dict[str, Any]]]:
         ids = self.universe.get_all_ids()
         quotes = await self.layer.get_all_quotes(ids, self.universe)
+        quote_by_symbol = {quote.symbol: quote for quote in quotes}
         overview = {category: [] for category in self.universe.ASSET_CLASSES}
         now_ms = int(datetime.now().timestamp() * 1000)
-        for quote in quotes:
-            market_id = "unknown"
-            for candidate in ids:
-                info = self.universe.get_info(candidate) or {}
-                if quote.symbol in info.get("providers", {}).values():
-                    market_id = candidate
-                    break
+        for market_id in ids:
             info = self.universe.get_info(market_id) or {}
             asset_class = info.get("asset_class")
             if asset_class not in overview:
+                continue
+            quote = None
+            for provider_symbol in (info.get("providers") or {}).values():
+                if provider_symbol in quote_by_symbol:
+                    quote = quote_by_symbol[provider_symbol]
+                    break
+            if quote is None:
+                overview[asset_class].append({
+                    "market_id": market_id,
+                    "symbol": market_id,
+                    "display_symbol": info.get("display_symbol"),
+                    "underlying": info.get("underlying", market_id),
+                    "name": info.get("name", market_id),
+                    "last": None,
+                    "price": None,
+                    "status": "DATA_UNAVAILABLE",
+                    "tradable": False,
+                    "reason": "DATA_UNAVAILABLE",
+                    "strategy": "rsi",
+                    "signal": "NO_TRADE",
+                    "data_age_ms": None,
+                    "realtime_source": False,
+                    "active_source": None,
+                    "available_sources": self.available_source_count(market_id),
+                    "market_status": self.universe.get_market_status(market_id),
+                    "tick_size": info.get("tick_size"),
+                    "leverage_max": info.get("leverage_max"),
+                })
                 continue
             payload = quote.model_dump()
             payload.update({
@@ -257,6 +280,7 @@ class DataEngine:
                 "realtime_source": self.is_quote_realtime(market_id, payload),
                 "active_source": payload.get("source"),
                 "available_sources": self.available_source_count(market_id),
+                "tradable": False,
             })
             overview[asset_class].append(payload)
         return overview

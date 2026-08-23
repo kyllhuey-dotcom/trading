@@ -10,7 +10,7 @@ SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
     "cool_down_mins": {"type": "int", "min": 0, "max": 240, "default": "30"},
     "max_open_positions": {"type": "int", "min": 1, "max": 20, "default": "10"},
     "min_signal_score": {"type": "int", "min": 84, "max": 99, "default": "84"},
-    "risk_reward_ratio": {"type": "float", "min": 0.5, "max": 10.0, "default": "2.0"},
+    "risk_reward_ratio": {"type": "float", "min": 0.5, "max": 10.0, "default": "1.5"},
     "atr_stop_multiplier": {"type": "float", "min": 0.1, "max": 10.0, "default": "1.5"},
     "max_spread_pct": {"type": "float", "min": 0.01, "max": 5.0, "default": "0.5"},
     "trailing_stop_active": {"type": "bool", "default": "true"},

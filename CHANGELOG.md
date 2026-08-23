@@ -1,5 +1,32 @@
 # Changelog - Quantum Trade Pro
 
+## [2.9.1] - 2026-08-23 — Scanner fiable, Radar complet, RR RSI 1.5
+
+### Résumé
+- Stratégie automatique unique RSI-14 (BUY et SELL) avec RR cible **1.5**,
+  borné entre 1.0 et 2.0, strictement symétrique.
+- Scanner RSI allégé (OHLCV + ticker uniquement) : une erreur provider ne
+  stoppe plus la boucle ; verrou anti-double scan ; persistance SQLite ;
+  `POST /api/scanner/trigger` protégé.
+- Le Global Radar et `/api/markets` conservent **tous** les marchés de
+  l'univers, y compris `DATA_UNAVAILABLE` — plus de réduction silencieuse
+  à deux lignes.
+- Hébergement de production : **Railway** (processus persistant). Un runtime
+  serverless (Vercel) ne peut pas porter la boucle asyncio ; l'état du scan
+  est alors lu depuis SQLite.
+- APIs gratuites uniquement ; LIVE/DELAYED décidé sur le timestamp reçu,
+  jamais sur le nom du provider. Données différées refusées à l'auto-trade.
+- Porte news/calendrier fail-safe inchangée (`block_all` par défaut).
+- Le score reste un filtre de sélectivité, **pas une probabilité**. Aucune
+  rentabilité n'est promise. Plancher 84 inviolable.
+
+### Interface
+- L'interface officielle reste uniquement `public/index.html`,
+  `public/js/i18n.js`, `public/css/app.css`, `public/js/lucide.min.js`.
+- Clés i18n ajoutées en en/fr/es/de : `strategyRsiName`, `activeStrategy`,
+  `riskRewardRsi`, `scannerProgress`, `marketsUnavailable`, `scannerError`,
+  `lastScan`.
+
 ## [2.9.0] - 2026-08-23 — Stratégie RSI-14 unique
 
 ### Résumé

@@ -3,6 +3,10 @@
 The strategy deliberately computes every input from the supplied OHLCV frame:
 there is no dependency on the market analysis engine or on a provider-specific
 indicator.  A signal is a deterministic setup, never a probability estimate.
+
+When volume is absent, entirely zero or entirely NaN, volume points are
+replaced by a mandatory EMA21 confirmation (+25 instead of +10). A zero
+volume bar is never treated as a confirmation.
 """
 
 from datetime import datetime
@@ -10,7 +14,11 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from ..constants import AUTO_EXECUTION_SCORE_FLOOR
+from ..constants import (
+    AUTO_EXECUTION_SCORE_FLOOR,
+    DEFAULT_RSI_RISK_REWARD,
+    RSI_RISK_REWARD_BOUNDS,
+)
 from .base_strategy import BaseStrategy
 
 
@@ -25,7 +33,8 @@ class RSIMeanReversionStrategy(BaseStrategy):
 
     Scores are selectivity scores from 0 to 100, not probabilities.  Stops are
     placed beyond the latest five-bar extreme by 0.1 ATR(14), and the effective
-    risk/reward is always clamped to the inclusive range 1:1–1:2.
+    risk/reward is always clamped to the inclusive range 1:1–1:2. The default
+    RSI target RR is 1.5 and is strictly symmetric for BUY and SELL.
     """
 
     RSI_PERIOD = 14
@@ -37,8 +46,8 @@ class RSIMeanReversionStrategy(BaseStrategy):
     ATR_BUFFER = 0.1
     MIN_BARS = 40
 
-    def __init__(self, risk_reward_ratio: float = 2.0) -> None:
-        self.risk_reward_ratio = 2.0
+    def __init__(self, risk_reward_ratio: float = DEFAULT_RSI_RISK_REWARD) -> None:
+        self.risk_reward_ratio = DEFAULT_RSI_RISK_REWARD
         self.set_risk_reward(risk_reward_ratio)
 
     def set_risk_reward(self, value: Any) -> None:
@@ -50,19 +59,41 @@ class RSIMeanReversionStrategy(BaseStrategy):
         if pd.notna(candidate) and candidate > 0:
             self.risk_reward_ratio = candidate
 
+    def _effective_rr(self) -> float:
+        lo, hi = RSI_RISK_REWARD_BOUNDS
+        try:
+            return max(lo, min(hi, float(self.risk_reward_ratio)))
+        except (TypeError, ValueError):
+            return DEFAULT_RSI_RISK_REWARD
+
     @staticmethod
     def _no_trade(reason: str, market_id: str, score: int = 0,
+                  block_reason: str = "NO_TRADE",
+                  direction: Optional[str] = None,
                   **metadata: Any) -> Dict[str, Any]:
+        def _num(key: str) -> float:
+            value = metadata.get(key)
+            try:
+                return float(value) if value is not None and pd.notna(value) else 0.0
+            except (TypeError, ValueError):
+                return 0.0
+
         return {
             "status": "NO_TRADE",
-            "direction": None,
+            "direction": direction,
             "score": int(max(0, min(100, score))),
             "reason": reason,
-            "entry": None,
-            "sl": None,
-            "tp": None,
+            "block_reason": block_reason,
+            "entry": 0.0,
+            "sl": 0.0,
+            "tp": 0.0,
             "market_id": market_id,
             "strategy": "rsi",
+            "rsi": _num("rsi"),
+            "ema8": _num("ema8"),
+            "ema21": _num("ema21"),
+            "vol_ratio": metadata.get("vol_ratio"),
+            "risk_reward": DEFAULT_RSI_RISK_REWARD,
             "timestamp": datetime.now().isoformat(),
             "metadata": metadata,
         }
@@ -117,9 +148,9 @@ class RSIMeanReversionStrategy(BaseStrategy):
         if "Volume" in df.columns:
             volume = self._numeric_series(df, "Volume")
             usable_volume = volume.dropna()
-            # A null/zero series is the expected Yahoo spot-Forex case.  It is
-            # not a failed volume confirmation: it explicitly selects the MA
-            # fallback described in the strategy contract.
+            # A null/zero/NaN series is the expected Yahoo spot-Forex case. It
+            # is not a failed volume confirmation: it selects the EMA21
+            # fallback. A zero print is never a confirmation.
             volume_available = bool(not usable_volume.empty and
                                     (usable_volume > 0).any())
             if volume_available:
@@ -159,6 +190,7 @@ class RSIMeanReversionStrategy(BaseStrategy):
             return self._no_trade(
                 f"Insufficient OHLCV data for RSI strategy ({len(df) if isinstance(df, pd.DataFrame) else 0} < {self.MIN_BARS})",
                 market_id,
+                block_reason="INSUFFICIENT_CANDLES",
             )
 
         required = {"Open", "High", "Low", "Close"}
@@ -166,12 +198,16 @@ class RSIMeanReversionStrategy(BaseStrategy):
         if missing:
             return self._no_trade(
                 f"Missing OHLCV columns: {', '.join(missing)}", market_id,
+                block_reason="INSUFFICIENT_CANDLES",
             )
 
         try:
             values = self._indicators(df)
         except (TypeError, ValueError, ZeroDivisionError) as exc:
-            return self._no_trade(f"RSI indicator calculation error: {exc}", market_id)
+            return self._no_trade(
+                f"RSI indicator calculation error: {exc}", market_id,
+                block_reason="PROVIDER_ERROR",
+            )
 
         close = values["close"]
         high = values["high"]
@@ -194,6 +230,7 @@ class RSIMeanReversionStrategy(BaseStrategy):
         if any(pd.isna(value) for value in latest_values):
             return self._no_trade(
                 "RSI/EMA/ATR indicators are not valid on the latest bars", market_id,
+                block_reason="INSUFFICIENT_CANDLES",
             )
         decision_window = pd.concat(
             [open_price, high, low, close], axis=1
@@ -201,6 +238,7 @@ class RSIMeanReversionStrategy(BaseStrategy):
         if decision_window.isna().any().any():
             return self._no_trade(
                 "NaN in the latest OHLC decision window", market_id,
+                block_reason="INSUFFICIENT_CANDLES",
             )
 
         rsi_previous = float(rsi.iloc[-2])
@@ -227,13 +265,17 @@ class RSIMeanReversionStrategy(BaseStrategy):
             direction = "SELL"
         else:
             reasons = []
+            block_reason = "RSI_NO_CROSS"
             if not (bullish_cross or bearish_cross):
                 reasons.append("RSI(14) did not exit oversold/overbought")
             if not (bullish_price or bearish_price):
                 reasons.append("price rebound/recoil confirmation missing")
+                if bullish_cross or bearish_cross:
+                    block_reason = "PRICE_CONFIRMATION_MISSING"
             return self._no_trade(
                 "; ".join(reasons) or "No RSI reversal setup",
                 market_id,
+                block_reason=block_reason,
                 rsi=rsi_current,
                 rsi_previous=rsi_previous,
                 ema8=ema8_current,
@@ -256,6 +298,7 @@ class RSIMeanReversionStrategy(BaseStrategy):
             if volume_ratio is None or pd.isna(volume_ratio):
                 return self._no_trade(
                     "Volume confirmation unavailable for the latest bar", market_id,
+                    block_reason="VOLUME_CONFIRMATION_MISSING",
                     rsi=rsi_current, rsi_previous=rsi_previous,
                     ema8=ema8_current, ema21=ema21_current,
                 )
@@ -264,6 +307,7 @@ class RSIMeanReversionStrategy(BaseStrategy):
                 return self._no_trade(
                     f"Volume confirmation missing ({volume_ratio:.2f}x <= 1.00x mean)",
                     market_id,
+                    block_reason="VOLUME_CONFIRMATION_MISSING",
                     rsi=rsi_current, rsi_previous=rsi_previous,
                     ema8=ema8_current, ema21=ema21_current,
                     vol_ratio=round(volume_ratio, 6),
@@ -272,18 +316,19 @@ class RSIMeanReversionStrategy(BaseStrategy):
             if not ma_confirmation:
                 return self._no_trade(
                     "EMA21 confirmation missing for the RSI reversal", market_id,
+                    block_reason="EMA21_CONFIRMATION_MISSING",
                     rsi=rsi_current, rsi_previous=rsi_previous,
                     ema8=ema8_current, ema21=ema21_current,
                     vol_ratio=round(volume_ratio, 6), volume_available=True,
                 )
         else:
             # In the null/zero-volume fallback, MA confirmation is explicitly
-            # mandatory.  In normal volume mode it is mandatory as well under
-            # the strategy's technical confirmation rule, but contributes +10.
+            # mandatory. A zero / all-NaN volume series is NEVER a confirmation.
             volume_confirmed = ma_confirmation
             if not ma_confirmation:
                 return self._no_trade(
                     "Volume unavailable: EMA21 confirmation is mandatory", market_id,
+                    block_reason="EMA21_CONFIRMATION_MISSING",
                     rsi=rsi_current, rsi_previous=rsi_previous,
                     ema8=ema8_current, ema21=ema21_current,
                     vol_ratio=None, volume_available=False,
@@ -292,20 +337,16 @@ class RSIMeanReversionStrategy(BaseStrategy):
         # Deterministic score. The RSI cross and price pattern are mandatory
         # components; therefore a score cannot turn a partial setup into a
         # signal.  The automatic engine applies the independent 84 floor too.
+        # EMA21 is never added twice: without volume it replaces the volume
+        # component (+25); with volume it contributes +10.
         score = 30 + 25
         if volume_available:
             score += 25 if volume_ratio > 1.2 else 15
-            score += 10  # EMA21 confirmation, required in this branch.
+            score += 10
+            ma_points = 10
         else:
-            score += 25  # volume points replaced by mandatory MA confirmation.
-        if not volume_available:
+            score += 25
             ma_points = 25
-        else:
-            ma_points = 10
-        if volume_available and ma_confirmation:
-            # This is already included above, kept explicit for metadata and
-            # readability of the scoring rule.
-            ma_points = 10
         if alignment:
             score += 10
 
@@ -322,6 +363,7 @@ class RSIMeanReversionStrategy(BaseStrategy):
         if risk_distance <= 0 or pd.isna(risk_distance):
             return self._no_trade(
                 "Invalid risk distance (stop is not protective)", market_id, score,
+                block_reason="RISK_BLOCKED",
                 rsi=rsi_current, rsi_previous=rsi_previous,
                 ema8=ema8_current, ema21=ema21_current,
                 vol_ratio=volume_ratio,
@@ -332,13 +374,14 @@ class RSIMeanReversionStrategy(BaseStrategy):
         if score < AUTO_EXECUTION_SCORE_FLOOR:
             return self._no_trade(
                 f"Below minimum score ({score}/{AUTO_EXECUTION_SCORE_FLOOR})", market_id, score,
+                block_reason="SCORE_BELOW_84",
                 rsi=rsi_current, rsi_previous=rsi_previous,
                 ema8=ema8_current, ema21=ema21_current,
                 vol_ratio=volume_ratio, volume_available=volume_available,
                 ma_confirmation=ma_confirmation, ema_alignment=alignment,
             )
 
-        risk_reward = max(1.0, min(2.0, float(self.risk_reward_ratio)))
+        risk_reward = self._effective_rr()
         take_profit = (
             entry + risk_distance * risk_reward
             if direction == "BUY"
@@ -368,9 +411,11 @@ class RSIMeanReversionStrategy(BaseStrategy):
             "last_five_low": last_five_low,
             "last_five_high": last_five_high,
             "atr": round(atr_current, 8),
+            "atr14": round(atr_current, 8),
             "atr_buffer": round(buffer, 8),
             "risk_distance": round(float(risk_distance), 8),
             "risk_reward": risk_reward,
+            "effective_rr": risk_reward,
             "score_components": {
                 "rsi_cross": 30,
                 "price_rebound": 25,
@@ -391,6 +436,7 @@ class RSIMeanReversionStrategy(BaseStrategy):
                 f"{'volume' if volume_available else 'MA fallback'} confirmed "
                 f"(score {int(min(100, score))}/100)"
             ),
+            "block_reason": None,
             "entry": entry,
             "sl": float(stop_loss),
             "tp": float(take_profit),
