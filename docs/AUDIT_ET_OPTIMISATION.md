@@ -7,6 +7,16 @@
 > `python3 scripts/profit_audit.py <db> <balance>` pour obtenir les statistiques
 > réelles + les recommandations d'optimisation.
 
+## Addendum v2.6 — qualité des entrées avant optimisation
+
+L'audit production du 22 août 2026 a corrigé les biais opérationnels qui
+empêchaient d'obtenir un échantillon exploitable : calendrier sans SPOF, scan
+immédiat, sources crypto redondantes, Yahoo batché, sous-jacents dédupliqués et
+état LIVE/DIFFÉRÉ explicite. Ces changements améliorent la **disponibilité** et
+la qualité des observations ; ils ne changent ni le sizing à risque fixe, ni
+l'anti-martingale, ni les profils de capital, ni le tuning par marché. Les
+trades différés et les news bloquantes restent refusés par défaut.
+
 Ce document applique la méthodologie demandée au bot **Quantum Trade Pro** :
 
 1. Audit des performances (données historiques).

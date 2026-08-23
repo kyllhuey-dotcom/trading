@@ -1,3 +1,38 @@
+# Audit de Robustesse — Quantum Trade Pro v2.6 (22 août 2026)
+
+## Contre-audit des 8 causes racines observées en production
+
+Audit exécuté sur le clone réel, avec fixtures hors réseau et suite complète.
+Les protections de risque existantes n'ont pas été assouplies. Le défaut reste
+fail-safe et les cibles de santé restent **win rate ≥ 45 %**, **RR ≥ 1,5** et
+**espérance positive** — jamais 99 % de réussite.
+
+| Cause racine | Correctif vérifié | Preuve automatisée |
+|---|---|---|
+| P0-1 calendrier SPOF | JSON Fair Economy → HTML ForexFactory → snapshot SQLite ≤ 7 jours ; politique `block_all` / `block_tradfi_only` / `allow_all` ; état API + bannière | `test_calendar_*`, `test_calendar_unavailable_policies` |
+| P0-2 CDN dashboard | Tailwind et Lucide commités localement, polices système, gardes Lucide, bannière après 3 pannes API ; aucune URL externe dans `src`/`href` | `test_dashboard_is_runtime_self_contained_and_i18n_keysets_match` |
+| P0-3 radar vide | tâche de scan immédiate au lifespan, callback incrémental, phase crypto prioritaire, contrat progression/âge, skeleton permanent avant le premier résultat | `test_scanner_crypto_phase_precedes_tradfi_and_reports_progress`, test API progression |
+| P0-4 démarrage/armement opaque | `auto_start_on_startup=false`; auto-arm implique start ; intention normalisée dans API/header ; `diagnosis.main_reason` dans chaque ligne | `test_auto_start_and_arm_semantics_and_scanner_api_progress` |
+| P1-5 Yahoo martelé | un download groupé par classe/cycle, caches ticker et 1m 60 s / 15m 300 s, 15m local, cooldown exponentiel ; badges/filtre LIVE-DIFFÉRÉ | `test_yahoo_grouped_batch_and_ttl_cache` |
+| P1-6 sources fragiles | 6 providers crypto publics ; TwelveData/Finnhub conditionnels et limités ; source/âge/disponibilité par marché dans health | `test_new_crypto_provider_fixture_parsing`, test cascade/activation |
+| P1-7 doublons | `underlying` obligatoire ; trois contrats dupliqués retirés ; 127 symboles et underlyings uniques ; déduplication défensive Radar/Hub | `test_universe_and_rendered_views_have_no_duplicate_exposure` |
+| P1-8 i18n incomplet | quatre dictionnaires de mêmes clés, `t(key)` dynamique, plus de 160 textes statiques annotés, langue réappliquée et préférence serveur au chargement | test parité i18n/autonomie dashboard |
+
+### Résultat de validation v2.6
+
+- `python3 -m pytest tests/ -q` : **390 passed, 6 skipped** (réseau seulement).
+- `python3 -m ruff check` : **All checks passed**.
+- Univers : **127 instruments / 127 display_symbol / 127 underlying**.
+- Le calendrier hors ligne bloque tout par défaut. Une politique plus permissive
+  exige un choix explicite et reste visible dans le statut.
+- Yahoo différé reste bloqué pour l'exécution automatique par défaut.
+- `execution_intent != STOPPED` requiert un bot démarré ; une exécution DEMO
+  automatique requiert en plus `armed=true`, un setup valide et toutes les
+  portes news/session/fraîcheur/risque. Aucune exécution n'est fabriquée pour un
+  test de disponibilité.
+
+---
+
 # Audit de Robustesse — Quantum Trade Pro v2.3 (août 2026)
 
 ## Lots 1–8 (v2.3)
