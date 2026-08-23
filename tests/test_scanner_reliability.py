@@ -410,9 +410,9 @@ def test_ranker_uses_compute_trade_costs():
 
 
 def test_full_universe_returned_by_api():
-    """P0: /api/scanner always returns all markets (127+)."""
+    """P0: /api/scanner always returns all markets (126+)."""
     ids = idx.data_engine.universe.get_all_ids()
-    assert len(ids) >= 127
+    assert len(ids) >= 126
     idx.bot_state["latest_scan"] = []
     client = TestClient(idx.app)
     data = client.get("/api/scanner?filter=all").json()

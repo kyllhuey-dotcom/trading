@@ -86,7 +86,7 @@ class MarketUniverse:
             "palladium": {"display_symbol": "PALLADIUM", "asset_class": "COMMODITIES", "name": "Palladium", "providers": {"yahoo_commodities": "PA=F"}, "broker_symbols": {"gate": "PALL"}, "tick_size": 0.1, "lot_size": 1, "min_order": 0.1, "leverage_max": 10, "timezone": "UTC"},
             "live_cattle": {"display_symbol": "CATTLE", "asset_class": "COMMODITIES", "name": "Live Cattle", "providers": {"yahoo_commodities": "LE=F"}, "broker_symbols": {"gate": "CATTLE"}, "tick_size": 0.025, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "America/Chicago"},
             "aluminum": {"display_symbol": "ALUMINUM", "asset_class": "COMMODITIES", "name": "Aluminum", "providers": {"yahoo_commodities": "ALI=F"}, "broker_symbols": {"gate": "ALUM"}, "tick_size": 0.5, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "Europe/London"},
-            "zinc": {"display_symbol": "ZINC", "asset_class": "COMMODITIES", "name": "Zinc", "providers": {"yahoo_commodities": "ZNC=F"}, "broker_symbols": {"gate": "ZINC"}, "tick_size": 0.5, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "Europe/London"},
+            # zinc/ZNC=F: Yahoo reports the contract as possibly delisted — omitted
             # LUMBER (LBS=F) was delisted, replaced by LBR=F
             "lumber": {"display_symbol": "LUMBER", "asset_class": "COMMODITIES", "name": "Lumber", "providers": {"yahoo_commodities": "LBR=F"}, "broker_symbols": {"gate": "LUMBER"}, "tick_size": 0.1, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "America/Chicago"},
             "orange_juice": {"display_symbol": "ORANGE JUICE", "asset_class": "COMMODITIES", "name": "Orange Juice", "providers": {"yahoo_commodities": "OJ=F"}, "broker_symbols": {"gate": "OJ"}, "tick_size": 0.05, "lot_size": 1, "min_order": 1, "leverage_max": 10, "timezone": "America/New_York"},
@@ -162,7 +162,7 @@ class MarketUniverse:
         # v2.6: remove three duplicate contracts that represented an already
         # tracked underlying (gold/gc_f, spx/es_f, nasdaq/nq_f).  Replace them
         # with liquid, independent crypto underlyings so the universe remains
-        # 127 instruments without showing or trading the same exposure twice.
+        # 126 instruments without showing or trading the same exposure twice.
         for duplicate_id in ("gc_f", "es_f", "nq_f"):
             self.universe.pop(duplicate_id, None)
         self.universe.update({

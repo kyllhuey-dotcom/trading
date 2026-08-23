@@ -203,7 +203,7 @@ def test_crypto_priority_and_optional_tradfi_activation(monkeypatch):
 
 def test_universe_and_rendered_views_have_no_duplicate_exposure():
     universe = MarketUniverse().universe
-    assert len(universe) == 127
+    assert len(universe) == 126
     assert len({row["underlying"] for row in universe.values()}) == len(universe)
     assert len({row["display_symbol"] for row in universe.values()}) == len(universe)
     assert not {"gc_f", "es_f", "nq_f"}.intersection(universe)
@@ -271,9 +271,9 @@ def test_auto_start_and_arm_semantics_and_scanner_api_progress(monkeypatch):
 
     monkeypatch.setitem(idx.bot_state, "scanning", True)
     monkeypatch.setitem(idx.bot_state, "scan_progress_count", 4)
-    monkeypatch.setitem(idx.bot_state, "scan_progress_total", 127)
+    monkeypatch.setitem(idx.bot_state, "scan_progress_total", 126)
     response = TestClient(idx.app).get("/api/scanner")
-    assert response.json()["progress"] == "4/127"
+    assert response.json()["progress"] == "4/126"
     assert response.json()["scanning"] is True
     idx.bot_state["scanning"] = False
 

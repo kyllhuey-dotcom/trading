@@ -1941,7 +1941,7 @@ async def get_broker_capabilities():
             "open_orders_count": 0,
         }
         # Try to get runtime status from broker_connector
-        adapter = broker_connector._adapters.get(broker.get("broker_id"))
+        adapter = broker_connector.active_adapters.get(broker.get("broker_id"))
         if adapter:
             cap["runtime_status"] = "CONNECTED" if getattr(adapter, "_connected", False) else "DISCONNECTED"
             cap["sandbox"] = getattr(adapter, "sandbox", False)
