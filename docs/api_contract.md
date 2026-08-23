@@ -149,9 +149,9 @@ Réponse : `{ success, balance }`.
 ```json
 { "max_risk_pct": "1.0", "max_leverage": "20", "max_daily_loss_pct": "3.0",
   "cool_down_mins": "30", "max_open_positions": "10", "language": "en", "trailing_stop_active": "true",
-  "max_spread_pct": "0.5", "min_signal_score": "80", "risk_reward_ratio": "2.0",
+  "max_spread_pct": "0.5", "min_signal_score": "84", "risk_reward_ratio": "2.0",
   "trailing_stop_distance_atr": "1.5", "emergency_stop_drawdown_pct": "10.0",
-  "auto_arm_on_startup": "false", "active_strategies": "structure,arbitrage,tape,liquidity",
+  "auto_arm_on_startup": "false", "active_strategies": "rsi",
   "sim_latency_ms": "100", "sim_slippage_pct": "0.05", "sim_rejection_prob": "0.01",
   "partial_tp_ratio": "1.0", "scan_interval_seconds": "20", "peak_balance": "0",
   "regime_adaptation_enabled": "true", "market_tuning": "{}" }

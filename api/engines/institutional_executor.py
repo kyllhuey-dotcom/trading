@@ -1,9 +1,8 @@
-"""Institutional ≥80-only candidate selection (v2.7).
+"""Institutional RSI-only candidate selection for automatic execution (v2.9).
 
-v2.7 changes:
-- Enforces AUTO_EXECUTION_SCORE_FLOOR on all paths
-- Integrates with OpportunityRanker for single best selection
-- select_candidates remains for backward compat but enforces floor
+The score floor remains inviolable on every path. Legacy strategies are kept
+available to explicit backtests, but this selector is an automatic-execution
+gate and therefore accepts only ``strategy == \"rsi\"``.
 """
 from typing import Any, Dict, List, Set
 
@@ -27,8 +26,11 @@ def select_candidates(results: List[Dict[str, Any]], min_score: float,
     for r in results or []:
         if not r.get("tradable"):
             continue
-        # v2.7 P0-5: arbitrage strategies are not auto-executable
+        # v2.9: the automatic executor accepts RSI signals only. The legacy
+        # strategy modules remain usable by explicit backtests, never here.
         sig = r.get("signal_data") or {}
+        if str(sig.get("strategy", "")).lower() != "rsi":
+            continue
         if sig.get("tradable") is False:
             continue
         score = float(r.get("score") or 0)

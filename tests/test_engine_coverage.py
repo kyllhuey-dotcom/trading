@@ -209,7 +209,8 @@ def _analysis(**overrides):
 def test_signal_structure_full_conviction():
     engine = SignalEngine(min_score=80)
     res = engine.generate_signal(_analysis(), {"trading_allowed": True},
-                                 build_ohlcv(), market_id="btc_usdt")
+                                 build_ohlcv(), market_id="btc_usdt",
+                                 strategy_mode="structure")
     assert res["status"] == "SIGNAL_DETECTED"
     assert res["direction"] == "BUY"
     assert res["score"] >= 80
@@ -222,7 +223,7 @@ def test_signal_neutral_trend_blocks():
     engine = SignalEngine(min_score=80)
     res = engine.generate_signal(_analysis(trend="NEUTRAL", bos=False, choch=False),
                                  {"trading_allowed": True}, build_ohlcv(),
-                                 market_id="btc_usdt")
+                                 market_id="btc_usdt", strategy_mode="structure")
     assert res["status"] == "NO_TRADE"
     assert "No clear trend" in res["reason"]
 
@@ -231,7 +232,8 @@ def test_signal_neutral_with_choch_picks_direction():
     engine = SignalEngine(min_score=80)
     df = build_ohlcv()  # last close above last_high → BUY
     res = engine.generate_signal(_analysis(trend="NEUTRAL", choch=True, bos=False),
-                                 {"trading_allowed": True}, df, market_id="btc_usdt")
+                                 {"trading_allowed": True}, df, market_id="btc_usdt",
+                                 strategy_mode="structure")
     assert res["status"] in ("SIGNAL_DETECTED", "NO_TRADE")
     if res["status"] == "SIGNAL_DETECTED":
         assert res["direction"] == "BUY"
@@ -241,7 +243,7 @@ def test_signal_insufficient_ohlcv():
     engine = SignalEngine(min_score=80)
     tiny = pd.DataFrame({'High': [1, 2, 3], 'Low': [1, 1, 1], 'Close': [1, 2, 3]})
     res = engine.generate_signal(_analysis(), {"trading_allowed": True}, tiny,
-                                 market_id="btc_usdt")
+                                 market_id="btc_usdt", strategy_mode="structure")
     assert res["status"] == "NO_TRADE"
     assert "Insufficient" in res["reason"]
 
@@ -249,7 +251,8 @@ def test_signal_insufficient_ohlcv():
 def test_signal_invalid_analysis():
     engine = SignalEngine(min_score=80)
     res = engine.generate_signal({"status": "INVALID"}, {"trading_allowed": True},
-                                 build_ohlcv(), market_id="btc_usdt")
+                                 build_ohlcv(), market_id="btc_usdt",
+                                 strategy_mode="structure")
     assert res["status"] == "NO_TRADE"
     assert "Invalid" in res["reason"]
 
@@ -257,27 +260,30 @@ def test_signal_invalid_analysis():
 def test_signal_multi_strategy_mode():
     engine = SignalEngine(min_score=80)
     engine.set_active_strategies(["structure", "tape"])
+    # Legacy strategy modules remain directly testable, but are not selected
+    # by the automatic active-strategy list.
     res = engine.generate_signal(_analysis(), {"trading_allowed": True},
                                  build_ohlcv(), market_id="btc_usdt",
+                                 strategy_mode="structure",
                                  orderbook=build_orderbook(), trades=build_trades())
     assert res["status"] == "SIGNAL_DETECTED"
-    assert res.get("multi_strategy") is True
+    assert res["strategy"] == "structure"
 
-    # With no strategy producing a signal → clean NO_TRADE
+    # With no structural setup → clean NO_TRADE
     res_none = engine.generate_signal(_analysis(trend="NEUTRAL", bos=False, choch=False),
                                       {"trading_allowed": True}, build_ohlcv(),
-                                      market_id="btc_usdt")
+                                      market_id="btc_usdt", strategy_mode="structure")
     assert res_none["status"] == "NO_TRADE"
 
 
 def test_signal_active_strategy_validation_and_min_score():
     engine = SignalEngine(min_score=80)
     engine.set_active_strategies(["nope", "structure"])
-    assert engine.active_strategy_names == ["structure"]
+    assert engine.active_strategy_names == ["rsi"]
     engine.set_active_strategies(["tape", "liquidity", "arbitrage"])
-    assert engine.active_strategy_names == ["tape", "liquidity", "arbitrage"]
+    assert engine.active_strategy_names == ["rsi"]
     engine.set_active_strategies([])
-    assert engine.active_strategy_names == ["structure"]
+    assert engine.active_strategy_names == ["rsi"]
     engine.set_min_score(90)
     assert engine.min_score == 90
 

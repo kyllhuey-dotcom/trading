@@ -50,6 +50,6 @@ def test_signal_block_on_range():
         'Close': [100]*20, 
         'Volume': [10]*20
     })
-    res = signal.generate_signal(analysis, news, df)
+    res = signal.generate_signal(analysis, news, df, strategy_mode="structure")
     assert res["status"] == "NO_TRADE"
     assert "Range" in res["reason"]

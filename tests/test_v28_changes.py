@@ -40,7 +40,7 @@ def _candidate(symbol, score=90, base=None):
         "signal_data": {
             "market_id": symbol,
             "entry": 100, "sl": 95, "tp": 110,
-            "direction": "BUY", "strategy": "structure",
+            "direction": "BUY", "strategy": "rsi",
             "status": "SIGNAL_DETECTED", "tradable": True,
         },
         "data_age_ms": 10,

@@ -417,7 +417,7 @@ async def test_tick_scanner_executes_eligible_candidate(monkeypatch):
         "sl": 95,
         "tp": 110,
         "direction": "BUY",
-        "strategy": "structure",
+        "strategy": "rsi",
         "status": "SIGNAL_DETECTED",
         "tradable": True,
     }

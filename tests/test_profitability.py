@@ -127,7 +127,8 @@ def test_min_score_still_allows_high_quality_custom_signals():
 def test_risk_reward_setting_changes_take_profit():
     engine = SignalEngine(min_score=80, risk_reward=1.5)
     res = engine.generate_signal(_strong_analysis(), {"trading_allowed": True},
-                                 _trending_df(), market_id="btc_usdt")
+                                 _trending_df(), market_id="btc_usdt",
+                                 strategy_mode="structure")
     assert res["status"] == "SIGNAL_DETECTED"
     risk = res["entry"] - res["sl"]
     assert res["tp"] == pytest.approx(res["entry"] + 1.5 * risk, rel=1e-6)
@@ -149,7 +150,7 @@ def test_cost_filter_blocks_low_volatility_trade():
                           max_cost_ratio=0.5)
     res = engine.generate_signal(_calm_analysis(), {"trading_allowed": True},
                                  _calm_df(),  # micro-ATR, but high synthetic score
-                                 market_id="btc_usdt")
+                                 market_id="btc_usdt", strategy_mode="structure")
     assert res["status"] == "NO_TRADE"
     assert "Cost ratio too high" in res["reason"]
     assert res.get("cost_blocked") is True
@@ -160,7 +161,7 @@ def test_cost_filter_allows_volatile_trade():
                           max_cost_ratio=0.5)
     res = engine.generate_signal(_strong_analysis(), {"trading_allowed": True},
                                  _trending_df(bar_range=2.0),  # fat ATR
-                                 market_id="btc_usdt")
+                                 market_id="btc_usdt", strategy_mode="structure")
     assert res["status"] == "SIGNAL_DETECTED"
     assert not res.get("cost_blocked")
 
@@ -170,7 +171,7 @@ def test_cost_filter_configurable():
     engine.set_cost_params(max_cost_ratio=99.0)  # filter effectively off
     res = engine.generate_signal(_calm_analysis(), {"trading_allowed": True},
                                  _calm_df(),
-                                 market_id="btc_usdt")
+                                 market_id="btc_usdt", strategy_mode="structure")
     assert res["status"] == "SIGNAL_DETECTED"
 
 
@@ -186,7 +187,8 @@ def _range_analysis():
 def test_alpha_override_disabled_by_default_blocks_range_trades():
     engine = SignalEngine(min_score=80)  # default: alpha_override off
     res = engine.generate_signal(_range_analysis(), {"trading_allowed": True},
-                                 _trending_df(), market_id="btc_usdt")
+                                 _trending_df(), market_id="btc_usdt",
+                                 strategy_mode="structure")
     assert res["status"] == "NO_TRADE"
     assert res["alpha_override"] is False
 
@@ -194,7 +196,8 @@ def test_alpha_override_disabled_by_default_blocks_range_trades():
 def test_alpha_override_opt_in_allows_range_trades():
     engine = SignalEngine(min_score=80, alpha_override_enabled=True)
     res = engine.generate_signal(_range_analysis(), {"trading_allowed": True},
-                                 _trending_df(), market_id="btc_usdt")
+                                 _trending_df(), market_id="btc_usdt",
+                                 strategy_mode="structure")
     assert res["status"] == "SIGNAL_DETECTED"
     assert res["alpha_override"] is True
 
@@ -202,7 +205,8 @@ def test_alpha_override_opt_in_allows_range_trades():
 def test_alpha_override_does_not_bypass_news_anymore():
     engine = SignalEngine(min_score=80, alpha_override_enabled=True)
     res = engine.generate_signal(_range_analysis(), {"trading_allowed": False},
-                                 _trending_df(), market_id="btc_usdt")
+                                 _trending_df(), market_id="btc_usdt",
+                                 strategy_mode="structure")
     assert res["status"] == "NO_TRADE"
 
 

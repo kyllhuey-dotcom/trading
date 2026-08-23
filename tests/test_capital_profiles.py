@@ -156,12 +156,14 @@ def _df():
 
 def test_signal_atr_stop_multiplier_widens_stop():
     engine = SignalEngine(min_score=80, risk_reward=2.0)
-    res = engine.generate_signal(_valid_analysis(), {"trading_allowed": True}, _df())
+    res = engine.generate_signal(_valid_analysis(), {"trading_allowed": True}, _df(),
+                                 strategy_mode="structure")
     assert res["status"] == "SIGNAL_DETECTED"
     atr = res["atr"]
 
     engine_wide = SignalEngine(min_score=80, risk_reward=2.0, atr_stop_multiplier=3.0)
-    res_wide = engine_wide.generate_signal(_valid_analysis(), {"trading_allowed": True}, _df())
+    res_wide = engine_wide.generate_signal(_valid_analysis(), {"trading_allowed": True}, _df(),
+                                           strategy_mode="structure")
     assert res_wide["atr"] == pytest.approx(atr)
     # Larger ATR multiplier = further stop (more distance to the trade).
     assert (res_wide["entry"] - res_wide["sl"]) > (res["entry"] - res["sl"])

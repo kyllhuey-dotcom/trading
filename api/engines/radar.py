@@ -74,6 +74,11 @@ def enrich_radar_row(asset: Dict[str, Any]) -> Dict[str, Any]:
     row["display_symbol"] = row.get("display_symbol") or sig.get("display_symbol") or str(row.get("symbol") or "").upper().replace("_", "/")
     row["strategy"] = row.get("strategy") or sig.get("strategy") or "structure"
     row["direction"] = row.get("direction") or sig.get("direction") or row.get("trend")
+    # Radar rows are also an execution entry point. Legacy strategies may be
+    # displayed for diagnostics, but their trade action is always disabled.
+    row["auto_execution_allowed"] = str(row["strategy"]).lower() == "rsi"
+    if not row["auto_execution_allowed"]:
+        row["tradable"] = False
     row["data_age_label"] = format_data_age(row.get("data_age_ms"))
     row["data_source_label"] = "LIVE" if row.get("realtime_source") else "DELAYED"
     return row

@@ -8,7 +8,8 @@ def test_signal_engine_incomplete_data():
     
     # Missing columns
     df_missing = pd.DataFrame({"Close": [100]*20})
-    res = engine.generate_signal(analysis, {"trading_allowed": True}, df_missing)
+    res = engine.generate_signal(analysis, {"trading_allowed": True}, df_missing,
+                                strategy_mode="structure")
     assert res["status"] == "NO_TRADE"
     assert "Insufficient OHLCV data" in res["reason"]
 
@@ -16,7 +17,8 @@ def test_signal_engine_incomplete_data():
     df_short = pd.DataFrame({
         "High": [110]*5, "Low": [90]*5, "Close": [100]*5
     })
-    res = engine.generate_signal(analysis, {"trading_allowed": True}, df_short)
+    res = engine.generate_signal(analysis, {"trading_allowed": True}, df_short,
+                                strategy_mode="structure")
     assert res["status"] == "NO_TRADE"
     assert "Insufficient OHLCV data" in res["reason"]
 
@@ -29,6 +31,7 @@ def test_signal_engine_atr_nan():
         "Low": [float('nan')]*20, 
         "Close": [float('nan')]*20
     })
-    res = engine.generate_signal(analysis, {"trading_allowed": True}, df_nan)
+    res = engine.generate_signal(analysis, {"trading_allowed": True}, df_nan,
+                                strategy_mode="structure")
     assert res["status"] == "NO_TRADE"
     assert "Insufficient valid data for ATR" in res["reason"]

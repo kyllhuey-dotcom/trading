@@ -2,7 +2,8 @@ from fastapi.testclient import TestClient
 from api.index import app
 
 client = TestClient(app)
-CRITICAL = ["dashboard", "scanner", "trading", "settings", "radarTitle", "deployed", "waitingSetup"]
+CRITICAL = ["dashboard", "scanner", "trading", "settings", "radarTitle", "deployed", "waitingSetup",
+            "strategyRsiName", "activeStrategy"]
 
 
 def test_four_languages_and_keys():
