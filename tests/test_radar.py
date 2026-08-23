@@ -7,7 +7,7 @@ client = TestClient(app)
 SAMPLE = [
     {"symbol": "eth_usdt", "asset_class": "CRYPTO", "score": 70, "signal_data": {"strategy": "tape", "direction": "SELL", "display_symbol": "ETH/USDT"}},
     {"symbol": "btc_usdt", "asset_class": "CRYPTO", "score": 92, "signal_data": {"strategy": "structure", "direction": "BUY", "display_symbol": "BTC/USDT"}},
-    {"symbol": "eur_usd", "asset_class": "FOREX", "score": 81, "signal_data": {"strategy": "structure", "direction": "BUY"}},
+    {"symbol": "eur_usd", "asset_class": "FOREX", "score": 85, "signal_data": {"strategy": "structure", "direction": "BUY"}},
 ]
 
 

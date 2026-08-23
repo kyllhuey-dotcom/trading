@@ -28,7 +28,7 @@ def test_intent_codes():
     assert describe_intent(True, False, 1, 0, 10, 80)["code"] == "DISARMED"
     assert describe_intent(True, True, 0, 10, 10, 80)["code"] == "FULL"
     idle = describe_intent(True, True, 0, 0, 10, 80)
-    assert idle["code"] == "IDLE" and "80" in idle["message"]
+    assert idle["code"] == "IDLE" and "84" in idle["message"]
     assert describe_intent(True, True, 2, 1, 10, 80)["code"] == "EXECUTING"
 
 

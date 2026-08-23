@@ -21,11 +21,11 @@ class SignalEngine:
     - cost-vs-volatility filter: signals whose round-trip costs (fees +
       slippage) exceed `max_cost_ratio` × the risk distance are blocked —
       they are mathematically losing trades;
-    - `alpha_override_enabled` makes the score-80 bypass of range/news
-      filters opt-in (default off: never trade through high-impact news).
+    - `alpha_override_enabled` makes the score-floor bypass of range filters
+      opt-in (default off: never trade through high-impact news).
     """
 
-    def __init__(self, min_score: int = 80,
+    def __init__(self, min_score: int = AUTO_EXECUTION_SCORE_FLOOR,
                  risk_reward: float = 2.0,
                  atr_stop_multiplier: float = 1.5,
                  alpha_override_enabled: bool = False,
@@ -350,10 +350,11 @@ class SignalEngine:
                     "score": score, "market_id": market_id}
 
         # --- 4. Final filtering ---
-        # High-conviction signals (score >= 80) may trade even in range/news
-        # contexts ONLY when explicitly enabled (alpha_override_enabled) —
-        # trading through high-impact news is -EV for scalping.
-        alpha_override = self.alpha_override_enabled and score >= 80
+        # High-conviction signals (score >= AUTO_EXECUTION_SCORE_FLOOR) may
+        # trade even in range/news contexts ONLY when explicitly enabled
+        # (alpha_override_enabled) — trading through high-impact news is -EV
+        # for scalping.
+        alpha_override = self.alpha_override_enabled and score >= AUTO_EXECUTION_SCORE_FLOOR
 
         reasons = []
         if score < self.min_score:
@@ -380,7 +381,7 @@ class SignalEngine:
             "score": int(score),
             "alpha_override": alpha_override,
             "setup_type": "ALPHA_OVERRIDE" if alpha_override else ("BOS_REENTRANCE" if analysis.get("bos") else "STRUCTURE_FOLLOW"),
-            "confidence": "CRITICAL" if score >= 90 else ("HIGH" if score >= 80 else "MEDIUM"),
+            "confidence": "CRITICAL" if score >= 90 else ("HIGH" if score >= AUTO_EXECUTION_SCORE_FLOOR else "MEDIUM"),
             "reason": ", ".join(reasons) if (not is_detected and not alpha_override) else
                       (f"ALPHA OVERRIDE: {direction} (Score {score})" if alpha_override else
                        f"{direction} signal confirmed (Score {score})"),

@@ -1,8 +1,8 @@
 """
-v2.7 comprehensive tests for all P0 and P1 changes.
+v2.7 comprehensive tests for all P0 and P1 changes (v2.8: floor raised to 84).
 
 Tests:
-- P0-1: Score floor 80 inviolable (every path)
+- P0-1: Score floor 84 inviolable (every path)
 - P0-2: Opportunity ranker (single best selection)
 - P0-3: Idempotence / single-flight / TTL
 - P0-4: Cost and net RR calculations
@@ -39,73 +39,76 @@ from api.engines.strategies.micro_arbitrage import MicroArbitrageStrategy
 # P0-1: SCORE FLOOR 80 INVIOLABLE
 # ============================================================================
 class TestScoreFloorInviolable:
-    """Score 79 must be refused everywhere, 80 accepted only with all gates."""
+    """Score 83 must be refused everywhere, 84 accepted only with all gates."""
 
-    def test_constant_is_80(self):
-        assert AUTO_EXECUTION_SCORE_FLOOR == 80
+    def test_constant_is_84(self):
+        assert AUTO_EXECUTION_SCORE_FLOOR == 84
 
-    def test_signal_engine_set_min_score_clamped_to_80(self):
-        engine = SignalEngine(min_score=80)
+    def test_signal_engine_set_min_score_clamped_to_84(self):
+        engine = SignalEngine(min_score=84)
         engine.set_min_score(50)
-        assert engine.min_score == 80
-        engine.set_min_score(79)
-        assert engine.min_score == 80
-        engine.set_min_score(80)
-        assert engine.min_score == 80
+        assert engine.min_score == 84
+        engine.set_min_score(83)
+        assert engine.min_score == 84
+        engine.set_min_score(84)
+        assert engine.min_score == 84
         engine.set_min_score(85)
         assert engine.min_score == 85
         engine.set_min_score(99)
         assert engine.min_score == 99
 
-    def test_effective_min_score_never_below_80(self):
-        engine = SignalEngine(min_score=80)
+    def test_effective_min_score_never_below_84(self):
+        engine = SignalEngine(min_score=84)
         engine.set_market_tuning({"test": {"min_score": 50}})
-        assert engine.effective_min_score("test") >= 80
-        engine.set_market_tuning({"test": {"min_score": 79}})
-        assert engine.effective_min_score("test") >= 80
-        # Quiet regime should not lower below 80
-        engine.set_market_tuning({"test": {"min_score": 80}})
-        assert engine.effective_min_score("test", "QUIET") >= 80
+        assert engine.effective_min_score("test") >= 84
+        engine.set_market_tuning({"test": {"min_score": 83}})
+        assert engine.effective_min_score("test") >= 84
+        # Quiet regime should not lower below 84
+        engine.set_market_tuning({"test": {"min_score": 84}})
+        assert engine.effective_min_score("test", "QUIET") >= 84
 
     def test_settings_schema_min_signal_score_bounds(self):
         spec = SETTINGS_SPEC["min_signal_score"]
-        assert spec["min"] == 80
+        assert spec["min"] == 84
         assert spec["max"] == 99
-        # Validate: 77 should be clamped to 80
+        # Validate: 77 should be clamped to 84
         cleaned, _errors = validate_settings({"min_signal_score": "77"})
-        assert int(cleaned["min_signal_score"]) == 80
+        assert int(cleaned["min_signal_score"]) == 84
+        # Validate: 83 should be clamped to 84
+        cleaned, _errors = validate_settings({"min_signal_score": "83"})
+        assert int(cleaned["min_signal_score"]) == 84
         # Validate: 85 should pass
         cleaned, _errors = validate_settings({"min_signal_score": "85"})
         assert int(cleaned["min_signal_score"]) == 85
 
-    def test_all_capital_brackets_at_least_80(self):
+    def test_all_capital_brackets_at_least_84(self):
         for bracket in BRACKETS:
-            assert bracket.min_score >= 80, f"{bracket.name} min_score {bracket.min_score} < 80"
+            assert bracket.min_score >= 84, f"{bracket.name} min_score {bracket.min_score} < 84"
 
-    def test_standard_profile_min_score_at_least_80(self):
+    def test_standard_profile_min_score_at_least_84(self):
         standard = next(b for b in BRACKETS if b.name == "STANDARD")
-        assert standard.min_score >= 80
+        assert standard.min_score >= 84
 
-    def test_market_tuning_bounds_min_score_at_least_80(self):
+    def test_market_tuning_bounds_min_score_at_least_84(self):
         lo, hi = BOUNDS["min_score"]
-        assert lo >= 80
+        assert lo >= 84
         assert hi == 99
 
     def test_select_candidates_enforces_floor(self):
         results = [
-            {"symbol": "a", "score": 79, "tradable": True,
+            {"symbol": "a", "score": 83, "tradable": True,
              "signal_data": {"market_id": "a", "entry": 100, "status": "SIGNAL_DETECTED"}},
-            {"symbol": "b", "score": 80, "tradable": True,
+            {"symbol": "b", "score": 84, "tradable": True,
              "signal_data": {"market_id": "b", "entry": 100, "status": "SIGNAL_DETECTED"}},
         ]
         cands = select_candidates(results, 50, set(), 10)  # malicious min_score=50
         assert len(cands) == 1
         assert cands[0]["symbol"] == "b"
 
-    def test_execute_signal_refuses_79(self):
-        """Score 79 must be refused even with malicious config at 50."""
+    def test_execute_signal_refuses_83(self):
+        """Score 83 must be refused even with malicious config at 50."""
         results = [
-            {"symbol": "a", "score": 79, "tradable": True,
+            {"symbol": "a", "score": 83, "tradable": True,
              "signal_data": {"market_id": "a", "entry": 100, "status": "SIGNAL_DETECTED"}},
         ]
         cands = select_candidates(results, 50, set(), 10)
@@ -159,17 +162,17 @@ class TestOpportunityRanker:
         results = [
             self._make_candidate("a", 85),
             self._make_candidate("b", 90),
-            self._make_candidate("c", 80),
+            self._make_candidate("c", 84),
         ]
         ranking = rank_opportunities(results)
         assert ranking["primary_opportunity"] is not None
         assert ranking["primary_opportunity"]["symbol"] == "b"
         assert ranking["total_passing"] == 3
 
-    def test_score_below_80_excluded(self):
+    def test_score_below_84_excluded(self):
         results = [
-            self._make_candidate("a", 79),
-            self._make_candidate("b", 80),
+            self._make_candidate("a", 83),
+            self._make_candidate("b", 84),
         ]
         ranking = rank_opportunities(results)
         assert ranking["total_passing"] == 1
@@ -219,15 +222,16 @@ class TestOpportunityRanker:
         results = [
             self._make_candidate("a", 90),
             self._make_candidate("b", 85),
-            self._make_candidate("c", 80),
+            self._make_candidate("c", 84),
         ]
         ranking = rank_opportunities(results)
         assert len(ranking["secondary_opportunities"]) == 2
 
-    def test_max_new_positions_per_scan_default_1(self):
+    def test_max_new_positions_per_scan_default_3(self):
+        # v2.8: simultaneous executions are the default (up to 3 per scan)
         results = [self._make_candidate("a", 90)]
         ranking = rank_opportunities(results)
-        assert ranking["max_new_positions_per_scan"] == 1
+        assert ranking["max_new_positions_per_scan"] == 3
 
     def test_max_new_positions_bounded(self):
         results = [self._make_candidate("a", 90)]
@@ -440,20 +444,20 @@ class TestQuarantine:
 # Integration: Score floor in all paths
 # ============================================================================
 class TestScoreFloorIntegration:
-    """End-to-end tests ensuring 79 is never executed."""
+    """End-to-end tests ensuring 83 is never executed."""
 
     def test_describe_intent_shows_floor(self):
         intent = describe_intent(True, True, 0, 0, 10, 50)  # malicious min_score=50
-        assert "80" in intent["message"]
+        assert "84" in intent["message"]
 
     def test_select_candidates_with_malicious_config(self):
-        """Even with min_score=50, candidates below 80 are excluded."""
+        """Even with min_score=50, candidates below 84 are excluded."""
         results = [
             {"symbol": "a", "score": 50, "tradable": True,
              "signal_data": {"market_id": "a", "entry": 100, "status": "SIGNAL_DETECTED"}},
-            {"symbol": "b", "score": 79, "tradable": True,
+            {"symbol": "b", "score": 83, "tradable": True,
              "signal_data": {"market_id": "b", "entry": 100, "status": "SIGNAL_DETECTED"}},
-            {"symbol": "c", "score": 80, "tradable": True,
+            {"symbol": "c", "score": 84, "tradable": True,
              "signal_data": {"market_id": "c", "entry": 100, "status": "SIGNAL_DETECTED"}},
         ]
         cands = select_candidates(results, 50, set(), 10)

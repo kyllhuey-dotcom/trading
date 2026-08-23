@@ -1,5 +1,97 @@
 # Changelog - Quantum Trade Pro
 
+## [2.8.0] - 2026-08-23 — Sélectivité 84, trades simultanés, trading continu
+
+### Résumé
+v2.8 améliore la sélectivité (plancher 84), permet les trades simultanés
+(max 3 par cycle), garantit le trading continu tant que le système est armé,
+ajoute un provider Temps réel TradFi gratuit (Alpha Vantage) et modernise le
+Trade Terminal, les Brokers et les Wallets de l'interface officielle. Aucune
+promesse de rentabilité : le score n'est jamais présenté comme une
+probabilité. Critères inchangés : win rate ≥ 45 %, RR net ≥ 1.5, espérance
+> 0, profit factor ≥ 1.3.
+
+### P0 — Plancher d'exécution 84 inviolable (au lieu de 80)
+- `AUTO_EXECUTION_SCORE_FLOOR = 84` (`api/engines/constants.py`)
+- `settings_schema.py` : `min_signal_score` borné 84–99 (défaut 84)
+- `capital_profiles.py` : MICRO 85, RETAIL 84, STANDARD 84
+- `market_tuning.py` : `BOUNDS["min_score"] = (84, 99)` ; baselines par
+  classe relevées (CRYPTO 84 → … → STOCKS/FUTURES/BONDS/ETFS 87)
+- `SignalEngine.set_min_score()` / `effective_min_score()` clampés à 84–99
+  (régime calme compris) ; `select_candidates()`, `tick_scanner()`,
+  `/api/execute-signal`, `opportunity_ranker.py` : plancher appliqué partout.
+  Seuil effectif = max(84, seuil global, seuil marché, ajustement régime)
+- Radar : filtre « ≥84 » aligné sur le plancher (`radar.py` + bouton UI)
+- Score 83 refusé dans chaque chemin ; 84 accepté seulement si toutes les
+  autres portes passent (news, session, fraîcheur, spread, RR net…)
+
+### P1 — Trades simultanés (max 3 par cycle)
+- `DEFAULT_MAX_NEW_POSITIONS_PER_SCAN = 3` ; `max_new_positions_per_scan`
+  setting défaut 3, borné 1–3
+- `tick_scanner()` exécute les N meilleures opportunités classées, chacune
+  passant individuellement toutes les portes (idempotence tracker, TTL,
+  tradable, position déjà ouverte, fraîcheur ticker, garde anti-données
+  différées, porte de coûts, sizing à risque fixe)
+- Garde de corrélation `risk_engine.check_correlation()` avant chaque
+  exécution : jamais 2 positions sur le même sous-jacent dans un cycle
+- Arrêt propre à `max_open_positions` ; `active_trades` publié immédiatement
+- Correction d'un bug latent v2.7 : le payload du ranker ne propageait pas
+  le drapeau `tradable` — l'exécution le recoupe désormais avec le scan brut
+
+### P2 — Trading continu
+- Le scanner boucle sans s'arrêter après exécution tant que
+  `is_running && armed` (pas d'emergency stop, pas de daily loss atteint)
+- `/api/status` : `trading_active`, `trades_today`, `scan_interval_s`,
+  `next_scan_in_s`
+- UI : badge vert « TRADING ACTIF » / orange « EN PAUSE », compteur de
+  trades du jour, compte à rebours du prochain scan (tick 1 s)
+
+### P3 — Alpha Vantage (alternative gratuite TradFi)
+- `api/engines/data_providers/alpha_vantage_provider.py` : actions US
+  (GLOBAL_QUOTE / TIME_SERIES_INTRADAY) et forex (CURRENCY_EXCHANGE_RATE /
+  FX_INTRADAY), 1/5/15 min
+- Rate limiting 5 req/min (`ProviderRateLimiter`) + quota client 25 req/jour
+  UTC ; message « Note » traité comme quota dépassé → fallback Yahoo propre
+- Cascade TradFi : Alpha Vantage (9) → TwelveData (10) → Finnhub (11) →
+  Yahoo (50) ; crypto inchangé (Binance → Bybit → OKX → Kraken → Coinbase →
+  Gate). Activé par `ALPHA_VANTAGE_API_KEY` ; absent = Yahoo seul, rien ne
+  casse
+
+### P4 — Interfaces (`public/index.html` inchangé d'identité, zéro CDN)
+- Trade Terminal : aperçu du risque en direct (risque = qté × distance SL,
+  % du solde, frais estimés), validation inline (plus d'`alert()`), bouton
+  « Confirmer l'ordre » en 2 taps, prévisualisation SL/TP pointillée sur le
+  graphique, historique des ordres (filtres tous/ouverts/fermés, tri par
+  colonne), positions live avec PnL temps réel, R-multiple et bouton
+  « Fermer » (`POST /api/positions/{id}/close`, DEMO ; REAL jamais
+  « fake-closé »)
+- Brokers : passphrase conditionnelle (OKX/KuCoin), toggle sandbox avec
+  badge, bouton « Tester la connexion » (`POST /api/brokers/test`, latence
+  mesurée, rien persisté), badges CONNECTÉ/DÉGRADÉ/ERREUR/INACTIF, solde,
+  latence, dernière synchro, positions ouvertes (snapshot runtime caché 30 s,
+  réseau uniquement pour les brokers actifs)
+- Wallets : renommés « Ajouter une adresse watch-only », dropdown de chaîne
+  (Ethereum/Solana/Bitcoin/Polygon/BSC), validation temps réel (format +
+  avertissement checksum EVM), badge WATCH-ONLY, adresse masquée + bouton
+  copier, QR SVG généré côté serveur (`segno`, pur Python — aucun CDN),
+  soldes best-effort (`/api/wallet-balances`), suppression en confirmation
+  inline
+
+### I18n
+- ~50 nouvelles chaînes dans les 4 dictionnaires (en/fr/es/de), parité
+  stricte testée (265 clés chacun) ; aucun texte ne promet la rentabilité
+
+### Tests
+- **482 tests passés / 6 skips réseau** (438 → 482)
+- Mise à jour complète 80 → 84 (`test_v27_changes.py`, `test_market_tuning.py`,
+  `test_signal_robustness.py`, `test_settings_hotreload.py`, …)
+- 25 nouveaux tests v2.8 (`test_v28_changes.py`) : 3 trades simultanés,
+  corrélation, max positions, trading continu, broker test, snapshots
+  runtime, QR, fermeture de position, bornes des settings
+- 16 tests provider Alpha Vantage (mocks complets, quota, rate limiting,
+  fallback Yahoo)
+- Parité stricte i18n + hooks UI v2.8 ; `ruff check` propre (0 erreur)
+
 ## [2.7.0] - 2026-08-23 — Espérance positive : corrections structurelles
 
 ### Résumé

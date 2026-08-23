@@ -101,14 +101,14 @@ def test_regime_adjustments_direction():
 def test_signal_engine_effective_min_score_market_and_regime():
     engine = SignalEngine(min_score=80)
     engine.set_market_tuning({"btc_usdt": {"min_score": 85}, "eur_usd": {"min_score": 82}})
-    # per-market override (v2.7: floor is 80, so values below 80 are clamped)
+    # per-market override (v2.8: floor is 84, so values below 84 are clamped)
     assert engine.effective_min_score("btc_usdt") == 85
-    assert engine.effective_min_score("eur_usd") == 82
-    assert engine.effective_min_score("unknown_market") == 80  # falls back to global
+    assert engine.effective_min_score("eur_usd") == 84   # 82 < 84 -> clamped to floor
+    assert engine.effective_min_score("unknown_market") == 84  # falls back to clamped global
     # regime adjustment on top (volatile raises, quiet lowers, both clamped to floor)
     assert engine.effective_min_score("btc_usdt", "VOLATILE") == 90
-    assert engine.effective_min_score("eur_usd", "QUIET") == 80  # 82 - 3 = 79, clamped to 80
-    assert engine.effective_min_score("unknown_market", "NORMAL") == 80
+    assert engine.effective_min_score("eur_usd", "QUIET") == 84  # 84 - 3 = 81, clamped to 84
+    assert engine.effective_min_score("unknown_market", "NORMAL") == 84
     # disabled adaptation -> regime has no effect
     engine.set_regime_adaptation(False)
     assert engine.effective_min_score("btc_usdt", "VOLATILE") == 85
@@ -149,7 +149,7 @@ def test_insufficient_data_never_tunes_on_noise():
     rec = mt.recommend_for_market("btc_usdt", _market_stats(3, 1, 2.0), balance=5.0)
     assert rec["verdict"] == "INSUFFICIENT_DATA"
     assert rec["action"] == "OBSERVE"
-    assert rec["params"]["min_score"] >= 80  # v2.7: floor is 80
+    assert rec["params"]["min_score"] >= 84  # v2.8: floor is 84
     assert mt.recommend_for_market("btc_usdt", None)["verdict"] == "INSUFFICIENT_DATA"
 
 
@@ -183,8 +183,8 @@ def test_profitable_market_is_kept_and_gently_scaled():
     rec = mt.recommend_for_market("eth_usdt", stats, balance=25.0)
     assert rec["verdict"] == "PROFITABLE"
     assert rec["action"] == "KEEP_AND_SCALE"
-    # v2.7: floor is 80, so relaxed threshold stays at 80 (not below)
-    assert rec["params"]["min_score"] >= 80
+    # v2.8: floor is 84, so relaxed threshold stays at 84 (not below)
+    assert rec["params"]["min_score"] >= 84
 
 
 def test_build_tuning_from_audit_merges_class_defaults_and_overrides():
@@ -201,7 +201,7 @@ def test_build_tuning_from_audit_merges_class_defaults_and_overrides():
     assert tuning["doge_usdt"]["min_score"] == 95
     assert tuning["shib_usdt"]["min_score"] == base["min_score"]       # untouched
     # no audit at all -> pure class defaults
-    assert mt.build_tuning_from_audit(None, 5.0, universe)["eur_usd"]["min_score"] == 82
+    assert mt.build_tuning_from_audit(None, 5.0, universe)["eur_usd"]["min_score"] == 85
 
 
 # --------------------------------------------------------------------------- #
@@ -258,12 +258,12 @@ def test_volatile_regime_blocks_marginal_signal_and_widens_stop():
     res_vol = engine.generate_signal(_analysis(volatility="HIGH"), NEWS_OK, _df(), market_id="btc_usdt")
     assert res_vol["regime"] == "VOLATILE"
     if res_vol["status"] == "SIGNAL_DETECTED":
-        assert res_vol["min_score_applied"] == 85
+        assert res_vol["min_score_applied"] == 89   # 84 floor + 5 volatile
         assert res_vol["atr_stop_multiplier"] == pytest.approx(1.875)
         # wider stop -> bigger risk distance for the same price
         assert (res_vol["entry"] - res_vol["sl"]) >= (res_quiet["entry"] - res_quiet["sl"])
     else:
-        assert "Below minimum score (80/85)" in res_vol["reason"]
+        assert "Below minimum score (90/89)" in res_vol["reason"]
 
 
 def test_regime_adaptation_can_be_disabled():
@@ -272,7 +272,7 @@ def test_regime_adaptation_can_be_disabled():
     res = engine.generate_signal(_analysis(volatility="HIGH"), NEWS_OK, _df(), market_id="btc_usdt")
     assert res["regime"] == "NORMAL"   # adaptation off -> neutral label
     if res["status"] == "SIGNAL_DETECTED":
-        assert res["min_score_applied"] == 80
+        assert res["min_score_applied"] == 84
 
 
 def test_per_market_threshold_blocks_low_score_market_only():
@@ -319,11 +319,11 @@ def test_settings_apply_pushes_tuning_into_signal_engine(monkeypatch):
     assert engine.regime_adaptation_enabled is False
     # full universe of class defaults + the explicit btc override
     assert engine.market_tuning["btc_usdt"]["min_score"] == 90
-    assert engine.market_tuning["eur_usd"]["min_score"] == 82   # FOREX class default
+    assert engine.market_tuning["eur_usd"]["min_score"] == 85   # FOREX class default
     assert len(engine.market_tuning) == len(app_index.data_engine.universe.get_all_ids())
     # invalid JSON must not crash the hot-reload (class defaults kept)
     monkeypatch.setattr(app_index.settings_provider, "get",
                         lambda: {**settings, "market_tuning": "{not json"})
     app_index.settings_provider.apply()
-    assert engine.market_tuning["btc_usdt"]["min_score"] == 80  # back to class default
+    assert engine.market_tuning["btc_usdt"]["min_score"] == 84  # back to class default
     app_index.settings_provider.invalidate()

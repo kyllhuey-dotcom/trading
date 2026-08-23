@@ -191,8 +191,9 @@ def test_no_price_reference_is_blocked():
 # --------------------------------------------------------------------------- #
 def test_signal_engine_tape_mode_passes_flow_data():
     engine = SignalEngine(min_score=50)
-    orderbook = {'bids': [[100.3, 60.0]], 'asks': [[100.5, 40.0]]}
-    trades = [{'side': 'buy', 'amount': 1.0}] * 3 + [{'side': 'sell', 'amount': 1.0}]
+    # v2.8: strong pressure so the tape score clears the 84 floor
+    orderbook = {'bids': [[100.3, 75.0]], 'asks': [[100.5, 25.0]]}
+    trades = [{'side': 'buy', 'amount': 1.0}] * 4
     df = _ohlcv_df(bar_range=0.05)
     res = engine.generate_signal({"status": "VALID", "market_id": "btc_usdt"},
                                  {"trading_allowed": True}, df,

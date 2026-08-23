@@ -84,13 +84,13 @@ BRACKETS: List[CapitalBracket] = [
         max_balance=50.0,
         risk_pct=1.5,
         risk_reward=2.5,
-        min_score=80,
+        min_score=84,
         max_positions=5,
         max_leverage=15,
         atr_stop_multiplier=1.5,
         min_trade_notional=5.0,
         max_cost_ratio=0.5,
-        note="Capital intermédiaire : un peu plus de positions, score 80, "
+        note="Capital intermédiaire : un peu plus de positions, score 84, "
              "levier modéré.",
     ),
     CapitalBracket(
@@ -99,14 +99,14 @@ BRACKETS: List[CapitalBracket] = [
         max_balance=float("inf"),
         risk_pct=2.0,
         risk_reward=3.0,
-        min_score=80,
+        min_score=84,
         max_positions=10,
         max_leverage=20,
         atr_stop_multiplier=1.5,
         min_trade_notional=10.0,
         max_cost_ratio=0.5,
         note="Capital standard et au-delà : diversification maximale, "
-             "RR plus ambitieux, score plancher 80 inviolable.",
+             "RR plus ambitieux, score plancher 84 inviolable.",
     ),
 ]
 

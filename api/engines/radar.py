@@ -1,6 +1,8 @@
 """Global Radar helpers — pure, testable (LOT 1)."""
 from typing import Any, Dict, List, Optional
 
+from .constants import AUTO_EXECUTION_SCORE_FLOOR
+
 
 def format_data_age(ms: Optional[float]) -> str:
     if ms is None:
@@ -32,7 +34,8 @@ def filter_assets(assets: List[Dict[str, Any]], mode: str = "all") -> List[Dict[
     mode = (mode or "all").lower()
     out = list(assets or [])
     if mode in ("ge80", ">=80"):
-        return [a for a in out if float(a.get("score") or 0) >= 80]
+        # v2.8: the "institutional" filter follows the inviolable floor (84).
+        return [a for a in out if float(a.get("score") or 0) >= AUTO_EXECUTION_SCORE_FLOOR]
     if mode in ("ge90", ">=90"):
         return [a for a in out if float(a.get("score") or 0) >= 90]
     if mode == "crypto":

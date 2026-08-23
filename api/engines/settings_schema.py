@@ -9,7 +9,7 @@ SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
     "max_daily_loss_pct": {"type": "float", "min": 0.5, "max": 20.0, "default": "3.0"},
     "cool_down_mins": {"type": "int", "min": 0, "max": 240, "default": "30"},
     "max_open_positions": {"type": "int", "min": 1, "max": 20, "default": "10"},
-    "min_signal_score": {"type": "int", "min": 80, "max": 99, "default": "80"},
+    "min_signal_score": {"type": "int", "min": 84, "max": 99, "default": "84"},
     "risk_reward_ratio": {"type": "float", "min": 0.5, "max": 10.0, "default": "2.0"},
     "atr_stop_multiplier": {"type": "float", "min": 0.1, "max": 10.0, "default": "1.5"},
     "max_spread_pct": {"type": "float", "min": 0.01, "max": 5.0, "default": "0.5"},
@@ -40,7 +40,7 @@ SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
     "allow_delayed_data_trading": {"type": "bool", "default": "false"},
     "language": {"type": "enum", "choices": ("en", "fr", "es", "de"), "default": "en"},
     "timezone": {"type": "str", "default": "UTC"},
-    "max_new_positions_per_scan": {"type": "int", "min": 1, "max": 3, "default": "1"},
+    "max_new_positions_per_scan": {"type": "int", "min": 1, "max": 3, "default": "3"},
     "opportunity_ttl_s": {"type": "float", "min": 5.0, "max": 120.0, "default": "30.0"},
 }
 

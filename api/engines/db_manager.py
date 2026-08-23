@@ -184,7 +184,7 @@ class DatabaseManager:
                     "max_open_positions": "10",
                     "trailing_stop_active": "true",
                     "max_spread_pct": "0.5",
-                    "min_signal_score": "80",
+                    "min_signal_score": "84",
                     "risk_reward_ratio": "2.0",
                     "trailing_stop_distance_atr": "1.5",
                     "emergency_stop_drawdown_pct": "10.0",
