@@ -32,6 +32,10 @@ class ScannerEngine:
         self.last_scan_duration = 0.0
         self.diagnostic = DiagnosticEngine()
         self.max_spread_pct = 0.5
+        # Per-scan news cache keyed by (asset_class, asset_currency). Reset at
+        # the start of every scan_all so the calendar/news provider is hit once
+        # per asset-class/currency, not once per symbol.
+        self._news_cache: Dict[tuple, Dict[str, Any]] = {}
 
     def apply_settings(self, settings: Dict[str, str]) -> None:
         try:
@@ -188,21 +192,33 @@ class ScannerEngine:
                 asset_currency = None
                 if info.get("asset_class") == "FOREX":
                     asset_currency = info["display_symbol"].split("/")[0]
-                try:
-                    news_status = await asyncio.wait_for(
-                        self.news.check_trading_allowed(
-                            asset_currency=asset_currency, asset_class=info.get("asset_class")),
-                        timeout=10.0)
-                except asyncio.TimeoutError:
-                    logger.warning("Calendar timeout (%s)", symbol)
-                    if hasattr(self.news, "unavailable_status"):
-                        news_status = self.news.unavailable_status(
-                            asset_class=info.get("asset_class"), title="Calendar timeout")
-                    else:
-                        news_status = {"trading_allowed": False, "day_ok": True,
-                                       "session_ok": True, "news_ok": False,
-                                       "blocking_event": {"title": "Calendar timeout"},
-                                       "next_events": [], "status": "DATA_UNAVAILABLE"}
+                # Audit (2026-08-23): cache news/calendar status by
+                # (asset_class, currency) within a scan cycle so hundreds of
+                # symbols sharing the same class/currency don't each hammer
+                # the calendar provider.
+                news_key = (info.get("asset_class"), asset_currency)
+                news_status = self._news_cache.get(news_key)
+                if news_status is None:
+                    try:
+                        news_status = await asyncio.wait_for(
+                            self.news.check_trading_allowed(
+                                asset_currency=asset_currency,
+                                asset_class=info.get("asset_class")),
+                            timeout=10.0)
+                    except asyncio.TimeoutError:
+                        logger.warning("Calendar timeout (%s)", symbol)
+                        if hasattr(self.news, "unavailable_status"):
+                            news_status = self.news.unavailable_status(
+                                asset_class=info.get("asset_class"),
+                                title="Calendar timeout")
+                        else:
+                            news_status = {
+                                "trading_allowed": False, "day_ok": True,
+                                "session_ok": True, "news_ok": False,
+                                "blocking_event": {"title": "Calendar timeout"},
+                                "next_events": [], "status": "DATA_UNAVAILABLE",
+                            }
+                    self._news_cache[news_key] = news_status
 
                 signal = self.signal.generate_signal(
                     ltf_analysis, news_status, df_ltf, strategy_mode=strategy_mode,
@@ -289,6 +305,8 @@ class ScannerEngine:
         """
         del strategy_mode
         strategy_mode = "rsi"
+        # Fresh per-cycle news cache (keyed by asset_class + currency).
+        self._news_cache = {}
         start_time = datetime.now()
         symbols = self.data.universe.get_all_ids()
         crypto = [symbol for symbol in symbols

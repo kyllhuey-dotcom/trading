@@ -393,6 +393,10 @@ async def test_persist_and_restore_latest_scan(monkeypatch):
 
 
 async def test_tick_capital_real_and_unsafe(monkeypatch):
+    """Audit (2026-08-23): a global risk trip in tick_capital must DISARM
+    (armed=False, last_block_reason=RISK_PAUSE) but keep is_running=True and
+    NEVER call emergency_stop_logic — that is only reachable via POST
+    /api/emergency-stop."""
     idx.bot_state.update(mode="REAL", is_running=True, armed=True, balance=1000)
     monkeypatch.setattr(idx.settings_provider, "apply", MagicMock())
     monkeypatch.setattr(idx.broker_connector, "get_all_balances",
@@ -406,7 +410,12 @@ async def test_tick_capital_real_and_unsafe(monkeypatch):
     stop = AsyncMock()
     monkeypatch.setattr(idx, "emergency_stop_logic", stop)
     await idx.tick_capital()
-    stop.assert_awaited()
+    # No auto emergency stop from the capital tick.
+    stop.assert_not_awaited()
+    # The bot keeps running but disarms with a RISK_PAUSE reason.
+    assert idx.bot_state["is_running"] is True
+    assert idx.bot_state["armed"] is False
+    assert idx.bot_state["last_block_reason"] == "RISK_PAUSE"
 
 
 async def test_execute_signal_and_optimization(monkeypatch):
