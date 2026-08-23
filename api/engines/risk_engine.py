@@ -39,6 +39,8 @@ class RiskEngine:
         self.cool_down_mins = cool_down_mins
         self.max_consecutive_losses = max_consecutive_losses
         self.daily_pnl = 0.0
+        self._daily_pnl_date: Optional[Any] = None
+        self.universe: Any = None
         self.peak_balance = 0.0
         self.last_loss_time: Optional[datetime] = None
         self.consecutive_losses = 0
@@ -75,6 +77,10 @@ class RiskEngine:
         LOT P: also tracks the consecutive-loss streak for auto-pause and
         anti-martingale risk scaling.
         """
+        today = datetime.now().date()
+        if self._daily_pnl_date != today:
+            self._daily_pnl_date = today
+            self.daily_pnl = 0.0
         self.daily_pnl += pnl
         if pnl < 0:
             self.last_loss_time = datetime.now()
@@ -94,7 +100,10 @@ class RiskEngine:
     def check_global_safety(self, balance: float, daily_pnl: float) -> Dict[str, Any]:
         """Global circuit-breaker checks (executed by the capital tick loop)."""
         self.update_peak(balance)
-        self.daily_pnl = daily_pnl  # sync with portfolio (covers restarts)
+        today = datetime.now().date()
+        if self._daily_pnl_date != today:
+            self._daily_pnl_date = today
+        self.daily_pnl = daily_pnl  # sync with portfolio (covers restarts + daily reset)
         current_drawdown = self.get_current_drawdown_pct(balance)
 
         if current_drawdown > self.max_drawdown_pct:

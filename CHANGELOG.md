@@ -1,5 +1,19 @@
 # Changelog - Quantum Trade Pro
 
+## [2.9.3] - 2026-08-23 — RSI 1.5 only, P0 Railway
+
+- Auto uniquement RSI-14, RR 1.5 clampé 1.0–2.0, plancher 84.
+- P0-1 `is_quote_realtime` : timestamp + âge (30s crypto / 60s tradfi), refuse Yahoo/DELAYED. Jamais le nom du provider.
+- P0-2 `recompute_after_fill` : `tp_dist` n'est plus du dead code.
+- P0-3 ranker : `fee_pct` / `slippage_pct` réels dans `_passes_all_gates`.
+- P0-4 après fill : `active` reçoit `{symbol, underlying}` dans le cycle.
+- P0-5 corrélation sur `underlying` (catalogue), pas `split('_')[0]`.
+- P0-6 `daily_pnl` resynchronisé chaque jour depuis le portfolio.
+- P0-7 `market_tuning` validé JSON dans `settings_schema`.
+- P0-8 `SCAN_ALL_TIMEOUT_S` 120s, lock stale 90s.
+- P0-9 `compute_trade_costs` utilise bid/ask.
+- P1 : quarantaine `gross_win`/`gross_loss`, TP partiel sur `initial_quantity`, in-flight TTL 120s, timezone news depuis settings, `--fee` profit_audit, workflow CI.
+
 ## [2.9.2] - 2026-08-23 — P0 prod : 0 trade + WS coupé
 
 ### P0-1 — Calendrier HS ne bloque plus la crypto

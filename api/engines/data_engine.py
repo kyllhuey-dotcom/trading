@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -186,14 +187,24 @@ class DataEngine:
                    for provider_id in info.get("providers", {}))
 
     def is_quote_realtime(self, market_id: str, ticker: Dict[str, Any]) -> bool:
+        """LIVE/DELAYED from quote timestamp + source flags — never provider name."""
         if not ticker or str(ticker.get("status", "")).upper() != "LIVE":
             return False
-        state = getattr(self.layer, "market_source_state", {}).get(market_id) or {}
-        provider_id = state.get("provider_id")
-        if provider_id:
-            return provider_id in self.REALTIME_PROVIDERS
-        source = str(ticker.get("source") or "").lower()
-        return "yahoo" not in source and "delayed" not in source
+        ts = ticker.get("timestamp")
+        if not ts:
+            return False
+        try:
+            age_ms = int(time.time() * 1000) - int(ts)
+        except (TypeError, ValueError):
+            return False
+        info = self.universe.get_info(market_id) or {}
+        max_age = 30_000 if info.get("asset_class") == "CRYPTO" else 60_000
+        if age_ms > max_age:
+            return False
+        src = str(ticker.get("source") or "").lower()
+        if "yahoo" in src or "delayed" in src:
+            return False
+        return True
 
     def check_scalping_allowed(self, market_id: str,
                                allow_delayed: bool = False) -> Dict[str, Any]:

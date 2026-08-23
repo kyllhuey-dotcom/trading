@@ -307,13 +307,13 @@ def test_serverless_detection(monkeypatch):
 def test_scan_timeout_longer_than_lock_stale():
     """P0: SCAN_ALL_TIMEOUT_S > SCAN_LOCK_STALE_S so scan_all is not killed at 180s."""
     assert idx.SCAN_ALL_TIMEOUT_S > idx.SCAN_LOCK_STALE_S
-    assert idx.SCAN_ALL_TIMEOUT_S >= 300
+    assert idx.SCAN_ALL_TIMEOUT_S >= 120
 
 
 def test_scan_constants_defined():
     """P0: both timeout constants exist with correct values."""
-    assert idx.SCAN_LOCK_STALE_S == 180.0
-    assert idx.SCAN_ALL_TIMEOUT_S == 600.0
+    assert idx.SCAN_LOCK_STALE_S == 90.0
+    assert idx.SCAN_ALL_TIMEOUT_S == 120.0
 
 
 def test_is_fresh_crypto_30s():

@@ -1,4 +1,5 @@
 """Hot-reloadable settings schema (LOT 4)."""
+import json
 from typing import Any, Dict, List, Tuple
 
 SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
@@ -10,7 +11,7 @@ SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
     "cool_down_mins": {"type": "int", "min": 0, "max": 240, "default": "30"},
     "max_open_positions": {"type": "int", "min": 1, "max": 20, "default": "10"},
     "min_signal_score": {"type": "int", "min": 84, "max": 99, "default": "84"},
-    "risk_reward_ratio": {"type": "float", "min": 0.5, "max": 10.0, "default": "1.5"},
+    "risk_reward_ratio": {"type": "float", "min": 1.0, "max": 2.0, "default": "1.5"},
     "atr_stop_multiplier": {"type": "float", "min": 0.1, "max": 10.0, "default": "1.5"},
     "max_spread_pct": {"type": "float", "min": 0.01, "max": 5.0, "default": "0.5"},
     "trailing_stop_active": {"type": "bool", "default": "true"},
@@ -82,7 +83,21 @@ def validate_settings(raw: Dict[str, Any]) -> Tuple[Dict[str, str], List[str]]:
                     cleaned[key] = s
                 continue
             if typ == "str":
-                cleaned[key] = str(value)
+                text = str(value)
+                if key == "market_tuning":
+                    try:
+                        parsed = json.loads(text or "{}")
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        cleaned[key] = spec["default"]
+                        errors.append(f"{key}: invalid JSON, using default {{}}")
+                        continue
+                    if not isinstance(parsed, dict):
+                        cleaned[key] = spec["default"]
+                        errors.append(f"{key}: must be a JSON object, using default {{}}")
+                        continue
+                    cleaned[key] = json.dumps(parsed)
+                    continue
+                cleaned[key] = text
                 continue
             num = float(value)
             lo, hi = spec.get("min"), spec.get("max")

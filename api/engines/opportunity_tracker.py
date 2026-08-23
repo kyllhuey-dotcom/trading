@@ -11,6 +11,8 @@ from typing import Any
 
 from .constants import DEFAULT_OPPORTUNITY_TTL_S
 
+IN_FLIGHT_TTL_S = 120.0
+
 
 class OpportunityTracker:
     """Thread-safe tracker for opportunity idempotence.
@@ -31,7 +33,7 @@ class OpportunityTracker:
         for k in expired:
             self._executed.pop(k, None)
         expired_flight = [k for k, ts in self._in_flight.items()
-                         if now - ts > self.ttl_s]
+                         if now - ts > IN_FLIGHT_TTL_S]
         for k in expired_flight:
             self._in_flight.pop(k, None)
 

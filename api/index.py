@@ -129,6 +129,7 @@ news_engine = NewsEngine(db_manager=db_manager)
 news_aggregator = NewsAggregator()
 signal_engine = SignalEngine(min_score=AUTO_EXECUTION_SCORE_FLOOR)
 risk_engine = RiskEngine()
+risk_engine.universe = data_engine.universe
 portfolio_engine = PortfolioEngine(db_manager=db_manager)
 notification_engine = NotificationEngine()
 demo_execution = ExecutionEngine(portfolio=portfolio_engine, db_manager=db_manager,
@@ -416,8 +417,8 @@ async def tick_capital():
 
 
 _scan_counter = {"n": 0}
-SCAN_LOCK_STALE_S = 180.0
-SCAN_ALL_TIMEOUT_S = 600.0
+SCAN_LOCK_STALE_S = 90.0
+SCAN_ALL_TIMEOUT_S = 120.0
 
 
 def is_serverless_runtime() -> bool:
@@ -833,6 +834,8 @@ async def tick_scanner(force: bool = False):
             fee_pct=float(settings.get("fee_pct", 0.05)),
             slippage_pct=float(settings.get("sim_slippage_pct", 0.05)),
             spread=float(ticker.get("spread", 0) or 0),
+            bid=ticker.get("bid"),
+            ask=ticker.get("ask"),
         )
         cost_gate = costs_pass_gate(costs)
         if not cost_gate.get("allowed"):
@@ -868,8 +871,20 @@ async def tick_scanner(force: bool = False):
                            event="order_executed", symbol=res["symbol"], mode=mode,
                            strategy=strat, latency_ms=round(exec_latency_ms, 2),
                            opportunity_id=opp_id)
+            info_pos = data_engine.universe.get_info(res["symbol"]) or {}
+            underlying = (
+                res.get("underlying")
+                or raw.get("underlying")
+                or info_pos.get("underlying")
+                or res["symbol"]
+            )
             if exec_res.get("position"):
-                active.append(exec_res["position"])
+                pos = dict(exec_res["position"])
+                pos.setdefault("symbol", res["symbol"])
+                pos.setdefault("underlying", underlying)
+                active.append(pos)
+            else:
+                active.append({"symbol": res["symbol"], "underlying": underlying})
             executed_symbols.append(res["symbol"])
             asyncio.create_task(notification_engine.notify("ORDER_OPEN", {
                 "symbol": res["symbol"],
