@@ -54,6 +54,7 @@ python3 -m api.index
 ### Production (Railway)
 
 - Le volume `/app/data` (configuré dans `railway.json`) persiste la base SQLite entre les déploiements.
+- Définir `QUANTUM_ENV=production` (ou `prod`) pour un fail-fast au boot si `ADMIN_API_KEY` ou `FERNET_KEY` manque.
 - Variables à définir sur Railway : `ADMIN_API_KEY` (obligatoire), `FERNET_KEY` (obligatoire si vous connectez un broker). `TWELVEDATA_API_KEY` et `FINNHUB_API_KEY` sont optionnelles ; sans elles Yahoo reste le fallback tradfi.
 - Le calendrier persistant et la base de trades partagent le volume SQLite. La politique de panne se règle via `news_unavailable_policy=block_all|block_tradfi_only|allow_all` (`block_all` par défaut).
 - `auto_start_on_startup=true` démarre sans armer ; `auto_arm_on_startup=true` arme **et** démarre. Les deux restent `false` par défaut.
@@ -77,6 +78,7 @@ pytest tests/ -q
 
 ## 🔐 Sécurité
 
+- **Environnement** : `QUANTUM_ENV=dev` (défaut) conserve les warnings. `QUANTUM_ENV=production` refuse de démarrer sans `ADMIN_API_KEY` et `FERNET_KEY`.
 - **Auth** : si `ADMIN_API_KEY` est défini, tous les endpoints POST/DELETE exigent l'en-tête `X-API-Key`. Sans cette variable, l'accès est ouvert (dév uniquement) — un warning est loggé au démarrage.
 - **Secrets brokers** : chiffrés AES (Fernet) dans SQLite si `FERNET_KEY` est défini. Sans clé, stockage en clair avec warning.
 - Le frontend conserve la clé admin en `localStorage` et la renvoie à chaque requête mutante.
