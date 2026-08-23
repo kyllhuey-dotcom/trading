@@ -24,6 +24,9 @@ SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
         # P0-1: a calendar outage must not block 24/7 crypto; tradfi stays blocked.
         "default": "block_tradfi_only",
     },
+    # P1 (2026-08-23): explicit opt-in — POST /api/start arms the engine in
+    # DEMO mode only; REAL is never auto-armed by START.
+    "arm_on_start_demo": {"type": "bool", "default": "false"},
     "active_strategies": {"type": "str", "default": "rsi"},
     "scan_interval_seconds": {"type": "int", "min": 5, "max": 300, "default": "30"},
     "sim_latency_ms": {"type": "int", "min": 0, "max": 5000, "default": "100"},

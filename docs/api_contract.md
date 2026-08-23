@@ -51,7 +51,7 @@ sont indisponibles, auquel cas `status_display = "DATA ERROR"`) :
 ### Contrôles du bot 🔐
 | Endpoint | Corps | Réponse |
 |---|---|---|
-| `POST /api/start` | — | `{ success, state }` |
+| `POST /api/start` | — | `{ success, state, armed }` — START scanne sans armer ; `arm_on_start_demo=true` (réglage opt-in, défaut `false`) arme en DEMO uniquement, jamais en REAL |
 | `POST /api/stop` | — | `{ success, state }` |
 | `POST /api/arm` | — | `{ armed }` |
 | `POST /api/mode` | — | `{ success, mode, message }` (refus si aucun broker connecté) |

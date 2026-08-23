@@ -2384,7 +2384,13 @@
         document.getElementById('main-toggle-btn').onclick = async () => {
             const target = !botIsRunning;
             const res = await fetchAPI(target ? '/start' : '/stop', 'POST');
-            if (res && res.success) { botIsRunning = target; update(); }
+            if (res && res.success) {
+                botIsRunning = target;
+                // P1: START only scans — ARM is the explicit execution switch
+                // (unless the opt-in arm_on_start_demo setting armed DEMO).
+                if (target && !(res.armed) && !botIsArmed) showToast(t('startHint'));
+                update();
+            }
             else alert('Action failed (admin key required?).');
         };
 

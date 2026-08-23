@@ -38,6 +38,13 @@
 - UI : 2 polls `/status` OK + 0 HEARTBEAT → le watchdog 90s est désactivé
   (le socket n'est plus fermé en boucle) ; le client reste en poll HTTP.
 
+### P1 — Démarrage DEMO moins ambigu
+- Nouveau réglage `arm_on_start_demo` (bool, **défaut false**) : `POST
+  /api/start` arme le moteur **en DEMO uniquement** ; REAL n'est jamais
+  armé par START ; `auto_arm_on_startup` reste false par défaut.
+- `POST /api/start` renvoie désormais `armed` ; le toast UI documente
+  « START scan ; ARM pour exécuter » (clé i18n `startHint` en/fr/es/de).
+
 ## [2.9.1] - 2026-08-23 — Scanner fiable, Radar complet, RR RSI 1.5
 
 ### Résumé

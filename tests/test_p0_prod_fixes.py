@@ -291,3 +291,62 @@ def test_persistent_runtime_keeps_heartbeat_loop():
         for k, v in saved.items():
             if v is not None:
                 os.environ[k] = v
+
+
+# --------------------------------------------------------------------------- #
+# P1 — arm_on_start_demo (default false, DEMO only, never REAL)
+# --------------------------------------------------------------------------- #
+def test_settings_schema_arm_on_start_demo_default_false():
+    spec = SETTINGS_SPEC["arm_on_start_demo"]
+    assert spec["type"] == "bool"
+    assert spec["default"] == "false"
+    assert ensure_defaults({})["arm_on_start_demo"] == "false"
+
+
+def test_start_demo_does_not_arm_by_default():
+    from fastapi.testclient import TestClient
+    client = TestClient(idx.app)
+    saved_armed = idx.bot_state["armed"]
+    idx.bot_state["armed"] = False
+    try:
+        res = client.post("/api/start").json()
+        assert res["success"] is True
+        assert res["armed"] is False          # START ≠ ARM by default
+        assert idx.bot_state["is_running"] is True
+        assert idx.bot_state["armed"] is False
+    finally:
+        idx.bot_state["armed"] = saved_armed
+        idx.bot_state["is_running"] = False
+
+
+def test_start_demo_arms_only_with_optin_and_never_real():
+    from fastapi.testclient import TestClient
+    client = TestClient(idx.app)
+    saved = (idx.bot_state["armed"], idx.bot_state["mode"])
+    try:
+        # DEMO + opt-in → armed
+        idx.db_manager.set_setting("arm_on_start_demo", "true")
+        idx.settings_provider.invalidate()
+        idx.settings_provider.apply()
+        idx.bot_state.update(armed=False, mode="DEMO")
+        assert client.post("/api/start").json()["armed"] is True
+        assert idx.bot_state["armed"] is True
+
+        # REAL + opt-in → NEVER armed by START
+        idx.bot_state.update(armed=False, mode="REAL")
+        assert client.post("/api/start").json()["armed"] is False
+        assert idx.bot_state["armed"] is False
+    finally:
+        idx.bot_state["armed"], idx.bot_state["mode"] = saved
+        idx.db_manager.set_setting("arm_on_start_demo", "false")
+        idx.settings_provider.invalidate()
+        idx.settings_provider.apply()
+        idx.bot_state["is_running"] = False
+
+
+def test_start_toast_documents_start_vs_arm():
+    """P1: the UI toast documents START (scan) vs ARM (execute)."""
+    html = open("public/index.html", encoding="utf-8").read()
+    assert "showToast(t('startHint')" in html
+    js = open("public/js/i18n.js", encoding="utf-8").read()
+    assert js.count("startHint:") == 4  # en/fr/es/de strict parity

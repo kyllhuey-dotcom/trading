@@ -1311,15 +1311,28 @@ def refresh_execution_intent(n_candidates: int = 0) -> Dict[str, Any]:
 
 @app.post("/api/start", dependencies=[Depends(require_admin)])
 async def start_bot():
+    settings = settings_provider.get()
+    # P1 (2026-08-23): START means "scan" — arming stays a separate explicit
+    # step. Optional DEMO-only convenience: arm_on_start_demo=true arms the
+    # paper engine on START. REAL mode is NEVER auto-armed, and production
+    # auto_arm_on_startup stays false by default.
+    arm_demo = str(settings.get("arm_on_start_demo", "false")).lower() == "true"
     async with state_lock:
         bot_state["is_running"] = True
+        if arm_demo and bot_state["mode"] == "DEMO":
+            bot_state["armed"] = True
     state_machine.transition_to(BotState.RUNNING)
     refresh_execution_intent()
-    db_manager.log_audit("INFO", "SYSTEM_START", "Bot started")
+    if arm_demo and bot_state["mode"] == "DEMO" and bot_state["armed"]:
+        db_manager.log_audit("INFO", "SYSTEM_START",
+                             "Bot started — DEMO auto-armed (arm_on_start_demo)")
+    else:
+        db_manager.log_audit("INFO", "SYSTEM_START", "Bot started")
     # P0: start triggers an immediate scan if not already scanning
     if not bot_state.get("scanning"):
         asyncio.create_task(tick_scanner(force=True))
-    return {"success": True, "state": state_machine.current_state.value}
+    return {"success": True, "state": state_machine.current_state.value,
+            "armed": bool(bot_state["armed"])}
 
 
 @app.post("/api/stop", dependencies=[Depends(require_admin)])
