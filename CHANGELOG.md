@@ -31,6 +31,13 @@
 - `GET /api/status` et `GET /api/opportunities` ne renvoient plus un
   `last_block_reason` perpétuellement None.
 
+### P0-4 — Runtime serverless : WS non mort, poll HTTP explicite
+- Serveur : log clair à la première connexion WS en serverless —
+  `SERVERLESS RUNTIME: WebSocket heartbeat/broadcast loops are disabled…
+  clients MUST poll GET /api/status`.
+- UI : 2 polls `/status` OK + 0 HEARTBEAT → le watchdog 90s est désactivé
+  (le socket n'est plus fermé en boucle) ; le client reste en poll HTTP.
+
 ## [2.9.1] - 2026-08-23 — Scanner fiable, Radar complet, RR RSI 1.5
 
 ### Résumé

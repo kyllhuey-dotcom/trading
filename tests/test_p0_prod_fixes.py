@@ -252,3 +252,42 @@ def test_status_and_opportunities_expose_last_block_reason():
     opps = client.get("/api/opportunities").json()
     assert status["last_block_reason"] == "NO_RSI_SIGNAL"
     assert opps["last_block_reason"] == "NO_RSI_SIGNAL"
+
+
+# --------------------------------------------------------------------------- #
+# P0-4 — Serverless: watchdog off client-side, clear server log
+# --------------------------------------------------------------------------- #
+def test_serverless_ws_watchdog_disabled_client_side():
+    """P0-4: 2 OK /status polls + 0 HEARTBEAT → watchdog must not close."""
+    html = open("public/index.html", encoding="utf-8").read()
+    assert "wsStatusPollsOk" in html
+    assert "wsHeartbeatSeen" in html
+    watchdog = html.split("ws.watchdog = setInterval", 1)[1].split("}, 15000)", 1)[0]
+    assert "wsHeartbeatSeen" in watchdog and "wsStatusPollsOk" in watchdog
+    assert "return" in watchdog  # early-return: do NOT close the socket
+
+
+def test_serverless_runtime_logs_disabled_ws_heartbeat(monkeypatch):
+    """P0-4: server-side log states that WS heartbeats are serverless-absent."""
+    monkeypatch.setenv("VERCEL", "1")
+    assert idx.is_serverless_runtime() is True
+    source = open("api/index.py", encoding="utf-8").read()
+    assert "SERVERLESS RUNTIME: WebSocket heartbeat" in source
+    assert "poll GET /api/status" in source
+
+
+def test_persistent_runtime_keeps_heartbeat_loop():
+    """P0-4: non-serverless runs keep the heartbeat loop (contract)."""
+    import os
+    saved = {k: os.environ.get(k) for k in ("VERCEL", "AWS_LAMBDA_FUNCTION_NAME",
+                                            "FUNCTIONS_WORKER_RUNTIME")}
+    for k in saved:
+        os.environ.pop(k, None)
+    try:
+        assert idx.is_serverless_runtime() is False
+        source = open("api/index.py", encoding="utf-8").read()
+        assert "loop_wrapper(tick_heartbeat, HEARTBEAT_INTERVAL_S" in source
+    finally:
+        for k, v in saved.items():
+            if v is not None:
+                os.environ[k] = v

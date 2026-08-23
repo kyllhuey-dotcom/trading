@@ -2135,8 +2135,23 @@ async def get_ohlcv(market_id: str = "btc_usdt", timeframe: str = "1m", limit: i
 
 
 # ---- WebSocket + static ---------------------------------------------------- #
+_serverless_ws_warned = {"done": False}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    if is_serverless_runtime():
+        # P0-4 (2026-08-23): on a serverless runtime the heartbeat/broadcast
+        # loops are disabled — a connected WS client will never receive
+        # HEARTBEAT or stream frames and must poll /api/status instead.
+        # Say it once, clearly, instead of letting the client look broken.
+        if not _serverless_ws_warned["done"]:
+            _serverless_ws_warned["done"] = True
+            logger.warning(
+                "SERVERLESS RUNTIME: WebSocket heartbeat/broadcast loops are "
+                "disabled — no HEARTBEAT will be sent on /ws. Clients stay "
+                "connected but MUST poll GET /api/status for live state."
+            )
     await manager.connect(ws)
     try:
         while True:

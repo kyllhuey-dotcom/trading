@@ -1098,6 +1098,10 @@
 
         let selectedSymbol = 'btc_usdt';
         let ws;
+        // P0-4: serverless detection — a server that answers /api/status but
+        // never sends HEARTBEAT has its WS loops disabled; do not kill it.
+        let wsHeartbeatSeen = false;
+        let wsStatusPollsOk = 0;
         let currentFilter = 'ALL';
         let activeTab = 'dashboard';
         let botIsMode = 'DEMO';
@@ -1312,6 +1316,7 @@
                 // (ACCOUNT_STREAM arrives every second, pong answers pings).
                 lastHeartbeat = Date.now();
                 if (data.type === 'HEARTBEAT') {
+                    wsHeartbeatSeen = true;
                     return;
                 }
                 if (data.type === 'ACCOUNT_STREAM') {
@@ -1338,6 +1343,10 @@
                 }, 30000);
                 ws.watchdog = setInterval(() => {
                     if (Date.now() - lastHeartbeat > 90000 && ws.readyState === WebSocket.OPEN) {
+                        // P0-4: serverless runtimes serve no WS frames but the
+                        // HTTP API answers — 2 OK /status polls + 0 HEARTBEAT
+                        // means the server is alive: do NOT close the socket.
+                        if (!wsHeartbeatSeen && wsStatusPollsOk >= 2) return;
                         ws.close(); // onclose triggers the reconnect
                     }
                 }, 15000);
@@ -1656,7 +1665,8 @@
 
         async function update() {
             const s = await fetchAPI('/status?market_id=' + selectedSymbol);
-            if (!s) return;
+            if (!s) { wsStatusPollsOk = 0; return; }
+            wsStatusPollsOk = Math.min(wsStatusPollsOk + 1, 30);
             botIsRunning = !!s.is_running;
             botIsArmed = !!s.armed;
             botIsMode = s.mode || 'DEMO';
