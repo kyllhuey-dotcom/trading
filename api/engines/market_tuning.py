@@ -90,9 +90,9 @@ ASSET_CLASS_TUNING: Dict[str, Dict[str, Any]] = {
 
 DEFAULT_TUNING: Dict[str, Any] = ASSET_CLASS_TUNING["CRYPTO"]
 
-# Guard rails for every per-market value (same sanity bounds as the settings).
+# Guard rails for every per-market value (v2.7: floor raised to 80).
 BOUNDS = {
-    "min_score": (50, 99),
+    "min_score": (80, 99),
     "risk_reward": (0.5, 10.0),
     "atr_stop_multiplier": (0.1, 10.0),
     "max_cost_ratio": (0.0, 2.0),
@@ -100,7 +100,8 @@ BOUNDS = {
 
 # A market needs a minimum number of closed trades before its stats mean
 # anything (statistical honesty — no verdict on 2 trades).
-MIN_TRADES_FOR_VERDICT = 10
+# v2.7: raised from 10 to 30 for stronger statistical significance.
+MIN_TRADES_FOR_VERDICT = 30
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:

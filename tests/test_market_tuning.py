@@ -100,14 +100,14 @@ def test_regime_adjustments_direction():
 
 def test_signal_engine_effective_min_score_market_and_regime():
     engine = SignalEngine(min_score=80)
-    engine.set_market_tuning({"btc_usdt": {"min_score": 85}, "eur_usd": {"min_score": 78}})
-    # per-market override
+    engine.set_market_tuning({"btc_usdt": {"min_score": 85}, "eur_usd": {"min_score": 82}})
+    # per-market override (v2.7: floor is 80, so values below 80 are clamped)
     assert engine.effective_min_score("btc_usdt") == 85
-    assert engine.effective_min_score("eur_usd") == 78
+    assert engine.effective_min_score("eur_usd") == 82
     assert engine.effective_min_score("unknown_market") == 80  # falls back to global
-    # regime adjustment on top (volatile raises, quiet lowers, both clamped)
+    # regime adjustment on top (volatile raises, quiet lowers, both clamped to floor)
     assert engine.effective_min_score("btc_usdt", "VOLATILE") == 90
-    assert engine.effective_min_score("eur_usd", "QUIET") == 75
+    assert engine.effective_min_score("eur_usd", "QUIET") == 80  # 82 - 3 = 79, clamped to 80
     assert engine.effective_min_score("unknown_market", "NORMAL") == 80
     # disabled adaptation -> regime has no effect
     engine.set_regime_adaptation(False)
@@ -149,12 +149,12 @@ def test_insufficient_data_never_tunes_on_noise():
     rec = mt.recommend_for_market("btc_usdt", _market_stats(3, 1, 2.0), balance=5.0)
     assert rec["verdict"] == "INSUFFICIENT_DATA"
     assert rec["action"] == "OBSERVE"
-    assert rec["params"]["min_score"] >= 50  # sane defaults, no blind tuning
+    assert rec["params"]["min_score"] >= 80  # v2.7: floor is 80
     assert mt.recommend_for_market("btc_usdt", None)["verdict"] == "INSUFFICIENT_DATA"
 
 
 def test_losing_market_gets_entry_threshold_raised():
-    stats = _market_stats(20, 6, -25.0)  # 30 % win rate
+    stats = _market_stats(35, 10, -25.0)  # ~29% win rate
     rec = mt.recommend_for_market("doge_usdt", stats, balance=5.0)
     assert rec["verdict"] == "LOSING"
     assert rec["action"] == "QUARANTINE_OR_RAISE_SELECTIVITY"
@@ -163,7 +163,7 @@ def test_losing_market_gets_entry_threshold_raised():
 
 
 def test_tight_tp_market_gets_wider_take_profit():
-    stats = _market_stats(15, 9, 8.0, avg_win=6.0, avg_loss=5.0, rr=1.2)
+    stats = _market_stats(35, 20, 8.0, avg_win=6.0, avg_loss=5.0, rr=1.2)
     rec = mt.recommend_for_market("btc_usdt", stats, balance=120.0)
     assert rec["verdict"] == "TP_TOO_TIGHT"
     assert rec["action"] == "WIDEN_TAKE_PROFIT"
@@ -172,25 +172,26 @@ def test_tight_tp_market_gets_wider_take_profit():
 
 
 def test_cost_leak_market_gets_tighter_cost_filter():
-    stats = _market_stats(15, 8, 4.0, leaks=3)
+    stats = _market_stats(35, 20, 4.0, leaks=3)
     rec = mt.recommend_for_market("pepe_usdt", stats, balance=25.0)
     assert rec["verdict"] == "COST_LEAK"
     assert rec["params"]["max_cost_ratio"] == 0.4
 
 
 def test_profitable_market_is_kept_and_gently_scaled():
-    stats = _market_stats(30, 18, 60.0, avg_win=8.0, avg_loss=4.0)
+    stats = _market_stats(40, 25, 60.0, avg_win=8.0, avg_loss=4.0)
     rec = mt.recommend_for_market("eth_usdt", stats, balance=25.0)
     assert rec["verdict"] == "PROFITABLE"
     assert rec["action"] == "KEEP_AND_SCALE"
-    assert rec["params"]["min_score"] < 80  # slightly relaxed entry threshold
+    # v2.7: floor is 80, so relaxed threshold stays at 80 (not below)
+    assert rec["params"]["min_score"] >= 80
 
 
 def test_build_tuning_from_audit_merges_class_defaults_and_overrides():
     universe = MarketUniverse()
     per_market = {
-        "doge_usdt": _market_stats(20, 6, -25.0),          # losing -> raised threshold
-        "eth_usdt": _market_stats(30, 18, 60.0, avg_win=8.0, avg_loss=4.0),  # profitable
+        "doge_usdt": _market_stats(35, 10, -25.0),          # losing -> raised threshold
+        "eth_usdt": _market_stats(40, 25, 60.0, avg_win=8.0, avg_loss=4.0),  # profitable
         "shib_usdt": _market_stats(2, 2, 1.0),             # noise -> ignored
     }
     tuning = mt.build_tuning_from_audit(per_market, 5.0, universe)

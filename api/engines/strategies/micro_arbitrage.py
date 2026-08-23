@@ -7,18 +7,19 @@ from datetime import datetime
 
 class MicroArbitrageStrategy(BaseStrategy):
     """
-    Exploite les différences de prix entre plateformes (Gate / Bybit / Binance).
-    Taux de réussite cible : 80-90 %.
+    Détecte les différences de prix entre plateformes (Gate / Bybit / Binance).
+
+    v2.7 P0-5 — HONESTY FIX: This strategy detects inter-exchange price
+    discrepancies but only executes a single directional order, NOT a true
+    atomic two-leg arbitrage. Until a real two-leg executor exists:
+    - The strategy may be displayed in the radar
+    - tradable=false for auto-execution
+    - diagnostic.main_reason = ARBITRAGE_REQUIRES_ATOMIC_TWO_LEG_EXECUTOR
 
     LOT B hardening:
-    - freshness gate: quotes older than `max_quote_age_ms` are dropped (stale
-      data is the #1 source of *fake* arbitrage opportunities);
-    - synchronization gate: quotes fetched too far apart in time
-      (`max_sync_dispersion_ms`) are rejected — a 0.3% spread across quotes
-      taken 10 s apart is a trend, not an arbitrage;
-    - confidence score derived from spread + quote freshness + synchronization;
-    - fully backward compatible: quotes without timing info are treated as
-      fresh/synchronized (same behavior as before).
+    - freshness gate: quotes older than `max_quote_age_ms` are dropped;
+    - synchronization gate: quotes fetched too far apart are rejected;
+    - confidence score derived from spread + quote freshness + synchronization.
     """
     def __init__(self, threshold_pct: float = 0.15,
                  max_quote_age_ms: float = 3000.0,
@@ -142,10 +143,12 @@ class MicroArbitrageStrategy(BaseStrategy):
                 "direction": direction,
                 "score": score,
                 "confidence": confidence,
+                "tradable": False,  # v2.7 P0-5: not auto-executable (pseudo-arbitrage)
                 "reason": (f"Arbitrage Opportunity: {diff_pct:.2f}% spread detected"
                            + (f" (confidence {confidence:.0f}/100)" if confidence < 99.9 else "")),
+                "main_reason": "ARBITRAGE_REQUIRES_ATOMIC_TWO_LEG_EXECUTOR",
                 "entry": primary_price,
-                "sl": primary_price * (0.998 if direction == "BUY" else 1.002), # Very tight for arb
+                "sl": primary_price * (0.998 if direction == "BUY" else 1.002),
                 "tp": primary_price * (1.002 if direction == "BUY" else 0.998),
                 "timestamp": datetime.now().isoformat(),
                 "metadata": {

@@ -20,12 +20,13 @@ def test_ensure_defaults_no_overwrite():
 
 
 def test_post_applies_live():
-    r = client.post("/api/settings", json={"min_signal_score": "77", "max_open_positions": "12"})
+    # v2.7: min_signal_score floor is 80, so 77 gets clamped to 80
+    r = client.post("/api/settings", json={"min_signal_score": "85", "max_open_positions": "12"})
     assert r.status_code == 200
     body = r.json()
     assert body["success"] is True
     assert body["message"] == "Parameters deployed live"
-    assert signal_engine.min_score == 77
+    assert signal_engine.min_score == 85
     assert risk_engine.max_open_positions == 12
     # restore shared state
     client.post("/api/settings", json={"min_signal_score": "80", "max_open_positions": "10"})

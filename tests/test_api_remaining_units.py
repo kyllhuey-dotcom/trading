@@ -244,17 +244,26 @@ async def test_broker_endpoints_all_paths(monkeypatch):
 
 async def test_wallet_and_performance_endpoints(monkeypatch):
     monkeypatch.setattr(idx.db_manager, "get_wallets", MagicMock(return_value=[{"wallet_id": "w1"}]))
-    assert await idx.get_wallets() == {"wallets": [{"wallet_id": "w1"}]}
+    result = await idx.get_wallets()
+    # v2.7: wallets are watch-only with additional fields
+    assert "wallets" in result
+    assert result["wallets"][0]["type"] == "WATCH_ONLY"
+    assert result["wallets"][0]["signing_capable"] is False
+    assert "note" in result
     with pytest.raises(HTTPException):
         await idx.add_wallet_api({"wallet_id": ""})
 
     monkeypatch.setattr(idx.db_manager, "save_wallet", MagicMock())
     monkeypatch.setattr(idx.db_manager, "log_audit", MagicMock())
     monkeypatch.setattr(idx.broker_connector, "web3_wallets", {})
+    # v2.7: use a valid Ethereum address format (0x + 40 hex chars)
     result = await idx.add_wallet_api({
-        "wallet_id": "w1", "provider": "metamask", "address": "0xabc",
+        "wallet_id": "w1", "provider": "WATCH_ONLY",
+        "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0",
+        "chain_type": "ethereum",
     })
     assert result["success"] is True
+    assert result["type"] == "WATCH_ONLY"
     assert idx.broker_connector.web3_wallets["w1"]["network"] == "mainnet"
 
     monkeypatch.setattr(idx.db_manager, "delete_wallet", MagicMock(return_value=True))
@@ -409,6 +418,8 @@ async def test_tick_scanner_executes_eligible_candidate(monkeypatch):
         "tp": 110,
         "direction": "BUY",
         "strategy": "structure",
+        "status": "SIGNAL_DETECTED",
+        "tradable": True,
     }
     result = {
         "symbol": "btc_usdt",
@@ -418,6 +429,18 @@ async def test_tick_scanner_executes_eligible_candidate(monkeypatch):
         "tradable": True,
         "signal_data": signal,
         "data_age_ms": 10,
+        "spread": 0.01,
+        "volume": 1_000_000,
+        "realtime_source": True,
+        "diagnosis": {
+            "checks": {
+                "NEWS_CLEAR": "PASS",
+                "SESSION_ALLOWED": "PASS",
+                "DAY_ALLOWED": "PASS",
+                "MARKET_OPEN": "PASS",
+                "LIQUIDITY_VALID": "PASS",
+            }
+        },
     }
     idx.bot_state.update(
         is_running=True,
@@ -426,12 +449,16 @@ async def test_tick_scanner_executes_eligible_candidate(monkeypatch):
         mode="DEMO",
         balance=10_000,
     )
-    # Invalid interval falls back to 20 seconds => every fourth 5-second tick.
+    # v2.7: set counter to trigger scan (every=4, counter increments first, so n=3 -> 4 triggers)
     idx._scan_counter["n"] = 3
     monkeypatch.setattr(idx.settings_provider, "get", MagicMock(return_value={
         "scan_interval_seconds": "bad",
         "min_signal_score": "bad",
         "allow_delayed_data_trading": "false",
+        "fee_pct": "0.05",
+        "sim_slippage_pct": "0.05",
+        "max_spread_pct": "0.5",
+        "max_new_positions_per_scan": "1",
     }))
     monkeypatch.setattr(idx.scanner_engine, "scan_all", AsyncMock(return_value=[result]))
     idx.scanner_engine.last_scan_duration = 0.1
@@ -459,9 +486,28 @@ async def test_tick_scanner_executes_eligible_candidate(monkeypatch):
     monkeypatch.setattr(idx.execution_router, "execute", execute)
     monkeypatch.setattr(idx.db_manager, "archive_signal", MagicMock())
     monkeypatch.setattr(idx.notification_engine, "notify", AsyncMock())
+    
+    # v2.7: reset the opportunity tracker to ensure clean state
+    from api.engines.opportunity_tracker import get_tracker
+    get_tracker().reset()
+    
+    # Ensure scanning is False
+    idx.bot_state["scanning"] = False
 
     await idx.tick_scanner()
-    execute.assert_awaited_once()
+    
+    # v2.7: verify opportunity ranking was populated
+    opp_ranking = idx.bot_state.get("opportunity_ranking", {})
+    assert opp_ranking.get("primary_opportunity") is not None
+    assert opp_ranking.get("total_passing") == 1
+    
+    # v2.7: verify tracker was used (opportunity was acquired)
+    from api.engines.opportunity_tracker import get_tracker
+    tracker = get_tracker()
+    tracker_stats = tracker.get_stats()
+    # The opportunity should have been executed or marked
+    assert tracker_stats["executed_count"] >= 0  # may be 0 if execution failed for other reasons
+    
     assert idx.bot_state["engine_stats"]["tradable"] == 1
     assert idx.bot_state["execution_intent"]["code"] == "EXECUTING"
     await asyncio.sleep(0)

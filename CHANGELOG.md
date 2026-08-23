@@ -1,5 +1,65 @@
 # Changelog - Quantum Trade Pro
 
+## [2.7.0] - 2026-08-23 — Espérance positive : corrections structurelles
+
+### Résumé
+v2.7 corrige les causes structurelles qui empêchaient de mesurer et d'obtenir une espérance positive. Le score n'est jamais présenté comme une probabilité. Critères de santé : win rate ≥ 45 %, RR net ≥ 1.5, espérance > 0, profit factor ≥ 1.3.
+
+### P0-1 — Plancher d'exécution 80 inviolable
+- `AUTO_EXECUTION_SCORE_FLOOR = 80` dans `api/engines/constants.py`
+- `SignalEngine` : `set_min_score()` et `effective_min_score()` clampent à 80–99
+- `settings_schema.py` : `min_signal_score` borné 80–99 (au lieu de 50–99)
+- `capital_profiles.py` : STANDARD de 75 à 80 ; `market_tuning.py` : borne min 50 → 80
+- Régime calme ne peut jamais descendre sous 80
+- `select_candidates()` et `/api/execute-signal` : plancher appliqué même avec config malveillante
+
+### P0-2 — Meilleure opportunité principale
+- `api/engines/opportunity_ranker.py` : classement pur et testé
+- Exclusions : score < 80, signal non détecté, news/session, donnée périmée, spread/liquidité, RR net < 1.5, quarantaine, corrélation
+- Métriques exposées : `estimated_net_rr`, `cost_to_risk`, `rank_score`, `rank_reasons`, `strategy_reliability` (shrinkage bayésien)
+- `primary_opportunity` unique, `secondary_opportunities` visibles mais non exécutées
+- `max_new_positions_per_scan` défaut 1, borné 1–3
+- Endpoints : `/api/opportunities`, ajout dans `/api/status`
+
+### P0-3 — Exécution LIVE sans attendre Yahoo
+- `api/engines/opportunity_tracker.py` : single-flight/idempotence
+- `opportunity_id` unique, TTL 30 s, aucun retry ne double un ordre
+- Revalidation du signal avant exécution (re-fetch ticker + fraîcheur)
+
+### P0-4 — Coûts et RR nets corrects
+- `api/engines/cost_calculator.py` : formules cohérentes (entry/round_trip/cost_to_risk/net_rr)
+- Porte de coûts sur TOUTES les stratégies
+- Post-fill : recalcul RR net, refus si dégradé sous 1.5
+- Fixtures BTC, petit token, forex, action
+
+### P0-5 — Faux arbitrage directionnel
+- `micro_arbitrage` : `tradable=False`, `main_reason = ARBITRAGE_REQUIRES_ATOMIC_TWO_LEG_EXECUTOR`
+- Suppression des cibles non prouvées des docstrings
+
+### P0-6 — Comptabilité fiable
+- Positions : `initial_quantity`, `remaining_quantity`, `entry_fees`, `exit_fees`, `slippage_cost`, `funding_cost`, `partial_realized_pnl`, `gross_pnl`, `net_pnl`, `realized_r_multiple`, `opportunity_id`
+- TP partiel ne remet pas le circuit breaker à zéro
+- `register_closed_trade` appelé avec le résultat net final uniquement
+
+### P1-7 — Quarantaine statistique
+- `api/engines/quarantine.py` : min 30 trades avant verdict (au lieu de 10)
+- Quarantaine auto : espérance ≤ 0, PF < 1, RR net < 1.5
+- Visible, explicable, réversible, jamais de martingale
+
+### P1-9 — Brokers fiables
+- `/api/broker-capabilities` : exchange_id, passphrase, spot/futures, sandbox, SL/TP natifs, reduce_only, runtime_status, latency, permissions, routable_markets
+
+### P1-10 — Wallets watch-only
+- Wallets toujours `type=WATCH_ONLY`, `signing_capable=false`, `can_execute=false`
+- Validation d'adresse par chaîne (Ethereum/Solana/Bitcoin)
+- Aucun stockage de clé privée
+
+### Tests
+- **438 tests passés / 6 skips réseau** (390 → 438)
+- **48 nouveaux tests** v2.7 (plancher 80, ranker, tracker, coûts, arbitrage, quarantaine)
+- Ruff propre sur tous les nouveaux modules
+- Aucune protection existante affaiblie
+
 ## [2.6.0] - 2026-08-22 — Correctifs des 8 causes racines de production
 
 ### Fiabilité et sûreté
