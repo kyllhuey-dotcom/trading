@@ -309,7 +309,29 @@
                     </div>
 
                     <div class="h-6 w-[1px] bg-black/5 dark:bg-white/5"></div>
-                    
+
+                    <!-- v2.8: continuous-trading strip -->
+                    <div class="flex flex-col min-w-[110px]">
+                        <span class="text-[7px] font-black text-secondary uppercase tracking-widest" data-i18n="tradingState">Trading state</span>
+                        <span id="trading-active-badge" class="status-badge bg-slate-500/10 text-slate-500 !px-2 !py-1">--</span>
+                    </div>
+
+                    <div class="h-6 w-[1px] bg-black/5 dark:bg-white/5"></div>
+
+                    <div class="flex flex-col">
+                         <span class="text-[7px] uppercase font-extrabold text-secondary tracking-widest" data-i18n="tradesToday">Trades today</span>
+                         <span class="font-black text-xs tabular-nums" id="trades-today-count">0</span>
+                    </div>
+
+                    <div class="h-6 w-[1px] bg-black/5 dark:bg-white/5"></div>
+
+                    <div class="flex flex-col">
+                         <span class="text-[7px] uppercase font-extrabold text-secondary tracking-widest" data-i18n="nextScan">Next scan</span>
+                         <span class="font-black text-xs tabular-nums" id="next-scan-countdown">--</span>
+                    </div>
+
+                    <div class="h-6 w-[1px] bg-black/5 dark:bg-white/5"></div>
+
                     <div class="flex flex-col">
                          <span class="text-[9px] uppercase font-extrabold text-secondary tracking-widest" data-i18n="globalBalance">Global Balance</span>
                          <span class="font-black text-xs tabular-nums" id="header-balance">0.00 €</span>
@@ -466,7 +488,7 @@
                         <h2 class="font-black text-sm uppercase tracking-widest mb-1" data-i18n="radarTitle">Global Radar</h2>
                         <p class="text-xs text-secondary font-medium" data-i18n="radarSub">Unified scanning of all tracked instruments.</p>
                         <div class="flex gap-2 mt-3">
-                            <button class="btn-premium bg-black/5" data-radar-filter="ge80" onclick="setRadarFilter('ge80')">≥80</button>
+                            <button class="btn-premium bg-black/5" data-radar-filter="ge80" onclick="setRadarFilter('ge80')">≥84</button>
                             <button class="btn-premium bg-black/5" data-radar-filter="ge90" onclick="setRadarFilter('ge90')">≥90</button>
                             <button class="btn-premium bg-black/5" data-radar-filter="all" onclick="setRadarFilter('all')" data-i18n="all">Toutes</button>
                             <button class="btn-premium bg-black/5" data-radar-filter="crypto" onclick="setRadarFilter('crypto')" data-i18n="cryptoOnly">Crypto only</button>
@@ -532,13 +554,27 @@
                                         <label class="text-[8px] font-black text-secondary uppercase" data-i18n="secret">Secret</label>
                                         <input type="password" name="api_secret" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-[10px] font-mono" required>
                                     </div>
+                                    <!-- v2.8: passphrase shown only for OKX / KuCoin -->
+                                    <div class="flex flex-col gap-1.5 hidden" id="passphrase-field">
+                                        <label class="text-[8px] font-black text-secondary uppercase"><span data-i18n="passphrase">Passphrase</span> · <span class="text-secondary/60 normal-case" data-i18n="passphraseHint">Only for OKX / KuCoin</span></label>
+                                        <input type="password" name="api_passphrase" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-[10px] font-mono">
+                                    </div>
+                                    <!-- v2.8: sandbox toggle with visible badge -->
+                                    <label class="flex items-center gap-2 text-[10px] font-bold cursor-pointer">
+                                        <input type="checkbox" name="sandbox" id="broker-sandbox-toggle">
+                                        <span data-i18n="sandboxMode">Sandbox</span>
+                                        <span id="sandbox-badge" class="status-badge bg-orange-500/10 text-orange-500 hidden">SANDBOX</span>
+                                    </label>
+                                    <!-- v2.8: dry-run the connection before saving -->
+                                    <button type="button" id="test-connection-btn" class="w-full btn-premium bg-accent-blue/10 text-accent-blue py-2 font-black uppercase text-[10px]" data-i18n="testConnection">Test connection</button>
+                                    <p id="broker-test-result" class="hidden text-[10px] font-black"></p>
                                     <button type="submit" class="w-full btn-premium bg-black text-white dark:bg-white dark:text-black py-2.5 mt-1 font-black uppercase text-[10px]" data-i18n="linkBroker">Link Broker</button>
                                 </form>
                             </div>
 
-                            <!-- Connect Wallet (Address) -->
+                            <!-- Watch-only wallet address (v2.8: never signing-capable) -->
                             <div class="card-premium">
-                                <h4 class="text-[10px] font-black uppercase tracking-widest mb-4" data-i18n="linkWallet">Link Web3 Wallet</h4>
+                                <h4 class="text-[10px] font-black uppercase tracking-widest mb-4" data-i18n="addWatchOnly">Add a watch-only address</h4>
                                 <form id="wallet-form" class="space-y-3">
                                     <div class="grid grid-cols-3 gap-2 mb-4">
                                         <button type="button" onclick="setWalletProvider('METAMASK')" class="flex flex-col items-center p-2 bg-black/5 rounded-xl border border-transparent hover:border-accent-blue/30 w-provider active" id="p-METAMASK">
@@ -557,10 +593,21 @@
                                         <input type="text" name="wallet_id" placeholder="My Cold Wallet" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-xs font-bold" required>
                                     </div>
                                     <div class="flex flex-col gap-1.5">
-                                        <label class="text-[8px] font-black text-secondary uppercase" data-i18n="publicAddress">Public Address</label>
-                                        <input type="text" name="address" placeholder="0x... or Address" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-[10px] font-mono" required>
+                                        <label class="text-[8px] font-black text-secondary uppercase" data-i18n="chainType">Chain type</label>
+                                        <select name="chain_type" id="wallet-chain" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-xs font-bold">
+                                            <option value="ethereum">Ethereum</option>
+                                            <option value="solana">Solana</option>
+                                            <option value="bitcoin">Bitcoin</option>
+                                            <option value="polygon">Polygon</option>
+                                            <option value="bsc">BSC</option>
+                                        </select>
                                     </div>
-                                    <button type="submit" class="w-full btn-premium bg-accent-blue text-white py-2.5 mt-1 font-black uppercase text-[10px]" data-i18n="syncWallet">Sync Wallet</button>
+                                    <div class="flex flex-col gap-1.5">
+                                        <label class="text-[8px] font-black text-secondary uppercase"><span data-i18n="publicAddress">Public Address</span> · <span class="status-badge bg-blue-500/10 text-accent-blue !py-0.5" data-i18n="watchOnlyBadge">WATCH-ONLY</span></label>
+                                        <input type="text" name="address" id="wallet-address-input" placeholder="0x... or Address" class="bg-black/5 dark:bg-white/5 rounded-lg px-3 py-1.5 outline-none text-[10px] font-mono" required>
+                                        <p id="wallet-address-hint" class="hidden text-[9px] font-black"></p>
+                                    </div>
+                                    <button type="submit" class="w-full btn-premium bg-accent-blue text-white py-2.5 mt-1 font-black uppercase text-[10px]" data-i18n="addWatchOnly">Add a watch-only address</button>
                                 </form>
                             </div>
                         </div>
@@ -582,6 +629,10 @@
                                                 <th class="py-3 px-4" data-i18n="alias">Alias</th>
                                                 <th class="py-3 px-4" data-i18n="exchange">Exchange</th>
                                                 <th class="py-3 px-4" data-i18n="status">Status</th>
+                                                <th class="py-3 px-4 text-right" data-i18n="balanceLabel">Balance</th>
+                                                <th class="py-3 px-4 text-right" data-i18n="latency">Latency</th>
+                                                <th class="py-3 px-4 text-right" data-i18n="openPositionsCount">Positions</th>
+                                                <th class="py-3 px-4" data-i18n="lastSync">Last sync</th>
                                                 <th class="py-3 px-4 text-right" data-i18n="actions">Actions</th>
                                             </tr>
                                         </thead>
@@ -636,6 +687,7 @@
                             <div class="flex-1 bg-black/[0.03] dark:bg-white/[0.03] rounded-[32px] p-8 relative overflow-hidden group">
                                 <div id="bos-choch-tag" class="absolute top-3 left-4 text-[9px] font-black uppercase tracking-widest"></div>
                                 <div class="chart-grid" id="main-chart-bars"></div>
+                                <div id="sltp-preview" class="absolute inset-0 pointer-events-none"></div>
                             </div>
                             <div id="orderbook-panel" class="mt-3 text-[10px] font-bold">
                                 <p class="text-[9px] font-black uppercase text-secondary mb-1" data-i18n="orderBook">Order Book</p>
@@ -692,6 +744,25 @@
                                         </div>
                                     </div>
 
+                                    <!-- v2.8: pre-trade risk preview (computed live, no alert()) -->
+                                    <div class="grid grid-cols-3 gap-2" id="order-preview">
+                                        <div class="bg-black/5 dark:bg-white/5 p-2 rounded-xl">
+                                            <p class="text-[7px] font-black text-secondary uppercase mb-0.5" data-i18n="estimatedRisk">Estimated risk</p>
+                                            <p id="op-risk" class="text-[10px] font-black tabular-nums">--</p>
+                                        </div>
+                                        <div class="bg-black/5 dark:bg-white/5 p-2 rounded-xl">
+                                            <p class="text-[7px] font-black text-secondary uppercase mb-0.5" data-i18n="pctOfBalance">% of balance</p>
+                                            <p id="op-pct" class="text-[10px] font-black tabular-nums">--</p>
+                                        </div>
+                                        <div class="bg-black/5 dark:bg-white/5 p-2 rounded-xl">
+                                            <p class="text-[7px] font-black text-secondary uppercase mb-0.5" data-i18n="estFees">Est. fees</p>
+                                            <p id="op-fees" class="text-[10px] font-black tabular-nums">--</p>
+                                        </div>
+                                    </div>
+                                    <p id="manual-order-error" class="hidden text-[10px] font-black text-red-500"></p>
+                                    <p id="manual-order-ok" class="hidden text-[10px] font-black text-green-500"></p>
+                                    <button id="confirm-order-btn" class="hidden btn-premium bg-accent-orange text-black py-2.5 font-black uppercase text-[10px]" data-i18n="confirmOrder">Confirm order</button>
+
                                     <div class="mt-auto pt-4 flex items-center justify-between">
                                         <div class="flex flex-col">
                                             <span class="text-[8px] font-black text-secondary uppercase" data-i18n="projectedRisk">Projected Risk</span>
@@ -709,6 +780,41 @@
                                 <div id="terminal-news-list" class="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                                     <p class="text-secondary font-medium text-xs italic text-center py-4" data-i18n="connectingFeeds">Connecting to decentralized data feeds...</p>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- v2.8: live positions with per-position close + R multiple -->
+                        <div class="card-premium">
+                            <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-3" data-i18n="openPositionsHere">Live positions</h4>
+                            <div id="terminal-pos-list" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+                        </div>
+
+                        <!-- v2.8: order history with filters and sortable columns -->
+                        <div class="card-premium">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest" data-i18n="orderHistory">Order history</h4>
+                                <div class="flex gap-1">
+                                    <button class="btn-premium bg-black text-white dark:bg-white dark:text-black !py-1" data-oh-filter="all" onclick="setTerminalOrdersFilter('all')" data-i18n="filterAll">All</button>
+                                    <button class="btn-premium bg-black/5 !py-1" data-oh-filter="open" onclick="setTerminalOrdersFilter('open')" data-i18n="filterOpen">Open</button>
+                                    <button class="btn-premium bg-black/5 !py-1" data-oh-filter="closed" onclick="setTerminalOrdersFilter('closed')" data-i18n="filterClosed">Closed</button>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-[10px] text-left">
+                                    <thead class="text-[8px] text-secondary font-black uppercase tracking-widest border-b border-black/5 dark:border-white/5">
+                                        <tr>
+                                            <th class="py-2 pr-3 cursor-pointer select-none" data-oh-sort="time" onclick="sortTerminalOrders('time')"><span data-i18n="colTime">Time</span> <span class="oh-arrow" data-for="time"></span></th>
+                                            <th class="py-2 pr-3 cursor-pointer select-none" data-oh-sort="market" onclick="sortTerminalOrders('market')"><span data-i18n="colMarket">Market</span> <span class="oh-arrow" data-for="market"></span></th>
+                                            <th class="py-2 pr-3 cursor-pointer select-none" data-oh-sort="direction" onclick="sortTerminalOrders('direction')"><span data-i18n="colDirection">Side</span> <span class="oh-arrow" data-for="direction"></span></th>
+                                            <th class="py-2 pr-3 text-right cursor-pointer select-none" data-oh-sort="entry" onclick="sortTerminalOrders('entry')"><span data-i18n="entry">Entry</span> <span class="oh-arrow" data-for="entry"></span></th>
+                                            <th class="py-2 pr-3 text-right">SL</th>
+                                            <th class="py-2 pr-3 text-right">TP</th>
+                                            <th class="py-2 pr-3 cursor-pointer select-none" data-oh-sort="status" onclick="sortTerminalOrders('status')"><span data-i18n="colStatus">Status</span> <span class="oh-arrow" data-for="status"></span></th>
+                                            <th class="py-2 text-right cursor-pointer select-none" data-oh-sort="pnl" onclick="sortTerminalOrders('pnl')"><span data-i18n="colPnl">PnL</span> <span class="oh-arrow" data-for="pnl"></span></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="terminal-orders-body"></tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -878,8 +984,8 @@
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="minConfidence">Min AI Confidence Score</label><span class="text-[10px] font-bold text-accent-green" id="val-min_signal_score">80</span></div>
-                                    <input type="range" id="set-min_signal_score" min="50" max="99" step="1" value="80" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-min_signal_score').innerText=this.value">
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="minConfidence">Min AI Confidence Score</label><span class="text-[10px] font-bold text-accent-green" id="val-min_signal_score">84</span></div>
+                                    <input type="range" id="set-min_signal_score" min="84" max="99" step="1" value="84" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-min_signal_score').innerText=this.value">
                                 </div>
                                 <div class="space-y-2">
                                     <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="riskReward">Risk/Reward Ratio</label><span class="text-[10px] font-bold text-accent-green" id="val-risk_reward_ratio">2.0</span></div>
@@ -1057,6 +1163,9 @@
             const min = Math.min(...cs.map(c => c.l));
             const max = Math.max(...cs.map(c => c.h));
             const span = (max - min) || 1;
+            window._chartRange = { min, max, span };
+            const { sl: _pvSl, tp: _pvTp } = _orderInputs();
+            drawSlTpPreview(_pvSl, _pvTp);
             host.innerHTML = cs.map(c => {
                 const up = c.c >= c.o;
                 const top = ((c.h - Math.max(c.o,c.c)) / span) * 100;
@@ -1420,7 +1529,7 @@
                         <span class="text-[10px] font-black">${escapeHtml((s.symbol || '').toUpperCase().replace('_', '/'))}</span>
                         <span class="text-[8px] font-bold text-secondary uppercase ml-1">${escapeHtml(s.trend || '--')}</span>
                     </div>
-                    <span class="text-[10px] font-black ${(s.score || 0) >= 80 ? 'text-green-500' : 'text-secondary'}">${s.score || 0}</span>
+                    <span class="text-[10px] font-black ${(s.score || 0) >= 84 ? 'text-green-500' : 'text-secondary'}">${s.score || 0}</span>
                 </div>`).join('');
         }
 
@@ -1483,7 +1592,7 @@
                     <span class="text-xs font-bold text-secondary">${t('scanInProgress')} ${escapeHtml(data.progress)}…</span>
                 </td></tr>` : '';
             const rows = data.assets.map(a => {
-                const hot = (a.score || 0) >= 80;
+                const hot = (a.score || 0) >= 84;
                 const canTrade = a.tradable && hot;
                 const diagnosisReason = (a.diagnosis && a.diagnosis.main_reason) || a.reason || t('wait');
                 const sourceBadge = a.realtime_source
@@ -1534,6 +1643,22 @@
 
             updateStatus(s);
             updateAccountUI(s);
+            renderTerminalPanels(s);
+
+            // v2.8: continuous-trading strip (badge / trades today / next scan)
+            const tradingActive = !!(s.trading_active || (s.is_running && s.armed));
+            const taBadge = document.getElementById('trading-active-badge');
+            if (taBadge) {
+                taBadge.textContent = tradingActive ? t('tradingActive') : t('paused');
+                taBadge.className = `status-badge !px-2 !py-1 ${tradingActive ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'}`;
+            }
+            const ttEl = document.getElementById('trades-today-count');
+            if (ttEl) ttEl.innerText = (s.trades_today ?? 0);
+            window._scanIntervalS = s.scan_interval_s || 30;
+            window._nextScanAt = (s.next_scan_in_s != null) ? Date.now() + s.next_scan_in_s * 1000 : null;
+            window._liveBalance = Number(s.balance || 0);
+            if (s.ticker && s.ticker.last != null) window._livePrice = Number(s.ticker.last);
+            computeOrderPreview();
 
             const hBal = document.getElementById('header-balance');
             const modeDisp = document.getElementById('bot-mode-display');
@@ -1605,7 +1730,7 @@
 
             window._lastExecutionIntent = s.execution_intent;
             const execBtn = document.getElementById('execute-signal-btn');
-            if (execBtn) execBtn.disabled = !s.signal || (s.signal.score || 0) < 80;
+            if (execBtn) execBtn.disabled = !s.signal || (s.signal.score || 0) < 84;
             renderSignal(s.signal);
             renderDiagnosis(s.diagnosis);
             renderBlockers(s.diagnosis, s.news);
@@ -1691,7 +1816,7 @@
                     if (marketItems.length === 0) return;
                     html += `<div class="col-span-full mt-4 border-b border-black/5 pb-2 text-[10px] font-black uppercase tracking-widest">${cat}</div>`;
                     html += marketItems.map(m => {
-                        const hot = (m.score || 0) >= 80;
+                        const hot = (m.score || 0) >= 84;
                         const initials = (m.display_symbol || m.symbol || '??').slice(0,2).toUpperCase();
                         const spark = (m.sparkline || []).map((v,i,arr) => {
                             const mn = Math.min(...arr), mx = Math.max(...arr), sp = (mx-mn)||1;
@@ -1722,29 +1847,206 @@
         }
 
         /* ------------------------------------------------------------------ *
-         *  Manual trading                                                     *
+         *  Manual trading (v2.8: live risk preview + inline confirm)          *
          * ------------------------------------------------------------------ */
-        async function manualTrade(direction) {
-            const qty = parseFloat(document.getElementById('trade-qty').value);
-            const slRaw = document.getElementById('trade-sl').value;
-            const tpRaw = document.getElementById('trade-tp').value;
-            const sl = slRaw ? parseFloat(slRaw) : null;
-            const tp = tpRaw ? parseFloat(tpRaw) : null;
-            if (!qty || qty <= 0) { alert('Enter a valid lot size.'); return; }
+        window._livePrice = null;
+        window._liveBalance = 0;
+        window._chartRange = null;
+        let pendingOrder = null;  // {direction, expires} — second click confirms
+        let pendingOrderTimer = null;
 
+        function _orderInputs() {
+            const qty = parseFloat((document.getElementById('trade-qty') || {}).value);
+            const slRaw = (document.getElementById('trade-sl') || {}).value;
+            const tpRaw = (document.getElementById('trade-tp') || {}).value;
+            return {
+                qty,
+                sl: slRaw ? parseFloat(slRaw) : null,
+                tp: tpRaw ? parseFloat(tpRaw) : null,
+            };
+        }
+
+        function computeOrderPreview() {
+            const { qty, sl, tp } = _orderInputs();
+            const entry = window._livePrice;
+            const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.innerText = v; };
+            const riskEl = document.getElementById('op-risk');
+            if (!entry || !qty || qty <= 0) {
+                setTxt('op-risk', '--'); setTxt('op-pct', '--');
+                if (qty && qty > 0 && entry) setTxt('op-fees', `${(qty * entry * 0.001).toFixed(2)}`);
+                else setTxt('op-fees', '--');
+            } else {
+                if (sl != null && !isNaN(sl)) {
+                    const risk = qty * Math.abs(entry - sl);
+                    setTxt('op-risk', risk.toFixed(2));
+                    const pct = window._liveBalance > 0 ? (risk / window._liveBalance * 100) : 0;
+                    setTxt('op-pct', `${pct.toFixed(2)}%`);
+                    if (riskEl) riskEl.className = `text-[10px] font-black tabular-nums ${pct > 2 ? 'text-red-500' : 'text-accent-green'}`;
+                    const legacy = document.getElementById('manual-risk-calc');
+                    if (legacy) legacy.innerText = risk.toFixed(2);
+                } else {
+                    setTxt('op-risk', 'auto'); setTxt('op-pct', '--');
+                }
+                setTxt('op-fees', (qty * entry * 0.001).toFixed(2));
+            }
+            drawSlTpPreview(sl, tp);
+        }
+
+        function drawSlTpPreview(sl, tp) {
+            const host = document.getElementById('sltp-preview');
+            if (!host) return;
+            const r = window._chartRange;
+            if (!r || !(r.span > 0)) { host.innerHTML = ''; return; }
+            const line = (price, color, label) => {
+                if (price == null || isNaN(price)) return '';
+                const pctTop = Math.min(96, Math.max(2, (1 - (price - r.min) / r.span) * 100));
+                return `<div style="position:absolute;left:0;right:0;top:${pctTop}%;border-top:1.5px dashed ${color};opacity:0.8">
+                            <span style="position:absolute;right:6px;top:-9px;font-size:8px;font-weight:900;color:${color};background:var(--surface-color);padding:0 4px;border-radius:4px">${label} ${escapeHtml(String(price))}</span>
+                        </div>`;
+            };
+            host.innerHTML = line(sl, '#ff3b30', 'SL') + line(tp, '#28cd41', 'TP');
+        }
+
+        function _manualOrderMsg(elId, msg) {
+            const err = document.getElementById('manual-order-error');
+            const ok = document.getElementById('manual-order-ok');
+            if (err) { err.classList.toggle('hidden', elId !== 'manual-order-error'); if (elId === 'manual-order-error') err.innerText = msg; }
+            if (ok) { ok.classList.toggle('hidden', elId !== 'manual-order-ok'); if (elId === 'manual-order-ok') ok.innerText = msg; }
+        }
+
+        function _clearPendingOrder() {
+            pendingOrder = null;
+            if (pendingOrderTimer) { clearTimeout(pendingOrderTimer); pendingOrderTimer = null; }
+            const btn = document.getElementById('confirm-order-btn');
+            if (btn) btn.classList.add('hidden');
+        }
+
+        async function manualTrade(direction) {
+            const { qty, sl, tp } = _orderInputs();
+            if (!qty || qty <= 0) { _manualOrderMsg('manual-order-error', t('qtyInvalid')); return; }
+            if (!window._livePrice) { _manualOrderMsg('manual-order-error', t('livePriceNeeded')); return; }
+            // inline risk sanity check (mirrors the server-side guard)
+            if (sl != null && !isNaN(sl) && window._liveBalance > 0) {
+                const risk = qty * Math.abs(window._livePrice - sl);
+                if (risk > window._liveBalance * 0.02) { _manualOrderMsg('manual-order-error', t('riskTooHigh')); return; }
+            }
+            // first tap arms the confirmation, second tap (or the button) sends
+            if (!pendingOrder || pendingOrder.direction !== direction) {
+                pendingOrder = { direction };
+                const btn = document.getElementById('confirm-order-btn');
+                if (btn) {
+                    btn.classList.remove('hidden');
+                    btn.innerText = `${t('confirmOrder')} — ${direction} ✓`;
+                    btn.onclick = () => manualTrade(direction);
+                }
+                _manualOrderMsg('manual-order-ok', t('tapToConfirm'));
+                pendingOrderTimer = setTimeout(_clearPendingOrder, 6000);
+                return;
+            }
+            _clearPendingOrder();
+            _manualOrderMsg(null, '');
             const res = await fetchAPI('/order', 'POST', {
-                market_id: selectedSymbol,
-                direction: direction,
-                quantity: qty,
-                sl: sl,
-                tp: tp
+                market_id: selectedSymbol, direction, quantity: qty, sl, tp,
+                order_type: currentOrderType,
+                limit_price: parseFloat((document.getElementById('trade-trigger-px') || {}).value) || null,
             });
             if (res && res.success) {
-                update();
+                _manualOrderMsg('manual-order-ok', t('orderExecutedToast'));
+                showToast(t('orderExecutedToast'));
             } else {
-                alert(`Order rejected: ${res && res.reason ? res.reason : t('unknownError')}`);
+                _manualOrderMsg('manual-order-error', `${t('orderRejectedToast')}: ${res && res.reason ? res.reason : t('unknownError')}`);
             }
             update();
+        }
+
+        /* v2.8: terminal positions + order history panels */
+        window._terminalOrders = { filter: 'all', sortKey: 'time', desc: true };
+
+        function setTerminalOrdersFilter(mode) {
+            window._terminalOrders.filter = mode;
+            document.querySelectorAll('[data-oh-filter]').forEach(b => {
+                const active = b.getAttribute('data-oh-filter') === mode;
+                b.className = `btn-premium !py-1 ${active ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-black/5'}`;
+            });
+            update();
+        }
+
+        function sortTerminalOrders(key) {
+            const st = window._terminalOrders;
+            if (st.sortKey === key) st.desc = !st.desc;
+            else { st.sortKey = key; st.desc = true; }
+            document.querySelectorAll('.oh-arrow').forEach(el => {
+                el.textContent = el.getAttribute('data-for') === key ? (st.desc ? '▾' : '▴') : '';
+            });
+            update();
+        }
+
+        async function closeTerminalPosition(symbol) {
+            const res = await fetchAPI(`/positions/${encodeURIComponent(symbol)}/close`, 'POST');
+            if (res && res.success) showToast(`${t('closePosition')} ✓ ${res.net_pnl != null ? res.net_pnl.toFixed(2) : ''}`);
+            else showToast((res && res.reason) || t('unknownError'));
+            update();
+        }
+
+        function renderTerminalPanels(s) {
+            // Live positions (close button + realized R multiple)
+            const posHost = document.getElementById('terminal-pos-list');
+            const open = (s && s.active_trades) || [];
+            if (posHost) {
+                const currency = (s.mode === 'REAL') ? '$' : '€';
+                posHost.innerHTML = open.length ? open.map(p => {
+                    const risk = Math.abs((p.entry_price || 0) - (p.sl || 0)) * Math.abs(p.quantity || 0);
+                    const rMult = risk > 0 && p.pnl != null ? (p.pnl / risk) : null;
+                    return `
+                    <div class="bg-black/5 dark:bg-white/5 rounded-xl p-3 flex items-center justify-between gap-2">
+                        <div>
+                            <p class="font-black text-xs">${escapeHtml((p.display_symbol || p.symbol || '').toUpperCase())}
+                                <span class="text-[8px] ${p.direction === 'BUY' ? 'text-green-500' : 'text-red-500'}">${escapeHtml(p.direction)}</span></p>
+                            <p class="text-[8px] text-secondary font-bold">@${fmtPrice(p.entry_price)} · ${t('realizedR')}: <span class="${(rMult || 0) >= 0 ? 'text-green-500' : 'text-red-500'}">${rMult != null ? rMult.toFixed(2) + 'R' : '--'}</span></p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-black text-xs tabular-nums ${(p.pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}">${(p.pnl || 0) >= 0 ? '+' : ''}${fmtMoney(p.pnl || 0)} ${currency}</span>
+                            <button onclick="closeTerminalPosition('${escapeHtml(p.symbol || p.market_id)}')" class="btn-premium bg-red-500/10 text-red-500 !py-1 !px-2 text-[8px] font-black uppercase">${t('closePosition')}</button>
+                        </div>
+                    </div>`;
+                }).join('') : `<p class="text-secondary italic text-[10px] col-span-full">${t('noActiveExposure')}</p>`;
+            }
+            // Order history (open + closed, filtered & sortable)
+            const body = document.getElementById('terminal-orders-body');
+            if (!body) return;
+            const rows = [];
+            open.forEach(p => rows.push({
+                time: p.open_time || '', market: (p.display_symbol || p.symbol || '').toUpperCase(),
+                direction: p.direction, entry: p.entry_price, sl: p.sl, tp: p.tp,
+                status: 'OPEN', pnl: p.pnl || 0,
+            }));
+            ((s && s.history) || []).forEach(h => rows.push({
+                time: h.close_time || h.open_time || '', market: (h.display_symbol || h.symbol || '').toUpperCase(),
+                direction: h.direction, entry: h.entry_price, sl: h.sl, tp: h.tp,
+                status: 'CLOSED', pnl: h.pnl || 0,
+            }));
+            const st = window._terminalOrders;
+            const filtered = rows.filter(r => st.filter === 'all' ||
+                (st.filter === 'open' ? r.status === 'OPEN' : r.status === 'CLOSED'));
+            const key = st.sortKey;
+            filtered.sort((a, b) => {
+                const va = a[key] ?? '', vb = b[key] ?? '';
+                const cmp = (typeof va === 'number' && typeof vb === 'number')
+                    ? va - vb : String(va).localeCompare(String(vb));
+                return st.desc ? -cmp : cmp;
+            });
+            const currency = (s.mode === 'REAL') ? '$' : '€';
+            body.innerHTML = filtered.slice(0, 30).map(r => `
+                <tr class="border-b border-black/5 dark:border-white/5">
+                    <td class="py-2 pr-3 text-secondary">${r.time ? new Date(r.time).toLocaleString() : '--'}</td>
+                    <td class="py-2 pr-3 font-black">${escapeHtml(r.market)}</td>
+                    <td class="py-2 pr-3"><span class="px-1.5 py-0.5 rounded text-[9px] font-black ${r.direction === 'BUY' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">${escapeHtml(r.direction || '--')}</span></td>
+                    <td class="py-2 pr-3 text-right tabular-nums">${fmtPrice(r.entry)}</td>
+                    <td class="py-2 pr-3 text-right tabular-nums text-red-500">${r.sl != null ? fmtPrice(r.sl) : '--'}</td>
+                    <td class="py-2 pr-3 text-right tabular-nums text-green-500">${r.tp != null ? fmtPrice(r.tp) : '--'}</td>
+                    <td class="py-2 pr-3"><span class="status-badge ${r.status === 'OPEN' ? 'bg-blue-500/10 text-accent-blue' : 'bg-slate-500/10 text-slate-500'}">${r.status === 'OPEN' ? t('statusOpen') : t('statusClosed')}</span></td>
+                    <td class="py-2 text-right font-black tabular-nums ${(r.pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}">${(r.pnl || 0) >= 0 ? '+' : ''}${fmtMoney(r.pnl || 0)} ${currency}</td>
+                </tr>`).join('') || `<tr><td colspan="8" class="py-6 text-center text-secondary italic text-[10px]">${t('noExecutions')}</td></tr>`;
         }
 
         /* ------------------------------------------------------------------ *
@@ -1771,7 +2073,7 @@
             });
             const ms = parseInt(data.min_signal_score, 10);
             const mop = parseInt(data.max_open_positions, 10);
-            if (!isNaN(ms) && (ms < 50 || ms > 99)) { showToast('min_signal_score must be 50–99'); return; }
+            if (!isNaN(ms) && (ms < 84 || ms > 99)) { showToast('min_signal_score must be 84–99'); return; }
             if (!isNaN(mop) && (mop < 1 || mop > 20)) { showToast('max_open_positions must be 1–20'); return; }
             const res = await fetchAPI('/settings', 'POST', data);
             if (res && res.success) {
@@ -1814,24 +2116,75 @@
         /* ------------------------------------------------------------------ *
          *  Brokers & wallets                                                  *
          * ------------------------------------------------------------------ */
+        /* v2.8: runtime badge styling ladder */
+        function runtimeBadge(status, isActive) {
+            const map = {
+                CONNECTED: ['bg-green-500/10 text-green-500', t('connectedBadge')],
+                DEGRADED: ['bg-orange-500/10 text-orange-500', t('degradedBadge')],
+                ERROR: ['bg-red-500/10 text-red-500', t('errorBadge')],
+                INACTIVE: ['bg-slate-500/10 text-slate-500', t('inactiveBadge')],
+            };
+            if (!isActive) status = 'INACTIVE';
+            const [cls, label] = map[status] || map.INACTIVE;
+            return `<span class="status-badge ${cls}">${label}</span>`;
+        }
+
+        async function testBrokerConnection() {
+            const form = document.getElementById('broker-form');
+            const out = document.getElementById('broker-test-result');
+            if (!form) return;
+            const fd = new FormData(form);
+            if (out) { out.classList.remove('hidden'); out.innerText = '…'; out.className = 'text-[10px] font-black text-secondary'; }
+            const res = await fetchAPI('/brokers/test', 'POST', {
+                exchange_id: fd.get('exchange_id'),
+                api_key: fd.get('api_key'),
+                api_secret: fd.get('api_secret'),
+                api_passphrase: fd.get('api_passphrase') || null,
+                sandbox: !!fd.get('sandbox'),
+            });
+            if (out) {
+                const ok = res && res.success;
+                out.innerText = ok
+                    ? `${t('connectionOk')} — ${res.latency_ms}ms${res.sandbox ? ' · SANDBOX' : ''}`
+                    : `${t('connectionFailed')}${res && res.message ? ' — ' + res.message : ''}`;
+                out.className = `text-[10px] font-black ${ok ? 'text-green-500' : 'text-red-500'}`;
+            }
+        }
+
+        function refreshBrokerFormModes() {
+            const exchange = (document.querySelector('#broker-form select[name="exchange_id"]') || {}).value || '';
+            const passphrase = document.getElementById('passphrase-field');
+            if (passphrase) passphrase.classList.toggle('hidden', !['okx', 'kucoin'].includes(exchange.toLowerCase()));
+            const sandboxToggle = document.getElementById('broker-sandbox-toggle');
+            const badge = document.getElementById('sandbox-badge');
+            if (badge && sandboxToggle) badge.classList.toggle('hidden', !sandboxToggle.checked);
+        }
+
         async function updateBrokers() {
             const data = await fetchAPI('/brokers');
             const table = document.getElementById('broker-status-table');
             if (table && data && data.brokers) {
                 if (data.brokers.length === 0) {
-                    table.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-secondary italic text-[10px]">${t('noBrokers')}</td></tr>`;
+                    table.innerHTML = `<tr><td colspan="8" class="py-6 text-center text-secondary italic text-[10px]">${t('noBrokers')}</td></tr>`;
                 } else {
-                    table.innerHTML = data.brokers.map(b => `
+                    table.innerHTML = data.brokers.map(b => {
+                        const rt = b.runtime || {};
+                        const lastSync = rt.last_sync ? new Date(rt.last_sync).toLocaleTimeString() : '—';
+                        return `
                         <tr class="border-b border-black/5 dark:border-white/5 group hover:bg-black/[0.01]">
-                            <td class="py-4 px-6"><div class="flex items-center gap-3">${LOGOS[(b.exchange_id || '').toUpperCase()] || ''}<span class="font-black">${escapeHtml(b.broker_id)}</span></div></td>
-                            <td class="py-4 px-6 font-bold text-secondary uppercase">${escapeHtml(b.exchange_id)}</td>
-                            <td class="py-4 px-6"><span class="status-badge ${b.is_active ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}">${b.is_active ? t('ready') : t('inactive')}</span></td>
-                            <td class="py-4 px-6 text-right flex gap-3 justify-end">
-                                <button onclick="toggleBroker('${escapeHtml(b.broker_id)}', ${!b.is_active})" class="text-accent-blue font-black text-[9px] uppercase tracking-widest hover:underline">${b.is_active ? t('disable') : t('enable')}</button>
+                            <td class="py-4 px-4"><div class="flex items-center gap-3">${LOGOS[(b.exchange_id || '').toUpperCase()] || ''}<span class="font-black">${escapeHtml(b.broker_id)}</span>${rt.sandbox ? '<span class="status-badge bg-orange-500/10 text-orange-500">SANDBOX</span>' : ''}</div></td>
+                            <td class="py-4 px-4 font-bold text-secondary uppercase">${escapeHtml(b.exchange_id)}</td>
+                            <td class="py-4 px-4">${runtimeBadge(rt.runtime_status, b.is_active)}</td>
+                            <td class="py-4 px-4 text-right font-black tabular-nums">${rt.balance_usdt != null ? rt.balance_usdt.toFixed(2) + ' USDT' : '—'}</td>
+                            <td class="py-4 px-4 text-right tabular-nums text-secondary">${rt.latency_ms != null ? rt.latency_ms + 'ms' : '—'}</td>
+                            <td class="py-4 px-4 text-right font-black tabular-nums">${rt.open_positions_count != null ? rt.open_positions_count : '—'}</td>
+                            <td class="py-4 px-4 text-secondary">${lastSync}</td>
+                            <td class="py-4 px-4 text-right flex gap-3 justify-end">
+                                <button onclick="toggleBroker('${escapeHtml(b.broker_id)}', ${!b.is_active})" class="text-accent-blue font-black text-[9px] uppercase tracking-widest hover:underline">${b.is_active ? t('disconnect') : t('reconnect')}</button>
                                 <button onclick="deleteBroker('${escapeHtml(b.broker_id)}')" class="text-red-500 font-black text-[9px] uppercase tracking-widest hover:underline" data-i18n="remove">${t('remove')}</button>
                             </td>
-                        </tr>
-                    `).join('');
+                        </tr>`;
+                    }).join('');
                 }
             }
             const wData = await fetchAPI('/wallets');
@@ -1841,20 +2194,91 @@
                     walletList.innerHTML = `<p class="text-secondary italic text-[10px]">${t('noWallets')}</p>`;
                 } else {
                     walletList.innerHTML = wData.wallets.map(w => `
-                        <div class="card-premium flex items-center justify-between">
-                            <div class="flex items-center gap-3">
-                                ${LOGOS[w.provider] || ''}
-                                <div>
-                                    <p class="font-black text-xs">${escapeHtml(w.wallet_id)}</p>
-                                    <p class="text-[8px] font-bold text-secondary uppercase">${escapeHtml(w.provider)} • ${escapeHtml((w.address || '').slice(0, 10))}...</p>
+                        <div class="card-premium">
+                            <div class="flex items-center justify-between gap-2">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    ${LOGOS[w.provider] || ''}
+                                    <div class="min-w-0">
+                                        <p class="font-black text-xs truncate">${escapeHtml(w.wallet_id)}
+                                            <span class="status-badge bg-blue-500/10 text-accent-blue !py-0.5 ml-1" data-i18n="watchOnlyBadge">WATCH-ONLY</span></p>
+                                        <p class="text-[8px] font-bold text-secondary uppercase">${escapeHtml(w.provider)} · ${escapeHtml(w.network || 'mainnet')}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <code class="text-[9px] font-mono font-bold text-secondary">${escapeHtml(w.address_masked || '')}</code>
+                                    <button onclick="copyWalletAddress('${escapeHtml(w.wallet_id)}','${escapeHtml(w.address || '')}', this)" class="btn-premium bg-black/5 !py-1 !px-2 text-[8px] font-black uppercase">${t('copy')}</button>
                                 </div>
                             </div>
-                            <button onclick="deleteWallet('${escapeHtml(w.wallet_id)}')" class="text-red-500 font-black text-[9px] uppercase tracking-widest hover:underline" data-i18n="remove">${t('remove')}</button>
+                            <div class="flex items-center justify-between mt-2 pt-2 border-t border-black/5 dark:border-white/5">
+                                <div class="flex items-center gap-3 text-[9px] font-bold text-secondary">
+                                    <img src="/api/wallets/${encodeURIComponent(w.wallet_id)}/qr" alt="${t('qrCode')}" class="w-14 h-14 rounded-lg border border-black/10 dark:border-white/10" onerror="this.classList.add('hidden')">
+                                    <div>
+                                        <p>${t('balanceLabel')}: <span class="font-black text-primary" data-wbal="${escapeHtml(w.wallet_id)}">—</span></p>
+                                        <p>${t('lastSync')}: <span data-wsync="${escapeHtml(w.wallet_id)}">—</span></p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2" data-wdel="${escapeHtml(w.wallet_id)}">
+                                    <button onclick="deleteWalletConfirm('${escapeHtml(w.wallet_id)}')" class="text-red-500 font-black text-[9px] uppercase tracking-widest hover:underline">${t('remove')}</button>
+                                </div>
+                            </div>
                         </div>
                     `).join('');
                 }
+                loadWalletBalances();
             }
             reapplyLanguage();
+        }
+
+        async function copyWalletAddress(id, address, btn) {
+            try {
+                await navigator.clipboard.writeText(address);
+            } catch (e) {
+                const ta = document.createElement('textarea');
+                ta.value = address; document.body.appendChild(ta); ta.select();
+                try { document.execCommand('copy'); } catch (e2) {}
+                ta.remove();
+            }
+            if (btn) { const prev = btn.innerText; btn.innerText = t('copied'); setTimeout(() => { btn.innerText = t('copy'); }, 1500); }
+        }
+
+        async function loadWalletBalances() {
+            const data = await fetchAPI('/wallet-balances');
+            if (!data || !data.wallets) return;
+            Object.entries(data.wallets).forEach(([wid, info]) => {
+                const balEl = document.querySelector(`[data-wbal="${CSS.escape(wid)}"]`);
+                if (balEl) balEl.innerText = (info && info.balance != null)
+                    ? `${Number(info.balance).toFixed(4)} ${escapeHtml(info.asset || '')}` : '—';
+                const syncEl = document.querySelector(`[data-wsync="${CSS.escape(wid)}"]`);
+                if (syncEl && data.synced_at) syncEl.innerText = new Date(data.synced_at).toLocaleTimeString();
+            });
+        }
+
+        function previewWalletAddress() {
+            const chain = (document.getElementById('wallet-chain') || {}).value || 'ethereum';
+            const addr = (document.getElementById('wallet-address-input') || {}).value || '';
+            const hint = document.getElementById('wallet-address-hint');
+            if (!hint) return;
+            if (!addr) { hint.classList.add('hidden'); return; }
+            const res = validateWalletAddress(chain, addr);
+            hint.classList.remove('hidden');
+            if (!res.ok) { hint.innerText = t('invalidAddress'); hint.className = 'text-[9px] font-black text-red-500'; }
+            else if (res.warn) { hint.innerText = t('checksumWarning'); hint.className = 'text-[9px] font-black text-orange-500'; }
+            else { hint.innerText = '✓'; hint.className = 'text-[9px] font-black text-green-500'; }
+        }
+
+        function deleteWalletConfirm(id) {
+            const host = document.querySelector(`[data-wdel="${CSS.escape(id)}"]`);
+            if (!host) return;
+            host.innerHTML = `
+                <span class="text-[9px] font-black text-red-500 uppercase">${t('deleteQ')}</span>
+                <button onclick="deleteWalletNow('${escapeHtml(id)}')" class="btn-premium bg-red-500 text-white !py-1 !px-2 text-[8px] font-black uppercase">${t('yesDelete')}</button>
+                <button onclick="updateBrokers()" class="btn-premium bg-black/5 !py-1 !px-2 text-[8px] font-black uppercase">${t('cancelAction')}</button>`;
+        }
+
+        async function deleteWalletNow(id) {
+            const res = await fetchAPI(`/wallets/${encodeURIComponent(id)}`, 'DELETE');
+            if (!res || !res.success) showToast(t('unknownError'));
+            updateBrokers();
         }
 
         async function toggleBroker(id, isActive) {
@@ -1935,31 +2359,90 @@
                 exchange_id: fd.get('exchange_id'),
                 api_key: fd.get('api_key'),
                 api_secret: fd.get('api_secret'),
-                api_passphrase: null
+                api_passphrase: fd.get('api_passphrase') || null,
+                sandbox: !!fd.get('sandbox')
             };
+            if (payload.sandbox) {
+                // sandbox is a test-only flag for the runtime; kept visible via badge
+                payload.api_passphrase = payload.api_passphrase || null;
+            }
             const res = await fetchAPI('/brokers', 'POST', payload);
-            if (res && res.success) { alert('Broker connected.'); e.target.reset(); }
-            else alert(res && res.message ? res.message : 'Connection failed (check credentials / admin key).');
+            if (res && res.success) { showToast(t('brokerSaved')); e.target.reset(); refreshBrokerFormModes(); }
+            else {
+                const out = document.getElementById('broker-test-result');
+                if (out) { out.classList.remove('hidden'); out.innerText = res && res.message ? res.message : t('connectionFailed'); out.className = 'text-[10px] font-black text-red-500'; }
+            }
             updateBrokers();
         });
 
         document.getElementById('wallet-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const fd = new FormData(e.target);
+            const chain = fd.get('chain_type') || 'ethereum';
+            const address = (fd.get('address') || '').trim();
+            const check = validateWalletAddress(chain, address);
+            if (!check.ok) { previewWalletAddress(); showToast(t('invalidAddress')); return; }
             const res = await fetchAPI('/wallets', 'POST', {
                 wallet_id: fd.get('wallet_id'),
                 provider: fd.get('provider'),
-                address: fd.get('address')
+                address: address,
+                chain_type: chain
             });
-            if (res && res.success) { alert('Wallet synchronized.'); e.target.reset(); }
-            else alert('Wallet sync failed (admin key required?).');
+            if (res && res.success) {
+                showToast(t('walletSyncOk'));
+                e.target.reset();
+                const hint = document.getElementById('wallet-address-hint');
+                if (hint) hint.classList.add('hidden');
+            } else {
+                showToast(res && res.detail ? res.detail : t('unknownError'));
+            }
             updateBrokers();
         });
+
+        /* v2.8: next-scan countdown (ticks every second between polls) */
+        function tickNextScan() {
+            const el = document.getElementById('next-scan-countdown');
+            if (!el) return;
+            if (window._nextScanAt == null) { el.innerText = '—'; return; }
+            const remain = Math.max(0, Math.round((window._nextScanAt - Date.now()) / 1000));
+            el.innerText = `${remain}${t('scanSec')}`;
+        }
+
+        function validateWalletAddress(chain, addr) {
+            addr = (addr || '').trim();
+            if (!addr) return { ok: false, warn: false };
+            if (chain === 'ethereum' || chain === 'polygon' || chain === 'bsc') {
+                if (!/^0x[0-9a-fA-F]{40}$/.test(addr))
+                    return { ok: false, warn: false };
+                const mixed = /[a-f]/.test(addr) && /[A-F]/.test(addr.slice(2));
+                return { ok: true, warn: mixed }; // mixed-case => EIP-55 checksum not verified
+            }
+            if (chain === 'solana')
+                return { ok: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr), warn: false };
+            if (chain === 'bitcoin')
+                return { ok: /^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{25,59})$/.test(addr), warn: false };
+            return { ok: addr.length >= 8, warn: false };
+        }
 
         connectWS();
         initMarkets();
         update();
         setInterval(update, 2000);
+        setInterval(tickNextScan, 1000);
+        ['trade-qty', 'trade-sl', 'trade-tp'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', computeOrderPreview);
+        });
+        const exchangeSelect = document.querySelector('#broker-form select[name="exchange_id"]');
+        if (exchangeSelect) exchangeSelect.addEventListener('change', refreshBrokerFormModes);
+        const sandboxToggle = document.getElementById('broker-sandbox-toggle');
+        if (sandboxToggle) sandboxToggle.addEventListener('change', refreshBrokerFormModes);
+        const testBtn = document.getElementById('test-connection-btn');
+        if (testBtn) testBtn.addEventListener('click', testBrokerConnection);
+        const walletAddr = document.getElementById('wallet-address-input');
+        if (walletAddr) walletAddr.addEventListener('input', previewWalletAddress);
+        const walletChain = document.getElementById('wallet-chain');
+        if (walletChain) walletChain.addEventListener('change', previewWalletAddress);
 
     </script>
 </body>

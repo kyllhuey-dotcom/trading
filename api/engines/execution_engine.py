@@ -1,7 +1,7 @@
 from .db_manager import DatabaseManager
 from .order_types import normalize_order_type, should_fill_now, serialize_pending
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import asyncio
 import time
 import uuid
@@ -348,6 +348,20 @@ class ExecutionEngine:
             still.append(pending)
         self.pending_orders = still
         return filled
+
+    def close_position(self, mode: str, symbol: str, exit_price: float) -> Optional[Dict[str, Any]]:
+        """v2.8: close ONE open position at market (user-initiated, DEMO).
+
+        Matches on market_id/symbol or display symbol. Returns the closed
+        position or None when no matching open position exists.
+        """
+        active = self.db.get_active_positions(mode)
+        for pos in active:
+            symbols = {pos.get("symbol"), pos.get("market_id"), pos.get("display_symbol")}
+            if symbol in symbols:
+                self._close_position(pos, "MANUAL_CLOSE", float(exit_price))
+                return pos
+        return None
 
     def clear_active_positions(self, mode: str) -> List[Dict[str, Any]]:
         """Emergency/exit-all: close every open position at last known price."""

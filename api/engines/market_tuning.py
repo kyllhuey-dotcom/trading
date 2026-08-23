@@ -55,44 +55,44 @@ from typing import Any, Dict, Optional
 # points* — the audit-driven overrides refine them per market.
 ASSET_CLASS_TUNING: Dict[str, Dict[str, Any]] = {
     "CRYPTO": {
-        "min_score": 80, "risk_reward": 2.5, "atr_stop_multiplier": 1.5,
+        "min_score": 84, "risk_reward": 2.5, "atr_stop_multiplier": 1.5,
         "note": "24/7 temps réel, volatilité native : RR ambitieux, sélectivité standard.",
     },
     "FOREX": {
-        "min_score": 82, "risk_reward": 2.0, "atr_stop_multiplier": 1.8,
+        "min_score": 85, "risk_reward": 2.0, "atr_stop_multiplier": 1.8,
         "note": "Spread relatif élevé vs mouvement 1m : stop plus large, RR modéré.",
     },
     "INDICES": {
-        "min_score": 82, "risk_reward": 2.0, "atr_stop_multiplier": 1.8,
+        "min_score": 85, "risk_reward": 2.0, "atr_stop_multiplier": 1.8,
         "note": "Sessions + news macro : sélectivité un peu plus haute.",
     },
     "COMMODITIES": {
-        "min_score": 83, "risk_reward": 2.2, "atr_stop_multiplier": 1.8,
+        "min_score": 86, "risk_reward": 2.2, "atr_stop_multiplier": 1.8,
         "note": "Gaps de session (or/pétrole) : stop élargi.",
     },
     "STOCKS": {
-        "min_score": 85, "risk_reward": 2.0, "atr_stop_multiplier": 1.8,
+        "min_score": 87, "risk_reward": 2.0, "atr_stop_multiplier": 1.8,
         "note": "Données différées (garde anti-scalping) : sélectivité haute.",
     },
     "FUTURES": {
-        "min_score": 85, "risk_reward": 2.2, "atr_stop_multiplier": 2.0,
+        "min_score": 87, "risk_reward": 2.2, "atr_stop_multiplier": 2.0,
         "note": "Contrats + expiration : stop large, RR modéré.",
     },
     "BONDS": {
-        "min_score": 85, "risk_reward": 1.8, "atr_stop_multiplier": 2.0,
+        "min_score": 87, "risk_reward": 1.8, "atr_stop_multiplier": 2.0,
         "note": "Mouvements lents : RR réaliste, stop large.",
     },
     "ETFS": {
-        "min_score": 85, "risk_reward": 1.8, "atr_stop_multiplier": 2.0,
+        "min_score": 87, "risk_reward": 1.8, "atr_stop_multiplier": 2.0,
         "note": "Mouvements lents : RR réaliste, stop large.",
     },
 }
 
 DEFAULT_TUNING: Dict[str, Any] = ASSET_CLASS_TUNING["CRYPTO"]
 
-# Guard rails for every per-market value (v2.7: floor raised to 80).
+# Guard rails for every per-market value (v2.8: floor raised to 84).
 BOUNDS = {
-    "min_score": (80, 99),
+    "min_score": (84, 99),
     "risk_reward": (0.5, 10.0),
     "atr_stop_multiplier": (0.1, 10.0),
     "max_cost_ratio": (0.0, 2.0),
@@ -262,7 +262,7 @@ def recommend_for_market(market_id: str, stats: Optional[Dict[str, Any]],
     from api.engines.capital_profiles import profile_overrides  # local: avoid cycle
 
     base = profile_overrides(balance) if balance else {
-        "min_signal_score": 80, "risk_reward_ratio": 2.0, "atr_stop_multiplier": 1.5,
+        "min_signal_score": 84, "risk_reward_ratio": 2.0, "atr_stop_multiplier": 1.5,
     }
     rec: Dict[str, Any] = {
         "market_id": market_id,
@@ -272,7 +272,7 @@ def recommend_for_market(market_id: str, stats: Optional[Dict[str, Any]],
         "recommend": (f"Pas encore {MIN_TRADES_FOR_VERDICT} trades fermés sur ce marché : "
                       f"continuer à observer, ne pas tuner sur du bruit."),
         "params": {
-            "min_score": int(base.get("min_signal_score", 80)),
+            "min_score": int(base.get("min_signal_score", 84)),
             "risk_reward": float(base.get("risk_reward_ratio", 2.0)),
             "atr_stop_multiplier": float(base.get("atr_stop_multiplier", 1.5)),
         },
@@ -297,7 +297,7 @@ def recommend_for_market(market_id: str, stats: Optional[Dict[str, Any]],
     if pnl < 0 or win_rate < 45:
         rec["verdict"] = "LOSING"
         rec["action"] = "QUARANTINE_OR_RAISE_SELECTIVITY"
-        params["min_score"] = int(_clamp(int(base.get("min_signal_score", 80)) + 10, *BOUNDS["min_score"]))
+        params["min_score"] = int(_clamp(int(base.get("min_signal_score", 84)) + 10, *BOUNDS["min_score"]))
         rec["recommend"] = (f"Marché perdant (win rate {win_rate:.1f}%, PnL {pnl:+.2f}) → "
                             f"relever le seuil d'entrée à {params['min_score']} "
                             f"(uniquement les setups majeurs) ou suspendre ce marché.")
@@ -318,7 +318,7 @@ def recommend_for_market(market_id: str, stats: Optional[Dict[str, Any]],
     elif win_rate >= 45 and expectancy > 0 and pnl > 0:
         rec["verdict"] = "PROFITABLE"
         rec["action"] = "KEEP_AND_SCALE"
-        params["min_score"] = int(_clamp(int(base.get("min_signal_score", 80)) - 3, *BOUNDS["min_score"]))
+        params["min_score"] = int(_clamp(int(base.get("min_signal_score", 84)) - 3, *BOUNDS["min_score"]))
         rec["recommend"] = (f"Marché sain (win rate {win_rate:.1f}%, espérance {expectancy:+.2f}) → "
                             f"maintenir, seuil d'entrée desserré à {params['min_score']} pour "
                             f"capitaliser sur l'edge, et scaler progressivement.")
@@ -344,7 +344,7 @@ def build_tuning_from_audit(per_market_stats: Optional[Dict[str, Dict[str, Any]]
         rec = recommend_for_market(market_id, stats, balance)
         if rec.get("action") in ("OBSERVE", "KEEP_AND_SCALE") and rec["verdict"] == "INSUFFICIENT_DATA":
             continue
-        base = tuning.get(market_id) or {"min_score": 80, "risk_reward": 2.0,
+        base = tuning.get(market_id) or {"min_score": 84, "risk_reward": 2.0,
                                          "atr_stop_multiplier": 1.5}
         override = {k: v for k, v in rec.get("params", {}).items()
                     if k in BOUNDS and v is not None}

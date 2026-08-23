@@ -2,6 +2,8 @@
 from typing import Any, Iterable, List, Tuple
 
 # Required crypto cascade, followed by optional keyed tradfi and keyless Yahoo.
+# v2.8: Alpha Vantage is the preferred keyed tradfi feed (before TwelveData /
+# Finnhub), Yahoo Finance remains the keyless delayed fallback (default 50).
 PRIORITY = {
     "binance": 0,
     "bybit": 1,
@@ -9,6 +11,7 @@ PRIORITY = {
     "kraken": 3,
     "coinbase": 4,
     "gate": 5,
+    "alpha_vantage": 9,
     "twelvedata": 10,
     "finnhub": 11,
 }

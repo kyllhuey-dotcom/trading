@@ -25,6 +25,58 @@ class BrokerConnector:
         self.active_adapters: Dict[str, Any] = {}
         self.web3_wallets: Dict[str, Dict[str, str]] = {}
         self.emergency_stop_active = False
+        # v2.8: per-broker runtime snapshot cache (balance/latency/status)
+        self._runtime_cache: Dict[str, Dict[str, Any]] = {}
+
+    # ------------------------------------------------------------------ #
+    # v2.8: runtime observability                                          #
+    # ------------------------------------------------------------------ #
+    async def runtime_snapshot(self, broker_id: str, ttl_s: float = 30.0) -> Dict[str, Any]:
+        """Best-effort live snapshot for one broker, cached `ttl_s` seconds.
+
+        Status ladder: CONNECTED / DEGRADED / ERROR / INACTIVE.
+        Inactive or unknown brokers never trigger network calls.
+        """
+        import asyncio
+
+        adapter = self.active_adapters.get(broker_id)
+        if adapter is None:
+            return {"runtime_status": "INACTIVE", "latency_ms": None, "balance_usdt": None,
+                    "open_positions_count": 0, "last_sync": None, "sandbox": False}
+
+        cached = self._runtime_cache.get(broker_id)
+        now = time.time()
+        if cached and now - cached.get("fetched_at", 0) < ttl_s:
+            return cached["snapshot"]
+
+        snapshot: Dict[str, Any] = {
+            "runtime_status": "DEGRADED", "latency_ms": None, "balance_usdt": None,
+            "open_positions_count": 0, "last_sync": None, "sandbox": False,
+        }
+        try:
+            snapshot["sandbox"] = bool(getattr(adapter, "sandbox", False))
+            start = time.monotonic()
+            balance = await asyncio.wait_for(adapter.get_balance("USDT"), timeout=3.0)
+            snapshot["latency_ms"] = int((time.monotonic() - start) * 1000)
+            snapshot["balance_usdt"] = round(float(balance or 0.0), 2)
+            try:
+                positions = await asyncio.wait_for(adapter.get_positions(), timeout=3.0)
+                snapshot["open_positions_count"] = len(positions or [])
+            except Exception:
+                snapshot["open_positions_count"] = 0
+            snapshot["runtime_status"] = "CONNECTED"
+            snapshot["last_sync"] = datetime.now().isoformat()
+        except Exception as exc:
+            snapshot["runtime_status"] = "ERROR"
+            snapshot["error"] = str(exc)[:120]
+        self._runtime_cache[broker_id] = {"fetched_at": now, "snapshot": snapshot}
+        return snapshot
+
+    def invalidate_runtime_cache(self, broker_id: Optional[str] = None) -> None:
+        if broker_id is None:
+            self._runtime_cache.clear()
+        else:
+            self._runtime_cache.pop(broker_id, None)
 
     def set_db_manager(self, db_manager: Any) -> None:
         self.db = db_manager

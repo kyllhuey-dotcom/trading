@@ -4,10 +4,11 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .data_health import DataHealthMonitor
 from .data_layer import DataLayer
+from .data_providers.alpha_vantage_provider import AlphaVantageProvider
 from .data_providers.binance_provider import BinanceProvider
 from .data_providers.bybit_provider import BybitProvider
 from .data_providers.coinbase_provider import CoinbaseProvider
@@ -25,7 +26,7 @@ class DataEngine:
 
     REALTIME_PROVIDERS = (
         "binance", "bybit", "okx", "kraken", "coinbase", "gate",
-        "twelvedata", "finnhub",
+        "twelvedata", "finnhub", "alpha_vantage",
     )
     CRYPTO_PROVIDERS = ("binance", "bybit", "okx", "kraken", "coinbase", "gate")
 
@@ -76,14 +77,21 @@ class DataEngine:
 
         self.twelvedata_provider = None
         self.finnhub_provider = None
+        self.alpha_vantage_provider = None
         twelve_key = os.getenv("TWELVEDATA_API_KEY", "").strip()
         finnhub_key = os.getenv("FINNHUB_API_KEY", "").strip()
+        alpha_key = os.getenv("ALPHA_VANTAGE_API_KEY", "").strip()
         if twelve_key:
             self.twelvedata_provider = TwelveDataProvider(twelve_key)
             self.layer.register_provider("twelvedata", self.twelvedata_provider)
         if finnhub_key:
             self.finnhub_provider = FinnhubProvider(finnhub_key)
             self.layer.register_provider("finnhub", self.finnhub_provider)
+        if alpha_key:
+            # v2.8: preferred free-tier realtime tradfi feed (25 req/day is
+            # enough for the periodic scan cycle; Yahoo stays the fallback).
+            self.alpha_vantage_provider = AlphaVantageProvider(alpha_key)
+            self.layer.register_provider("alpha_vantage", self.alpha_vantage_provider)
 
         self._init_symbol_map()
         self.health_monitor = DataHealthMonitor(self.layer.providers)
@@ -112,6 +120,10 @@ class DataEngine:
                     providers.setdefault("twelvedata", self._twelvedata_symbol(yahoo_symbol))
                 if yahoo_symbol and self.finnhub_provider:
                     providers.setdefault("finnhub", self._finnhub_symbol(yahoo_symbol, info))
+                if yahoo_symbol and self.alpha_vantage_provider:
+                    av_symbol = self._alpha_vantage_symbol(yahoo_symbol, info)
+                    if av_symbol:
+                        providers.setdefault("alpha_vantage", av_symbol)
 
             for provider_id in providers:
                 if provider_id in self.layer.providers:
@@ -131,6 +143,20 @@ class DataEngine:
             raw = symbol[:-2]
             return f"OANDA:{raw[:3]}_{raw[3:6]}"
         return symbol
+
+    @staticmethod
+    def _alpha_vantage_symbol(symbol: str, info: Dict[str, Any]) -> Optional[str]:
+        """Map Yahoo symbols to Alpha Vantage (free tier: forex + US equities).
+
+        Returns None for asset classes the free tier does not cover (indices,
+        commodities, futures, bonds) so those markets stay on Yahoo only.
+        """
+        asset_class = info.get("asset_class")
+        if asset_class == "FOREX":
+            return symbol  # provider parses 'EURUSD=X' itself
+        if asset_class in ("STOCKS", "ETFS") and symbol.isalpha() and symbol.isupper():
+            return symbol  # plain US tickers like 'AAPL'
+        return None
 
     async def prepare_scan_cycle(self, market_ids: List[str]) -> None:
         """Prime each Yahoo asset class once before its scan phase."""

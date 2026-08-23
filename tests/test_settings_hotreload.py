@@ -16,11 +16,11 @@ def test_clamp_invalid_language():
 def test_ensure_defaults_no_overwrite():
     out = ensure_defaults({"max_open_positions": "3"})
     assert out["max_open_positions"] == "3"
-    assert out["min_signal_score"] == "80" or "min_signal_score" in out
+    assert out["min_signal_score"] == "84" or "min_signal_score" in out
 
 
 def test_post_applies_live():
-    # v2.7: min_signal_score floor is 80, so 77 gets clamped to 80
+    # v2.8: min_signal_score floor is 84, values below are clamped to 84
     r = client.post("/api/settings", json={"min_signal_score": "85", "max_open_positions": "12"})
     assert r.status_code == 200
     body = r.json()
@@ -29,14 +29,14 @@ def test_post_applies_live():
     assert signal_engine.min_score == 85
     assert risk_engine.max_open_positions == 12
     # restore shared state
-    client.post("/api/settings", json={"min_signal_score": "80", "max_open_positions": "10"})
+    client.post("/api/settings", json={"min_signal_score": "84", "max_open_positions": "10"})
     settings_provider.invalidate()
     settings_provider.apply()
-    assert signal_engine.min_score == 80
+    assert signal_engine.min_score == 84
     assert risk_engine.max_open_positions == 10
 
 
 def test_html_banner_validation():
     html = open("public/index.html", encoding="utf-8").read()
     assert "settings-live-banner" in html
-    assert "min_signal_score must be 50" in html or "50–99" in html
+    assert "min_signal_score must be 84" in html or "84–99" in html

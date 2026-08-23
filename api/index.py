@@ -7,7 +7,7 @@ v2.0 — Full API contract, authentication, live settings, real broker execution
 """
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, Depends, Body, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
 
@@ -49,7 +49,6 @@ from api.engines import market_tuning as market_tuning_engine
 from api.engines.constants import (
     AUTO_EXECUTION_SCORE_FLOOR,
     DEFAULT_MAX_NEW_POSITIONS_PER_SCAN,
-    DEFAULT_OPPORTUNITY_TTL_S,
 )
 from api.engines.opportunity_ranker import rank_opportunities
 from api.engines.opportunity_tracker import get_tracker
@@ -123,7 +122,7 @@ data_engine = DataEngine()
 analysis_engine = AnalysisEngine()
 news_engine = NewsEngine(db_manager=db_manager)
 news_aggregator = NewsAggregator()
-signal_engine = SignalEngine(min_score=80)
+signal_engine = SignalEngine(min_score=AUTO_EXECUTION_SCORE_FLOOR)
 risk_engine = RiskEngine()
 portfolio_engine = PortfolioEngine(db_manager=db_manager)
 notification_engine = NotificationEngine()
@@ -192,7 +191,7 @@ class SettingsProvider:
         s = self.get()
         risk_engine.apply_settings(s)
         try:
-            signal_engine.set_min_score(int(float(s.get("min_signal_score", 80))))
+            signal_engine.set_min_score(int(float(s.get("min_signal_score", AUTO_EXECUTION_SCORE_FLOOR))))
         except ValueError:
             pass
         # LOT P: wire the profit levers that were previously dead settings
@@ -446,7 +445,7 @@ async def tick_scanner(force: bool = False):
         bot_state["engine_stats"].update({
             "markets": len(results),
             "scanned": len([r for r in results if r.get("status") == "LIVE"]),
-            "signals": len([r for r in results if r.get("score", 0) >= 80]),
+            "signals": len([r for r in results if r.get("score", 0) >= AUTO_EXECUTION_SCORE_FLOOR]),
             "tradable": len([r for r in results if r.get("tradable")]),
         })
         bot_state["best_setups"] = prepare_radar(results)[:5]
@@ -457,9 +456,9 @@ async def tick_scanner(force: bool = False):
         running = bot_state["is_running"]
 
     try:
-        min_score = float(settings.get("min_signal_score", 80))
+        min_score = float(settings.get("min_signal_score", AUTO_EXECUTION_SCORE_FLOOR))
     except ValueError:
-        min_score = 80.0
+        min_score = float(AUTO_EXECUTION_SCORE_FLOOR)
     # v2.7: enforce the inviolable floor
     min_score = max(float(AUTO_EXECUTION_SCORE_FLOOR), min_score)
     
@@ -495,112 +494,147 @@ async def tick_scanner(force: bool = False):
     if not armed:
         return
 
-    # v2.7 P0-2: Execute only the primary opportunity by default
-    primary_opp = opportunity_result.get("primary_opportunity")
-    if not primary_opp:
+    # v2.8: simultaneous executions — the top-N ranked opportunities that each
+    # pass every gate individually may be executed in the same scan cycle.
+    # The idempotence tracker protects against duplicates, the correlation
+    # guard blocks stacking two positions on the same underlying, and the
+    # scan loop keeps running afterwards (continuous trading).
+    try:
+        max_new = int(float(settings.get("max_new_positions_per_scan",
+                                         DEFAULT_MAX_NEW_POSITIONS_PER_SCAN)))
+    except (TypeError, ValueError):
+        max_new = DEFAULT_MAX_NEW_POSITIONS_PER_SCAN
+    max_new = max(1, min(3, max_new))
+    candidates_to_execute = (opportunity_result.get("all_candidates") or [])[:max_new]
+    if not candidates_to_execute:
         return
-    
-    # v2.7 P0-3: Check opportunity TTL and idempotence
+
     tracker = get_tracker()
-    opp_id = primary_opp.get("opportunity_id")
-    expires_at = primary_opp.get("expires_at", 0)
-    
-    if tracker.is_expired(expires_at):
-        logger.info(f"Opportunity {opp_id} expired — skipping execution")
-        return
-    
-    acquire_result = tracker.try_acquire(opp_id)
-    if not acquire_result.get("allowed"):
-        logger.info(f"Opportunity {opp_id} not acquired: {acquire_result.get('reason')}")
-        return
+    executed_symbols: list = []
+    # The ranked payload intentionally holds metrics, not every raw scan flag —
+    # cross-check execution-critical flags (e.g. `tradable`) against the raw
+    # scan rows the ranking was built from.
+    raw_by_symbol = {r.get("symbol"): r for r in (results or [])}
 
-    res = primary_opp
-    if not res.get("tradable"):
-        tracker.mark_failed(opp_id, "NOT_TRADABLE")
-        return
-    if len(active) >= risk_engine.max_open_positions:
-        tracker.mark_failed(opp_id, "SLOTS_FULL")
-        return
-    if any(p["symbol"] == res["symbol"] for p in active):
-        tracker.mark_failed(opp_id, "POSITION_ALREADY_OPEN")
-        return
+    for res in candidates_to_execute:
+        # Stop when the portfolio is full — each candidate is gated individually.
+        if len(active) >= risk_engine.max_open_positions:
+            break
 
-    sig = res.get("signal_data") or {}
-    if not sig.get("market_id") or not sig.get("entry"):
-        tracker.mark_failed(opp_id, "MISSING_SIGNAL_DATA")
-        return
+        # v2.7 P0-3: opportunity TTL + idempotence single-flight.
+        opp_id = res.get("opportunity_id")
+        expires_at = res.get("expires_at", 0)
+        if tracker.is_expired(expires_at):
+            logger.info(f"Opportunity {opp_id} expired — skipping execution")
+            continue
+        acquire_result = tracker.try_acquire(opp_id)
+        if not acquire_result.get("allowed"):
+            logger.info(f"Opportunity {opp_id} not acquired: {acquire_result.get('reason')}")
+            continue
 
-    # v2.7 P0-3: Revalidate signal before execution (re-fetch ticker/orderbook)
-    info = data_engine.universe.get_info(res["symbol"]) or {}
-    ticker = await data_engine.fetch_ticker(res["symbol"])
-    if not ticker:
-        tracker.mark_failed(opp_id, "NO_TICKER")
-        return
-    if not data_engine.is_fresh(ticker, info.get("asset_class", "CRYPTO")):
-        logger.warning(f"Stale ticker for {res['symbol']} — order skipped")
-        tracker.mark_failed(opp_id, "STALE_DATA")
-        return
+        raw = raw_by_symbol.get(res.get("symbol")) or {}
+        if not res.get("tradable", raw.get("tradable")):
+            tracker.mark_failed(opp_id, "NOT_TRADABLE")
+            continue
+        if any(p["symbol"] == res["symbol"] for p in active):
+            tracker.mark_failed(opp_id, "POSITION_ALREADY_OPEN")
+            continue
 
-    # LOT F: never scalp delayed (non-realtime) data
-    allow_delayed = settings.get("allow_delayed_data_trading", "false").lower() == "true"
-    scalp_guard = data_engine.check_scalping_allowed(res["symbol"], allow_delayed)
-    if not scalp_guard["allowed"]:
-        db_manager.archive_signal(sig, "BLOCKED", scalp_guard["reason"])
-        metrics_engine.record_signal_blocked(sig.get("strategy", "structure"))
-        tracker.mark_failed(opp_id, scalp_guard["reason"])
-        return
+        # v2.8: correlation guard — never two simultaneous positions on the
+        # same underlying asset (e.g. btc_usdt + btc_eur), even within one scan.
+        corr = risk_engine.check_correlation(res["symbol"], active)
+        if not corr.get("allowed"):
+            tracker.mark_failed(opp_id, corr.get("reason") or "CORRELATION_RISK")
+            logger.info(f"Correlation guard blocked {res['symbol']}: {corr.get('reason')}")
+            continue
 
-    # v2.7 P0-4: Compute and validate costs
-    costs = compute_trade_costs(
-        entry=sig["entry"], sl=sig["sl"], tp=sig["tp"],
-        fee_pct=float(settings.get("fee_pct", 0.05)),
-        slippage_pct=float(settings.get("sim_slippage_pct", 0.05)),
-        spread=float(ticker.get("spread", 0) or 0),
-    )
-    cost_gate = costs_pass_gate(costs)
-    if not cost_gate.get("allowed"):
-        db_manager.archive_signal(sig, "BLOCKED", cost_gate.get("reason", "cost"))
-        tracker.mark_failed(opp_id, cost_gate.get("reason"))
-        logger.warning(f"Cost gate failed for {res['symbol']}: {cost_gate.get('reason')}")
-        return
+        sig = res.get("signal_data") or {}
+        if not sig.get("market_id") or not sig.get("entry"):
+            tracker.mark_failed(opp_id, "MISSING_SIGNAL_DATA")
+            continue
 
-    risk_data = risk_engine.calculate_position_size(
-        balance, sig["entry"], sig["sl"], sig["direction"],
-        symbol=res["symbol"], active_positions=active,
-        market_info=info)
-    strat = sig.get("strategy", "structure")
-    if not risk_data.get("allowed"):
-        db_manager.archive_signal(sig, "BLOCKED", risk_data.get("reason") or "risk")
-        metrics_engine.record_signal_blocked(strat)
-        tracker.mark_failed(opp_id, risk_data.get("reason"))
-        return
+        # v2.7 P0-3: Revalidate signal before execution (re-fetch ticker/orderbook)
+        info = data_engine.universe.get_info(res["symbol"]) or {}
+        ticker = await data_engine.fetch_ticker(res["symbol"])
+        if not ticker:
+            tracker.mark_failed(opp_id, "NO_TICKER")
+            continue
+        if not data_engine.is_fresh(ticker, info.get("asset_class", "CRYPTO")):
+            logger.warning(f"Stale ticker for {res['symbol']} — order skipped")
+            tracker.mark_failed(opp_id, "STALE_DATA")
+            continue
 
-    exec_start = time.time()
-    exec_res = await execution_router.execute(mode, sig, risk_data, ticker)
-    exec_latency_ms = (time.time() - exec_start) * 1000.0
-    if exec_res.get("success"):
-        metrics_state["total_trades"] += 1
-        metrics_state["signals_by_strategy"][strat] = metrics_state["signals_by_strategy"].get(strat, 0) + 1
-        metrics_engine.record_execution(strat, mode, success=True, latency_ms=exec_latency_ms)
-        metrics_engine.record_institutional("EXECUTING", n_active=len(active) + 1, trades_above=1)
-        db_manager.archive_signal(sig, "EXECUTED", "")
-        tracker.mark_executed(opp_id, exec_res)
-        structured_log(logger, logging.INFO, "ORDER_EXECUTED",
-                       event="order_executed", symbol=res["symbol"], mode=mode,
-                       strategy=strat, latency_ms=round(exec_latency_ms, 2),
-                       opportunity_id=opp_id)
-        if exec_res.get("position"):
-            active.append(exec_res["position"])
-        asyncio.create_task(notification_engine.notify("ORDER_OPEN", {
-            "symbol": res["symbol"],
-            "entry_price": sig["entry"],
-            "quantity": risk_data["quantity"],
-        }))
-    else:
-        metrics_engine.record_execution(strat, mode, success=False, latency_ms=exec_latency_ms)
-        db_manager.archive_signal(sig, "BLOCKED", exec_res.get("reason") or "execution")
-        tracker.mark_failed(opp_id, exec_res.get("reason"))
-        logger.warning(f"Execution blocked for {res['symbol']}: {exec_res.get('reason')}")
+        # LOT F: never scalp delayed (non-realtime) data
+        allow_delayed = settings.get("allow_delayed_data_trading", "false").lower() == "true"
+        scalp_guard = data_engine.check_scalping_allowed(res["symbol"], allow_delayed)
+        if not scalp_guard["allowed"]:
+            db_manager.archive_signal(sig, "BLOCKED", scalp_guard["reason"])
+            metrics_engine.record_signal_blocked(sig.get("strategy", "structure"))
+            tracker.mark_failed(opp_id, scalp_guard["reason"])
+            continue
+
+        # v2.7 P0-4: Compute and validate costs
+        costs = compute_trade_costs(
+            entry=sig["entry"], sl=sig["sl"], tp=sig["tp"],
+            fee_pct=float(settings.get("fee_pct", 0.05)),
+            slippage_pct=float(settings.get("sim_slippage_pct", 0.05)),
+            spread=float(ticker.get("spread", 0) or 0),
+        )
+        cost_gate = costs_pass_gate(costs)
+        if not cost_gate.get("allowed"):
+            db_manager.archive_signal(sig, "BLOCKED", cost_gate.get("reason", "cost"))
+            tracker.mark_failed(opp_id, cost_gate.get("reason"))
+            logger.warning(f"Cost gate failed for {res['symbol']}: {cost_gate.get('reason')}")
+            continue
+
+        risk_data = risk_engine.calculate_position_size(
+            balance, sig["entry"], sig["sl"], sig["direction"],
+            symbol=res["symbol"], active_positions=active,
+            market_info=info)
+        strat = sig.get("strategy", "structure")
+        if not risk_data.get("allowed"):
+            db_manager.archive_signal(sig, "BLOCKED", risk_data.get("reason") or "risk")
+            metrics_engine.record_signal_blocked(strat)
+            tracker.mark_failed(opp_id, risk_data.get("reason"))
+            continue
+
+        exec_start = time.time()
+        exec_res = await execution_router.execute(mode, sig, risk_data, ticker)
+        exec_latency_ms = (time.time() - exec_start) * 1000.0
+        if exec_res.get("success"):
+            metrics_state["total_trades"] += 1
+            metrics_state["signals_by_strategy"][strat] = metrics_state["signals_by_strategy"].get(strat, 0) + 1
+            metrics_engine.record_execution(strat, mode, success=True, latency_ms=exec_latency_ms)
+            metrics_engine.record_institutional("EXECUTING", n_active=len(active) + 1, trades_above=1)
+            db_manager.archive_signal(sig, "EXECUTED", "")
+            tracker.mark_executed(opp_id, exec_res)
+            structured_log(logger, logging.INFO, "ORDER_EXECUTED",
+                           event="order_executed", symbol=res["symbol"], mode=mode,
+                           strategy=strat, latency_ms=round(exec_latency_ms, 2),
+                           opportunity_id=opp_id)
+            if exec_res.get("position"):
+                active.append(exec_res["position"])
+            executed_symbols.append(res["symbol"])
+            asyncio.create_task(notification_engine.notify("ORDER_OPEN", {
+                "symbol": res["symbol"],
+                "entry_price": sig["entry"],
+                "quantity": risk_data["quantity"],
+            }))
+        else:
+            metrics_engine.record_execution(strat, mode, success=False, latency_ms=exec_latency_ms)
+            db_manager.archive_signal(sig, "BLOCKED", exec_res.get("reason") or "execution")
+            tracker.mark_failed(opp_id, exec_res.get("reason"))
+            logger.warning(f"Execution blocked for {res['symbol']}: {exec_res.get('reason')}")
+
+    if executed_symbols:
+        # v2.8: publish the newly opened positions immediately (the DB-fed
+        # management tick remains authoritative every second), then keep
+        # scanning — the loop never stops while is_running && armed.
+        async with state_lock:
+            bot_state["active_trades"] = list(active)
+        structured_log(logger, logging.INFO, "SCAN_CYCLE_EXECUTIONS",
+                       event="scan_cycle_executions", count=len(executed_symbols),
+                       symbols=",".join(executed_symbols), mode=mode)
 
 
 async def tick_management():
@@ -828,11 +862,45 @@ async def healthz():
     }
 
 
+def _count_trades_today(mode: str) -> int:
+    """v2.8: number of trades executed today (opened OR closed today)."""
+    today = datetime.now().date().isoformat()
+    seen: set = set()
+    try:
+        for t in db_manager.get_history(mode=mode, limit=1000):
+            ts_open = str(t.get("open_time") or "")
+            ts_close = str(t.get("close_time") or "")
+            if ts_open.startswith(today) or ts_close.startswith(today):
+                seen.add(str(t.get("id") or ts_open))
+        for p in bot_state.get("active_trades") or []:
+            ts_open = str(p.get("open_time") or "")
+            if ts_open.startswith(today):
+                seen.add(str(p.get("id") or p.get("symbol") or ts_open))
+    except Exception:
+        pass
+    return len(seen)
+
+
+def _next_scan_in_s(settings: Dict[str, str]) -> tuple:
+    """v2.8: (scan_interval_s, next_scan_in_s or None when paused)."""
+    try:
+        interval = max(5, int(float(settings.get("scan_interval_seconds", "30"))))
+    except (TypeError, ValueError):
+        interval = 30
+    last_scan = bot_state.get("last_scan_completed_at")
+    if bot_state["is_running"] and last_scan:
+        remaining = max(0, int(round(interval - (time.time() - last_scan))))
+        return interval, min(remaining, interval)
+    return interval, None
+
+
 @app.get("/api/status")
 async def get_status(market_id: str = "btc_usdt"):
     bot_state["selected_market"] = market_id
     snapshot = await get_market_snapshot(market_id)
     mode = bot_state["mode"]
+    # v2.8: continuous-trading indicators for the UI badge strip.
+    scan_interval_s, next_scan_in_s = _next_scan_in_s(settings_provider.get())
     return {
         "status": state_machine.current_state.value,
         "status_display": snapshot["status_display"],
@@ -874,6 +942,11 @@ async def get_status(market_id: str = "btc_usdt"):
         "language": bot_state.get("language", "en"),
         "capital_profile": bot_state.get("capital_profile"),
         "opportunity_ranking": bot_state.get("opportunity_ranking"),
+        # v2.8: continuous-trading strip (badge, daily executions, next scan)
+        "trading_active": bool(bot_state["is_running"] and bot_state["armed"]),
+        "trades_today": _count_trades_today(mode),
+        "scan_interval_s": scan_interval_s,
+        "next_scan_in_s": next_scan_in_s,
     }
 
 
@@ -1175,10 +1248,60 @@ async def demo_balance(body: Dict[str, Any] = Body(...)):
 # ---- Brokers -------------------------------------------------------------- #
 @app.get("/api/brokers")
 async def get_brokers():
+    # v2.8: enrich each broker row with its runtime snapshot (cached 30 s,
+    # network calls only for active brokers, fail-safe to INACTIVE/ERROR).
+    brokers = db_manager.get_broker_public_list()
+    for broker in brokers:
+        try:
+            broker["runtime"] = await broker_connector.runtime_snapshot(
+                str(broker.get("broker_id")))
+        except Exception:
+            broker["runtime"] = {"runtime_status": "ERROR"}
     return {
-        "brokers": db_manager.get_broker_public_list(),
+        "brokers": brokers,
         "status": broker_connector.get_status(),
     }
+
+
+@app.post("/api/brokers/test", dependencies=[Depends(require_admin)])
+async def test_broker_connection_api(body: Dict[str, Any] = Body(...)):
+    """v2.8: dry-run a broker connection WITHOUT persisting anything.
+
+    Lets the UI validate credentials (and measure latency) before the user
+    saves the broker. A sandbox toggle is honoured exactly like at save time.
+    """
+    exchange_id = str(body.get("exchange_id", "")).strip()
+    api_key = str(body.get("api_key", "")).strip()
+    api_secret = str(body.get("api_secret", "")).strip()
+    passphrase = body.get("api_passphrase") or None
+    sandbox = bool(body.get("sandbox", False))
+
+    if not exchange_id or not api_key or not api_secret:
+        raise HTTPException(400, "exchange_id, api_key and api_secret are required")
+
+    import os as _os
+    from api.engines.broker_adapters.ccxt_adapter import CCXTAdapter
+    from api.engines.broker_adapters.primexbt_adapter import PrimeXBTAdapter
+
+    _os.environ["BROKER_SANDBOX"] = "true" if sandbox else "false"
+    if exchange_id.upper() == "PRIMEXBT":
+        adapter = PrimeXBTAdapter(api_key, api_secret, passphrase)
+    else:
+        adapter = CCXTAdapter(exchange_id, api_key, api_secret, passphrase)
+
+    start = time.monotonic()
+    connected = await adapter.connect()
+    latency_ms = int((time.monotonic() - start) * 1000)
+    try:
+        await adapter.close()
+    except Exception:
+        pass
+    db_manager.log_audit("INFO", "BROKER_CONNECTION_TEST",
+                         f"Connection test for {exchange_id} (sandbox={sandbox}): "
+                         f"{'OK' if connected else 'FAILED'} in {latency_ms}ms")
+    return {"success": bool(connected), "exchange_id": exchange_id,
+            "latency_ms": latency_ms, "sandbox": sandbox,
+            "message": "Connection OK" if connected else "Could not connect with these credentials"}
 
 
 @app.post("/api/brokers", dependencies=[Depends(require_admin)])
@@ -1193,6 +1316,7 @@ async def add_broker_api(body: Dict[str, Any] = Body(...)):
         raise HTTPException(400, "broker_id, exchange_id, api_key and api_secret are required")
 
     connected = await broker_connector.add_broker(broker_id, exchange_id, api_key, api_secret, passphrase)
+    broker_connector.invalidate_runtime_cache(broker_id)
     if connected:
         db_manager.save_broker_config(broker_id, exchange_id, api_key, api_secret, passphrase)
         db_manager.log_audit("INFO", "BROKER_ADDED", f"Broker '{broker_id}' ({exchange_id}) connected")
@@ -1207,6 +1331,7 @@ async def add_broker_api(body: Dict[str, Any] = Body(...)):
 async def toggle_broker_api(broker_id: str, body: Dict[str, Any] = Body(...)):
     is_active = bool(body.get("is_active", True))
     db_manager.set_broker_active(broker_id, is_active)
+    broker_connector.invalidate_runtime_cache(broker_id)
     if is_active:
         configs = [c for c in db_manager.get_all_broker_configs() if c["broker_id"] == broker_id]
         if configs:
@@ -1221,8 +1346,41 @@ async def toggle_broker_api(broker_id: str, body: Dict[str, Any] = Body(...)):
 @app.delete("/api/brokers/{broker_id}", dependencies=[Depends(require_admin)])
 async def delete_broker_api(broker_id: str):
     await broker_connector.remove_broker(broker_id)
+    broker_connector.invalidate_runtime_cache(broker_id)
     deleted = db_manager.delete_broker(broker_id)
     return {"success": deleted, "broker_id": broker_id}
+
+
+# ---- v2.8: per-position manual close (DEMO) ------------------------------- #
+@app.post("/api/positions/{market_id}/close", dependencies=[Depends(require_admin)])
+async def close_position_api(market_id: str):
+    """Close ONE open position at market (user-initiated).
+
+    DEMO mode closes locally through the demo execution engine. REAL mode
+    never fake-closes locally (positions are reconciled with the broker) —
+    use the emergency stop to flatten REAL exposure.
+    """
+    mode = bot_state["mode"]
+    active = [p for p in (bot_state.get("active_trades") or [])
+              if market_id in (p.get("symbol"), p.get("market_id"), p.get("display_symbol"))]
+    if not active:
+        return {"success": False, "reason": f"No open position for {market_id}"}
+    if mode != "DEMO":
+        return {"success": False,
+                "reason": "REAL mode: positions are closed on the broker "
+                          "(use Emergency Stop to flatten all exposure)."}
+    ticker = await data_engine.fetch_ticker(market_id)
+    if not ticker or not ticker.get("last"):
+        return {"success": False, "reason": "No market data available to price the exit"}
+    closed = demo_execution.close_position(mode, market_id, float(ticker["last"]))
+    if not closed:
+        return {"success": False, "reason": "Position not found in the DEMO engine"}
+    bot_state["active_trades"] = demo_execution.active_positions
+    db_manager.log_audit("INFO", "MANUAL_CLOSE",
+                         f"Position {market_id} closed at market ({ticker['last']})")
+    return {"success": True, "symbol": market_id,
+            "exit_price": float(ticker["last"]),
+            "pnl": closed.get("pnl"), "net_pnl": closed.get("net_pnl")}
 
 
 # ---- Web3 wallets (watch-only) -------------------------------------------- #
@@ -1260,9 +1418,10 @@ async def add_wallet_api(body: Dict[str, Any] = Body(...)):
         raise HTTPException(400, "wallet_id and address are required")
     
     # Basic address validation per chain type
-    if chain_type == "ethereum":
+    # v2.8: polygon/bsc share the EVM 0x format like ethereum
+    if chain_type in ("ethereum", "polygon", "bsc"):
         if not (address.startswith("0x") and len(address) == 42):
-            raise HTTPException(400, "Invalid Ethereum address format (must be 0x + 40 hex chars)")
+            raise HTTPException(400, "Invalid EVM address format (must be 0x + 40 hex chars)")
     elif chain_type == "solana":
         if not (32 <= len(address) <= 44 and address.isalnum()):
             raise HTTPException(400, "Invalid Solana address format (base58, 32-44 chars)")
@@ -1286,6 +1445,44 @@ async def delete_wallet_api(wallet_id: str):
     broker_connector.web3_wallets.pop(wallet_id, None)
     deleted = db_manager.delete_wallet(wallet_id)
     return {"success": deleted, "wallet_id": wallet_id}
+
+
+@app.get("/api/wallet-balances")
+async def get_wallet_balances():
+    """v2.8: best-effort watch-only wallet balances (public chain APIs).
+
+    Every wallet stays watch-only; when a chain API is unreachable the entry
+    simply reports balance=None so the UI can show '—'."""
+    try:
+        import asyncio
+        balances = await asyncio.wait_for(broker_connector.get_all_balances(), timeout=10.0)
+    except Exception:
+        balances = {}
+    wallets = {wid: data for wid, data in (balances or {}).items()
+               if (data or {}).get("type") == "WEB3"}
+    return {"wallets": wallets, "synced_at": datetime.now().isoformat()}
+
+
+@app.get("/api/wallets/{wallet_id}/qr")
+async def get_wallet_qr(wallet_id: str):
+    """v2.8: QR code (SVG) of a watch-only address, generated server-side.
+
+    No runtime CDN: `segno` (pure Python) renders the SVG locally."""
+    wallets = {w.get("wallet_id"): w for w in db_manager.get_wallets()}
+    wallet = wallets.get(wallet_id)
+    if not wallet:
+        raise HTTPException(404, f"Unknown wallet: {wallet_id}")
+    try:
+        import io
+        import segno
+    except ImportError:
+        raise HTTPException(503, "QR generation requires the 'segno' package") from None
+    buffer = io.BytesIO()
+    segno.make(str(wallet.get("address", "")), error="m").save(
+        buffer, kind="svg", xmldecl=False, svgclass=None,
+        lineclass=None, dark="#1d1d1f", light=None, border=2, scale=6)
+    return Response(content=buffer.getvalue().decode("utf-8"), media_type="image/svg+xml",
+                    headers={"Cache-Control": "no-store"})
 
 
 # ---- Performance, metrics, news, health, backtest, diagnosis --------------- #
@@ -1437,9 +1634,9 @@ async def _execute_signal_for_market(market_id: str) -> Dict[str, Any]:
         raise HTTPException(400, f"Unknown market_id: {market_id}")
     settings = settings_provider.get()
     try:
-        min_score = float(settings.get("min_signal_score", 80))
+        min_score = float(settings.get("min_signal_score", AUTO_EXECUTION_SCORE_FLOOR))
     except ValueError:
-        min_score = 80.0
+        min_score = float(AUTO_EXECUTION_SCORE_FLOOR)
     # v2.7: enforce the inviolable floor regardless of settings
     min_score = max(float(AUTO_EXECUTION_SCORE_FLOOR), min_score)
     scan_hit = next((a for a in (bot_state.get("latest_scan") or []) if a.get("symbol") == market_id), None)
@@ -1507,7 +1704,6 @@ async def get_opportunities():
 @app.get("/api/broker-capabilities")
 async def get_broker_capabilities():
     """v2.7 P1-9: Returns broker capabilities from the catalogue."""
-    status = broker_connector.get_status()
     brokers = db_manager.get_broker_public_list()
     capabilities = []
     for broker in brokers:
