@@ -158,7 +158,15 @@ async def test_news_engine_check_trading_allowed(monkeypatch, fixed_clock):
     monkeypatch.setattr(engine.provider, "fetch_events", fake_fetch_empty)
     res_empty = await engine.check_trading_allowed(asset_class="CRYPTO")
     assert res_empty["status"] == "DATA_UNAVAILABLE"
-    assert res_empty["trading_allowed"] is False  # fail-safe
+    # P0-1: default policy block_tradfi_only — crypto keeps trading on outage
+    assert res_empty["trading_allowed"] is True
+    assert res_empty["news_ok"] is True
+
+    # Explicit block_all keeps the historical fail-safe behaviour on crypto.
+    engine.set_unavailable_policy("block_all")
+    res_block_all = await engine.check_trading_allowed(asset_class="CRYPTO")
+    assert res_block_all["trading_allowed"] is False
+    assert res_block_all["news_ok"] is False
 
 
 # --------------------------------------------------------------------------- #

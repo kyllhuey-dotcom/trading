@@ -333,16 +333,18 @@ class DataEngine:
 
     def is_fresh(self, ticker: Dict[str, Any], asset_class: str) -> bool:
         """Check data freshness for execution.
-        
-        P0: Crypto execution freshness is 15s (not 5s) to accommodate exchange
-        timestamps that arrive 6-15s after the close. Tradfi live is 60s.
-        Delayed data is always stale for auto-trade.
+
+        P1 (2026-08-23): crypto execution freshness is 30s (was 15s) —
+        exchange timestamps routinely arrive more than 15s after the close,
+        which rejected perfectly live quotes as stale. Tradfi live stays 60s.
+        Delayed data (Yahoo) is never auto-tradable regardless of freshness:
+        check_scalping_allowed keeps refusing non-realtime sources.
         """
         if not ticker or "timestamp" not in ticker:
             return False
         age_ms = int(datetime.now().timestamp() * 1000) - ticker["timestamp"]
         if asset_class == "CRYPTO":
-            return age_ms < 15000  # 15s for crypto exchanges
+            return age_ms < 30000  # 30s for crypto exchanges
         return age_ms < 60000  # 60s for tradfi live
 
     async def shutdown(self) -> None:

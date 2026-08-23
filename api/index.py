@@ -505,9 +505,91 @@ def _scanner_payload(sort="score", order="desc", filter_mode="all", live_only=Fa
         "block_reason": bot_state.get("last_block_reason"),
         "last_block_reason": bot_state.get("last_block_reason"),
         "excluded": (bot_state.get("opportunity_ranking") or {}).get("excluded", []),
-        "news_unavailable_policy": settings_provider.get().get("news_unavailable_policy", "block_all"),
+        "news_unavailable_policy": settings_provider.get().get(
+            "news_unavailable_policy", "block_tradfi_only"),
         **summary,
     }
+
+
+# P0-3 (2026-08-23): execution observability. When an armed + running scan
+# executes nothing, publish the REAL blocking reason instead of leaving
+# last_block_reason permanently None (or stale) in production.
+_BLOCK_REASON_ALIASES = {
+    "SCORE_BELOW_FLOOR": "SCORE_BELOW_84",
+    "NO_SIGNAL_DETECTED": "NO_RSI_SIGNAL",
+    "DATA_STALE": "STALE_DATA",
+    "COST_GATE_BLOCKED": "COST_GATE",
+    "COST_CALCULATION_FAILED": "COST_GATE",
+}
+
+
+def _normalize_block_reason(raw: Any) -> str:
+    head = str(raw or "").split("(", 1)[0].strip().upper()
+    return _BLOCK_REASON_ALIASES.get(head, head)
+
+
+# Outage-level scanner reasons that explain the absence of signal itself —
+# they outrank the generic NO_RSI_SIGNAL diagnosis.
+_SYSTEM_LEVEL_REASONS = {
+    "CALENDAR_UNAVAILABLE", "NON_REALTIME_SOURCE", "PROVIDER_ERROR",
+    "PROVIDER_QUOTA_EXCEEDED", "DATA_UNAVAILABLE", "STALE_DATA",
+}
+
+
+def _diagnose_no_execution_reason(rows: list, opportunity_result: Dict[str, Any],
+                                  skip_reasons: list) -> Optional[str]:
+    """Derive why an armed + running scan cycle executed nothing."""
+    # Freshest signal: per-candidate failures collected at execution time.
+    if skip_reasons:
+        return _normalize_block_reason(skip_reasons[-1])
+    # Scanner-level block reasons on actual signal candidates (non-realtime
+    # source, news/session, …) tell the true story.
+    for row in rows:
+        if ((row.get("signal_data") or {}).get("status") == "SIGNAL_DETECTED"
+                and row.get("block_reason")):
+            return _normalize_block_reason(row["block_reason"])
+    # System-level outage shared by the scanned universe (calendar down,
+    # provider failure…) explains why no signal exists at all.
+    counts: Dict[str, int] = {}
+    for row in rows:
+        normalized = _normalize_block_reason(row.get("block_reason"))
+        if normalized in _SYSTEM_LEVEL_REASONS:
+            counts[normalized] = counts.get(normalized, 0) + 1
+    if counts:
+        return max(counts.items(), key=lambda kv: kv[1])[0]
+    # Otherwise aggregate the ranker's gate exclusions (score floor, costs,
+    # spread, quarantine, …) — most frequent reason wins.
+    for item in (opportunity_result or {}).get("excluded") or []:
+        for reason in item.get("gate_reasons") or []:
+            counts[_normalize_block_reason(reason)] = (
+                counts.get(_normalize_block_reason(reason), 0) + 1)
+    if counts:
+        return max(counts.items(), key=lambda kv: kv[1])[0]
+    has_signal = any(
+        (row.get("signal_data") or {}).get("status") == "SIGNAL_DETECTED"
+        for row in rows)
+    if not has_signal:
+        return "NO_RSI_SIGNAL"
+    return None if (opportunity_result or {}).get("all_candidates") else "RANKER_EMPTY"
+
+
+def _publish_no_execution_reason(auto_results: list,
+                                 opportunity_result: Dict[str, Any],
+                                 skip_reasons: list,
+                                 cycle_scan_error: Optional[str] = None) -> None:
+    """Set bot_state['last_block_reason'] for an armed+running 0-execution scan."""
+    rows = [r for r in (auto_results or []) if isinstance(r, dict)]
+    if not rows:
+        # Empty scan (timeout / provider outage): never wipe the existing
+        # SCAN_TIMEOUT / PROVIDER_ERROR reason with a misleading one.
+        return
+    if cycle_scan_error:
+        # Provider-level failure of this cycle outranks per-row diagnostics.
+        return
+    reason = _diagnose_no_execution_reason(rows, opportunity_result, skip_reasons)
+    if reason:
+        bot_state["last_block_reason"] = reason
+        persist_latest_scan()
 
 
 async def tick_scanner(force: bool = False):
@@ -535,6 +617,9 @@ async def tick_scanner(force: bool = False):
     first_scan = bot_state.get("last_scan_completed_at") is None
     bot_state.update({
         "scanning": True,
+        # P0-3: per-cycle error tracking starts clean so a stale error from a
+        # previous cycle never masks the current diagnosis.
+        "scan_error": None,
         "scan_progress_count": 0,
         "scan_progress_total": total,
         "scan_started_at": time.time(),
@@ -571,6 +656,10 @@ async def tick_scanner(force: bool = False):
         results = list(bot_state.get("latest_scan") or [])
     finally:
         bot_state["scanning"] = False
+
+    # P0-3: remember this cycle's provider-level error before the state block
+    # resets scan_error — an execution diagnostic must never mask it.
+    cycle_scan_error = bot_state.get("scan_error")
 
     # Defence in depth: even if a legacy/custom scanner is injected, only an
     # explicit RSI signal may enter the automatic ranking/execution pipeline.
@@ -657,10 +746,15 @@ async def tick_scanner(force: bool = False):
     max_new = max(1, min(3, max_new))
     candidates_to_execute = (opportunity_result.get("all_candidates") or [])[:max_new]
     if not candidates_to_execute:
+        # P0-3: armed + running + ranker empty → publish the real reason
+        # (score floor, calendar, non-realtime source, no RSI signal, …).
+        _publish_no_execution_reason(auto_results, opportunity_result, [],
+                                     cycle_scan_error)
         return
 
     tracker = get_tracker()
     executed_symbols: list = []
+    skip_reasons: list = []
     # The ranked payload intentionally holds metrics, not every raw scan flag —
     # cross-check execution-critical flags (e.g. `tradable`) against the raw
     # scan rows the ranking was built from.
@@ -676,18 +770,23 @@ async def tick_scanner(force: bool = False):
         expires_at = res.get("expires_at", 0)
         if tracker.is_expired(expires_at):
             logger.info(f"Opportunity {opp_id} expired — skipping execution")
+            skip_reasons.append("OPPORTUNITY_EXPIRED")
             continue
         acquire_result = tracker.try_acquire(opp_id)
         if not acquire_result.get("allowed"):
             logger.info(f"Opportunity {opp_id} not acquired: {acquire_result.get('reason')}")
+            skip_reasons.append(acquire_result.get("reason") or "ALREADY_TRACKED")
             continue
 
         raw = raw_by_symbol.get(res.get("symbol")) or {}
         if not res.get("tradable", raw.get("tradable")):
             tracker.mark_failed(opp_id, "NOT_TRADABLE")
+            skip_reasons.append("NON_REALTIME_SOURCE" if not res.get("realtime_source")
+                                else "NOT_TRADABLE")
             continue
         if any(p["symbol"] == res["symbol"] for p in active):
             tracker.mark_failed(opp_id, "POSITION_ALREADY_OPEN")
+            skip_reasons.append("POSITION_ALREADY_OPEN")
             continue
 
         # v2.8: correlation guard — never two simultaneous positions on the
@@ -695,12 +794,14 @@ async def tick_scanner(force: bool = False):
         corr = risk_engine.check_correlation(res["symbol"], active)
         if not corr.get("allowed"):
             tracker.mark_failed(opp_id, corr.get("reason") or "CORRELATION_RISK")
+            skip_reasons.append(corr.get("reason") or "CORRELATION_RISK")
             logger.info(f"Correlation guard blocked {res['symbol']}: {corr.get('reason')}")
             continue
 
         sig = res.get("signal_data") or {}
         if not sig.get("market_id") or not sig.get("entry"):
             tracker.mark_failed(opp_id, "MISSING_SIGNAL_DATA")
+            skip_reasons.append("MISSING_SIGNAL_DATA")
             continue
 
         # v2.7 P0-3: Revalidate signal before execution (re-fetch ticker/orderbook)
@@ -708,10 +809,12 @@ async def tick_scanner(force: bool = False):
         ticker = await data_engine.fetch_ticker(res["symbol"])
         if not ticker:
             tracker.mark_failed(opp_id, "NO_TICKER")
+            skip_reasons.append("NO_TICKER")
             continue
         if not data_engine.is_fresh(ticker, info.get("asset_class", "CRYPTO")):
             logger.warning(f"Stale ticker for {res['symbol']} — order skipped")
             tracker.mark_failed(opp_id, "STALE_DATA")
+            skip_reasons.append("STALE_DATA")
             continue
 
         # LOT F: never scalp delayed (non-realtime) data
@@ -721,6 +824,7 @@ async def tick_scanner(force: bool = False):
             db_manager.archive_signal(sig, "BLOCKED", scalp_guard["reason"])
             metrics_engine.record_signal_blocked(sig.get("strategy", "structure"))
             tracker.mark_failed(opp_id, scalp_guard["reason"])
+            skip_reasons.append(scalp_guard["reason"])
             continue
 
         # v2.7 P0-4: Compute and validate costs
@@ -734,6 +838,7 @@ async def tick_scanner(force: bool = False):
         if not cost_gate.get("allowed"):
             db_manager.archive_signal(sig, "BLOCKED", cost_gate.get("reason", "cost"))
             tracker.mark_failed(opp_id, cost_gate.get("reason"))
+            skip_reasons.append(cost_gate.get("reason") or "COST_GATE")
             logger.warning(f"Cost gate failed for {res['symbol']}: {cost_gate.get('reason')}")
             continue
 
@@ -746,6 +851,7 @@ async def tick_scanner(force: bool = False):
             db_manager.archive_signal(sig, "BLOCKED", risk_data.get("reason") or "risk")
             metrics_engine.record_signal_blocked(strat)
             tracker.mark_failed(opp_id, risk_data.get("reason"))
+            skip_reasons.append(risk_data.get("reason") or "RISK_GATE")
             continue
 
         exec_start = time.time()
@@ -774,6 +880,7 @@ async def tick_scanner(force: bool = False):
             metrics_engine.record_execution(strat, mode, success=False, latency_ms=exec_latency_ms)
             db_manager.archive_signal(sig, "BLOCKED", exec_res.get("reason") or "execution")
             tracker.mark_failed(opp_id, exec_res.get("reason"))
+            skip_reasons.append(exec_res.get("reason") or "EXECUTION_REJECTED")
             logger.warning(f"Execution blocked for {res['symbol']}: {exec_res.get('reason')}")
 
     if executed_symbols:
@@ -782,9 +889,22 @@ async def tick_scanner(force: bool = False):
         # scanning — the loop never stops while is_running && armed.
         async with state_lock:
             bot_state["active_trades"] = list(active)
+            # P0-3: executions happened — the previous block reason is stale.
+            bot_state["last_block_reason"] = None
+        persist_latest_scan()
         structured_log(logger, logging.INFO, "SCAN_CYCLE_EXECUTIONS",
                        event="scan_cycle_executions", count=len(executed_symbols),
                        symbols=",".join(executed_symbols), mode=mode)
+    elif armed and running:
+        # P0-3: candidates existed but every gate refused them — surface the
+        # actual refusal (STALE_DATA, COST_GATE, RISK_*, …) to /api/status
+        # and /api/opportunities instead of an always-None last_block_reason.
+        _publish_no_execution_reason(auto_results, opportunity_result, skip_reasons,
+                                     cycle_scan_error)
+        structured_log(logger, logging.INFO, "NO_EXECUTION_DIAGNOSIS",
+                       event="no_execution_diagnosis",
+                       reason=bot_state.get("last_block_reason"),
+                       skip_reasons=skip_reasons[-5:])
 
 
 async def tick_management():
@@ -1191,15 +1311,28 @@ def refresh_execution_intent(n_candidates: int = 0) -> Dict[str, Any]:
 
 @app.post("/api/start", dependencies=[Depends(require_admin)])
 async def start_bot():
+    settings = settings_provider.get()
+    # P1 (2026-08-23): START means "scan" — arming stays a separate explicit
+    # step. Optional DEMO-only convenience: arm_on_start_demo=true arms the
+    # paper engine on START. REAL mode is NEVER auto-armed, and production
+    # auto_arm_on_startup stays false by default.
+    arm_demo = str(settings.get("arm_on_start_demo", "false")).lower() == "true"
     async with state_lock:
         bot_state["is_running"] = True
+        if arm_demo and bot_state["mode"] == "DEMO":
+            bot_state["armed"] = True
     state_machine.transition_to(BotState.RUNNING)
     refresh_execution_intent()
-    db_manager.log_audit("INFO", "SYSTEM_START", "Bot started")
+    if arm_demo and bot_state["mode"] == "DEMO" and bot_state["armed"]:
+        db_manager.log_audit("INFO", "SYSTEM_START",
+                             "Bot started — DEMO auto-armed (arm_on_start_demo)")
+    else:
+        db_manager.log_audit("INFO", "SYSTEM_START", "Bot started")
     # P0: start triggers an immediate scan if not already scanning
     if not bot_state.get("scanning"):
         asyncio.create_task(tick_scanner(force=True))
-    return {"success": True, "state": state_machine.current_state.value}
+    return {"success": True, "state": state_machine.current_state.value,
+            "armed": bool(bot_state["armed"])}
 
 
 @app.post("/api/stop", dependencies=[Depends(require_admin)])
@@ -2015,8 +2148,23 @@ async def get_ohlcv(market_id: str = "btc_usdt", timeframe: str = "1m", limit: i
 
 
 # ---- WebSocket + static ---------------------------------------------------- #
+_serverless_ws_warned = {"done": False}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    if is_serverless_runtime():
+        # P0-4 (2026-08-23): on a serverless runtime the heartbeat/broadcast
+        # loops are disabled — a connected WS client will never receive
+        # HEARTBEAT or stream frames and must poll /api/status instead.
+        # Say it once, clearly, instead of letting the client look broken.
+        if not _serverless_ws_warned["done"]:
+            _serverless_ws_warned["done"] = True
+            logger.warning(
+                "SERVERLESS RUNTIME: WebSocket heartbeat/broadcast loops are "
+                "disabled — no HEARTBEAT will be sent on /ws. Clients stay "
+                "connected but MUST poll GET /api/status for live state."
+            )
     await manager.connect(ws)
     try:
         while True:

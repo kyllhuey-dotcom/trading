@@ -31,7 +31,7 @@ Bot de trading multi-marchés : données réelles, exécution papier réaliste, 
 | **Gestion de risque** | Sizing par % de risque, plafond de levier, validation du sens du SL, limite de perte quotidienne au niveau de l'ordre, cool-down après perte, filtre de corrélation, max positions, drawdown global persistant, **circuit breaker séries de pertes + risque réduit après pertes (anti-martingale)**, filtre coûts/volatilité |
 | **Exécution** | Mode DEMO : papier réaliste (latence, slippage, rejets simulés) sur prix réels. Mode REAL : vrais ordres market via CCXT avec ordres SL/TP de protection, sizing arrondi aux contraintes d'exchange (lot/tick/min_notional), avertissement « experimental » explicite |
 | **Gestion de positions** | Partial TP 50 % au 1:1 → break-even, trailing stop ATR, fermeture forcée hors session, réconciliation broker en mode REAL |
-| **Filtres** | Calendrier économique multi-sources (Fair Economy JSON, ForexFactory HTML, dernier calendrier SQLite ≤ 7 jours), politique de panne `block_all` par défaut, sessions, fraîcheur des données, spread max |
+| **Filtres** | Calendrier économique multi-sources (Fair Economy JSON, ForexFactory HTML, dernier calendrier SQLite ≤ 7 jours), politique de panne `block_tradfi_only` par défaut (crypto 24/7 reste tradable, tradfi bloqué), sessions, fraîcheur des données, spread max |
 | **Alertes** | Telegram + Discord (ouvertures, fermetures, emergency stop) |
 | **Dashboard** | Interface autonome sans CDN : Tailwind compilé, Lucide local, polices système ; scanner immédiat/incrémental avec progression, badges LIVE/DIFFÉRÉ, raison de refus, filtres live, intention STOPPED/WAITING_SETUP/EXECUTING et bannières calendrier/API |
 | **Sécurité** | Authentification par clé API sur tous les endpoints mutables, secrets brokers chiffrés au repos (Fernet), rate limiting par IP (sliding window), audit log complet, bannière d'avertissement en mode REAL |
@@ -55,7 +55,7 @@ python3 -m api.index
 
 - Le volume `/app/data` (configuré dans `railway.json`) persiste la base SQLite entre les déploiements.
 - Variables à définir sur Railway : `ADMIN_API_KEY` (obligatoire), `FERNET_KEY` (obligatoire si vous connectez un broker). `TWELVEDATA_API_KEY` et `FINNHUB_API_KEY` sont optionnelles ; sans elles Yahoo reste le fallback tradfi.
-- Le calendrier persistant et la base de trades partagent le volume SQLite. La politique de panne se règle via `news_unavailable_policy=block_all|block_tradfi_only|allow_all` (`block_all` par défaut).
+- Le calendrier persistant et la base de trades partagent le volume SQLite. La politique de panne se règle via `news_unavailable_policy=block_all|block_tradfi_only|allow_all` (`block_tradfi_only` par défaut : si le calendrier est HS, la crypto continue et le tradfi reste bloqué).
 - `auto_start_on_startup=true` démarre sans armer ; `auto_arm_on_startup=true` arme **et** démarre. Les deux restent `false` par défaut.
 - Healthcheck léger : `GET /healthz`. Détail providers/marchés/calendrier : `GET /api/health`.
 

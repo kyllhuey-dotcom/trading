@@ -1,5 +1,56 @@
 # Changelog - Quantum Trade Pro
 
+## [2.9.2] - 2026-08-23 — P0 prod : 0 trade + WS coupé
+
+### P0-1 — Calendrier HS ne bloque plus la crypto
+- `news_unavailable_policy` par défaut **`block_tradfi_only`** (settings
+  schema, seed SQLite, `NewsEngine`, `/api/status`) : si FairEconomy/
+  ForexFactory TLS échoue, CRYPTO (24/7) reste tradable ; FOREX/indices/
+  actions restent bloqués (fail-safe). `allow_all` et `block_all` (choix
+  explicite) inchangés. Migration automatique des bases existantes
+  seedées `block_all`.
+- Tests : calendrier HS + défaut → CRYPTO `news_ok=True`, FOREX `False`.
+
+### P0-2 — Le watchdog WS n'ignore plus ACCOUNT_STREAM / pong
+- `connectWS` : `lastHeartbeat = Date.now()` sur **tout** message JSON
+  valide (HEARTBEAT, pong, ACCOUNT_STREAM 1s, MARKET_UPDATE,
+  SCAN_COMPLETED) — plus de close à 90s si `tick_heartbeat` manque.
+- Reconnect backoff progressif 1s → 3s → 10s → plafond 15s (3s fixe avant).
+- Contrat serveur `/ws` inchangé (ping→pong, streams).
+
+### P0-3 — Raisons de blocage visibles en prod
+- `rank_opportunities` copie `tradable` + flags symbole (`status`,
+  `active_source`, `underlying`, `market_status`, `block_reason`) vers
+  `all_candidates`.
+- `tick_scanner` : si armed + running + 0 exécution, écrit
+  `last_block_reason` avec la VRAIE raison (CALENDAR_UNAVAILABLE,
+  NO_RSI_SIGNAL, NON_REALTIME_SOURCE, SCORE_BELOW_84, RANKER_EMPTY,
+  STALE_DATA, COST_GATE, refus d'exécution…) et log NO_EXECUTION_DIAGNOSIS.
+  Après exécution réussie la raison est remise à None ; un SCAN_TIMEOUT
+  avec résultats vides n'est jamais écrasé.
+- `GET /api/status` et `GET /api/opportunities` ne renvoient plus un
+  `last_block_reason` perpétuellement None.
+
+### P0-4 — Runtime serverless : WS non mort, poll HTTP explicite
+- Serveur : log clair à la première connexion WS en serverless —
+  `SERVERLESS RUNTIME: WebSocket heartbeat/broadcast loops are disabled…
+  clients MUST poll GET /api/status`.
+- UI : 2 polls `/status` OK + 0 HEARTBEAT → le watchdog 90s est désactivé
+  (le socket n'est plus fermé en boucle) ; le client reste en poll HTTP.
+
+### P1 — Démarrage DEMO moins ambigu
+- Nouveau réglage `arm_on_start_demo` (bool, **défaut false**) : `POST
+  /api/start` arme le moteur **en DEMO uniquement** ; REAL n'est jamais
+  armé par START ; `auto_arm_on_startup` reste false par défaut.
+- `POST /api/start` renvoie désormais `armed` ; le toast UI documente
+  « START scan ; ARM pour exécuter » (clé i18n `startHint` en/fr/es/de).
+
+### P1 — Fraîcheur crypto 30s
+- `is_fresh` CRYPTO : 15s → **30s** (les timestamps exchange dépassent
+  souvent 15s ; les ticks parfaitement live n'étaient plus exécutables).
+- Tradfi live inchangé (60s). Les sources différées (Yahoo) restent
+  **jamais auto-tradables** (`check_scalping_allowed` inchangé).
+
 ## [2.9.1] - 2026-08-23 — Scanner fiable, Radar complet, RR RSI 1.5
 
 ### Résumé
