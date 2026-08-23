@@ -164,6 +164,14 @@ class DatabaseManager:
                     reason TEXT
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS economic_calendar_cache (
+                    cache_id INTEGER PRIMARY KEY CHECK (cache_id = 1),
+                    fetched_at REAL NOT NULL,
+                    source TEXT NOT NULL,
+                    events_json TEXT NOT NULL
+                )
+            """)
 
             # Seed default settings
             cursor = conn.execute("SELECT COUNT(*) FROM settings")
@@ -181,6 +189,8 @@ class DatabaseManager:
                     "trailing_stop_distance_atr": "1.5",
                     "emergency_stop_drawdown_pct": "10.0",
                     "auto_arm_on_startup": "false",
+                    "auto_start_on_startup": "false",
+                    "news_unavailable_policy": "block_all",
                     "slippage_tolerance_pct": "0.1",
                     "active_strategies": "structure,arbitrage,tape,liquidity",
                     "sim_latency_ms": "100",
@@ -188,7 +198,7 @@ class DatabaseManager:
                     "sim_rejection_prob": "0.01",
                     "partial_tp_ratio": "1.0",
                     "peak_balance": "0",
-                    "scan_interval_seconds": "20",
+                    "scan_interval_seconds": "30",
                     # LOT P — profitability hardening
                     "alpha_override_enabled": "false",
                     "max_cost_ratio": "0.5",
@@ -223,6 +233,40 @@ class DatabaseManager:
         with self._get_connection() as conn:
             for k, v in settings.items():
                 conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, v))
+
+    # ------------------------------------------------------------------ #
+    # Economic calendar cache                                            #
+    # ------------------------------------------------------------------ #
+    def save_calendar_cache(self, events: List[Dict[str, Any]], source: str,
+                            fetched_at: Optional[float] = None) -> None:
+        """Persist the latest known-good normalized calendar atomically."""
+        import time
+
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO economic_calendar_cache
+                   (cache_id, fetched_at, source, events_json) VALUES (1, ?, ?, ?)""",
+                (float(fetched_at or time.time()), source, json.dumps(events, default=str)),
+            )
+
+    def load_calendar_cache(self, max_age_s: float) -> Optional[Dict[str, Any]]:
+        """Return the persisted calendar only while it is inside ``max_age_s``."""
+        import time
+
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT fetched_at, source, events_json FROM economic_calendar_cache WHERE cache_id = 1"
+            ).fetchone()
+        if not row or time.time() - float(row["fetched_at"]) > float(max_age_s):
+            return None
+        try:
+            events = json.loads(row["events_json"])
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(events, list):
+            return None
+        return {"events": events, "source": row["source"],
+                "fetched_at": float(row["fetched_at"])}
 
     # ------------------------------------------------------------------ #
     # Audit & signals                                                     #

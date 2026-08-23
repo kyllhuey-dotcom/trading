@@ -82,8 +82,12 @@ class DataHealthMonitor:
 
     def _guess_class(self, pid: str) -> str:
         pid_lower = pid.lower()
-        if "crypto" in pid_lower or "gate" in pid_lower or "binance" in pid_lower or "bybit" in pid_lower:
+        if ("crypto" in pid_lower or "gate" in pid_lower or "binance" in pid_lower
+                or "bybit" in pid_lower or "okx" in pid_lower or "kraken" in pid_lower
+                or "coinbase" in pid_lower):
             return "CRYPTO"
+        if "twelvedata" in pid_lower or "finnhub" in pid_lower:
+            return "TRADFI"
         if "forex" in pid_lower:
             return "FOREX"
         if "indices" in pid_lower:

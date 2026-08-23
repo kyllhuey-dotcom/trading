@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import pandas as pd
 import logging
 from typing import Dict, Any, List, Optional
@@ -131,6 +132,8 @@ class ScannerEngine:
                         "status": "DATA_UNAVAILABLE",
                         "tradable": False,
                         "reason": "Missing data",
+                        "display_symbol": info.get("display_symbol"),
+                        "underlying": info.get("underlying", symbol),
                         "realtime_source": self.data.is_realtime_capable(symbol),
                         "diagnosis": {
                             "main_blocker": "DATA_VALID",
@@ -154,10 +157,16 @@ class ScannerEngine:
                             asset_currency=asset_currency, asset_class=info.get("asset_class")),
                         timeout=10.0)
                 except asyncio.TimeoutError:
-                    # Fail-safe: block trading when the calendar cannot be checked
-                    news_status = {"trading_allowed": False, "day_ok": True, "session_ok": True,
-                                   "news_ok": False, "blocking_event": {"title": "Calendar timeout"},
-                                   "next_events": [], "status": "DATA_UNAVAILABLE"}
+                    # Preserve the configured outage policy, whose safe default
+                    # remains ``block_all``.
+                    if hasattr(self.news, "unavailable_status"):
+                        news_status = self.news.unavailable_status(
+                            asset_class=info.get("asset_class"), title="Calendar timeout")
+                    else:
+                        news_status = {"trading_allowed": False, "day_ok": True,
+                                       "session_ok": True, "news_ok": False,
+                                       "blocking_event": {"title": "Calendar timeout"},
+                                       "next_events": [], "status": "DATA_UNAVAILABLE"}
 
                 # Ranking score (news bypassed for ranking only)
                 scoring_news = news_status.copy()
@@ -194,7 +203,13 @@ class ScannerEngine:
                     "volume": float(ticker.get("volume", 0) or 0),
                     "status": ticker.get("status"),
                     "data_age_ms": data_age_ms,
-                    "realtime_source": self.data.is_realtime_capable(symbol),
+                    "realtime_source": (
+                        self.data.is_quote_realtime(symbol, ticker)
+                        if hasattr(self.data, "is_quote_realtime")
+                        else self.data.is_realtime_capable(symbol)
+                    ),
+                    "active_source": ticker.get("source"),
+                    "underlying": info.get("underlying", symbol),
                     "trend": ltf_analysis.get("trend"),
                     "structure": ltf_analysis.get("is_hh") and "HH/HL" or
                                  (ltf_analysis.get("is_ll") and "LH/LL" or "Neutral"),
@@ -213,11 +228,44 @@ class ScannerEngine:
                 logger.warning(f"Scanner Error ({symbol}): {e}")
                 return {"symbol": symbol, "status": "ERROR", "tradable": False, "reason": str(e)}
 
-    async def scan_all(self, strategy_mode: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def scan_all(self, strategy_mode: Optional[str] = None,
+                       progress_callback: Any = None) -> List[Dict[str, Any]]:
+        """Scan incrementally, always completing realtime crypto before tradfi.
+
+        ``progress_callback`` receives ``(result, completed, total)`` after every
+        symbol.  It may be synchronous or asynchronous; this keeps partial
+        results visible while a slow Yahoo class is still being processed.
+        """
         start_time = datetime.now()
         symbols = self.data.universe.get_all_ids()
+        crypto = [symbol for symbol in symbols
+                  if (self.data.universe.get_info(symbol) or {}).get("asset_class") == "CRYPTO"]
+        tradfi = [symbol for symbol in symbols if symbol not in set(crypto)]
         semaphore = asyncio.Semaphore(self.max_concurrent)
-        tasks = [self.scan_asset(s, semaphore, strategy_mode=strategy_mode) for s in symbols]
-        results = await asyncio.gather(*tasks)
+        results: List[Dict[str, Any]] = []
+        completed = 0
+
+        async def scan_phase(phase: List[str]) -> None:
+            nonlocal completed
+            if not phase:
+                return
+            if hasattr(self.data, "prepare_scan_cycle"):
+                await self.data.prepare_scan_cycle(phase)
+            tasks = [asyncio.create_task(
+                self.scan_asset(symbol, semaphore, strategy_mode=strategy_mode)
+            ) for symbol in phase]
+            for future in asyncio.as_completed(tasks):
+                result = await future
+                results.append(result)
+                completed += 1
+                if progress_callback:
+                    callback_result = progress_callback(result, completed, len(symbols))
+                    if inspect.isawaitable(callback_result):
+                        await callback_result
+
+        # Phase ordering is intentional: no delayed provider can hold up the
+        # first useful realtime rows in the dashboard.
+        await scan_phase(crypto)
+        await scan_phase(tradfi)
         self.last_scan_duration = (datetime.now() - start_time).total_seconds()
         return results
