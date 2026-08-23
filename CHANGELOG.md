@@ -11,6 +11,13 @@
   seedées `block_all`.
 - Tests : calendrier HS + défaut → CRYPTO `news_ok=True`, FOREX `False`.
 
+### P0-2 — Le watchdog WS n'ignore plus ACCOUNT_STREAM / pong
+- `connectWS` : `lastHeartbeat = Date.now()` sur **tout** message JSON
+  valide (HEARTBEAT, pong, ACCOUNT_STREAM 1s, MARKET_UPDATE,
+  SCAN_COMPLETED) — plus de close à 90s si `tick_heartbeat` manque.
+- Reconnect backoff progressif 1s → 3s → 10s → plafond 15s (3s fixe avant).
+- Contrat serveur `/ws` inchangé (ping→pong, streams).
+
 ## [2.9.1] - 2026-08-23 — Scanner fiable, Radar complet, RR RSI 1.5
 
 ### Résumé

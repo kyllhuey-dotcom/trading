@@ -82,3 +82,33 @@ def test_db_seed_and_migration_use_block_tradfi_only(tmp_path):
 def test_ensure_defaults_fills_block_tradfi_only():
     out = ensure_defaults({})
     assert out["news_unavailable_policy"] == "block_tradfi_only"
+
+
+# --------------------------------------------------------------------------- #
+# P0-2 — WS client: watchdog + backoff (frontend contract)
+# --------------------------------------------------------------------------- #
+def test_ws_client_updates_heartbeat_on_any_message_and_backoff():
+    """P0-2: lastHeartbeat on ANY valid JSON message; backoff 1s/3s/10s/15s."""
+    html = open("public/index.html", encoding="utf-8").read()
+
+    # Heartbeat liveness is recorded for every valid JSON message, not only
+    # type === 'HEARTBEAT' (ACCOUNT_STREAM every 1s must keep the WS alive).
+    onmessage = html.split("ws.onmessage", 1)[1].split("};", 1)[0]
+    assert "JSON.parse(event.data)" in onmessage
+    assert onmessage.index("lastHeartbeat = Date.now()") < onmessage.index(
+        "data.type === 'HEARTBEAT'"), "liveness must be set before type dispatch"
+
+    # Reconnect backoff: 1s, 3s, 10s, capped at 15s (not a fixed 3s).
+    assert "WS_RECONNECT_STEPS_MS" in html
+    assert "[1000, 3000, 10000, 15000]" in html
+
+
+def test_server_pong_and_streams_unchanged_contract():
+    """P0-2: the server-side /ws contract is untouched (ping→pong, streams)."""
+    source = open("api/index.py", encoding="utf-8").read()
+    assert '"type": "pong"' in source
+    assert "HEARTBEAT" in source
+    assert "ACCOUNT_STREAM" in source
+    assert "SCAN_COMPLETED" in source
+    data_engine_source = open("api/engines/data_engine.py", encoding="utf-8").read()
+    assert "MARKET_UPDATE" in data_engine_source

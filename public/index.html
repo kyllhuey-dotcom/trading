@@ -1297,6 +1297,9 @@
         /* ------------------------------------------------------------------ *
          *  WebSocket                                                         *
          * ------------------------------------------------------------------ */
+        // P0-2: reconnect backoff 1s -> 3s -> 10s -> capped 15s (was fixed 3s).
+        const WS_RECONNECT_STEPS_MS = [1000, 3000, 10000, 15000];
+        let wsReconnectAttempts = 0;
         function connectWS() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
@@ -1304,8 +1307,11 @@
             ws.onmessage = (event) => {
                 let data;
                 try { data = JSON.parse(event.data); } catch (e) { return; }
+                // P0-2: ANY valid JSON message proves the server is alive —
+                // liveness must not depend on tick_heartbeat only
+                // (ACCOUNT_STREAM arrives every second, pong answers pings).
+                lastHeartbeat = Date.now();
                 if (data.type === 'HEARTBEAT') {
-                    lastHeartbeat = Date.now();
                     return;
                 }
                 if (data.type === 'ACCOUNT_STREAM') {
@@ -1324,6 +1330,7 @@
             // server stops heartbeating (LOT A — robust WS heartbeat).
             ws.onopen = () => {
                 lastHeartbeat = Date.now();
+                wsReconnectAttempts = 0;
                 ws.pingTimer = setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: 'ping', seq: Date.now() }));
@@ -1338,7 +1345,10 @@
             ws.onclose = () => {
                 clearInterval(ws.pingTimer);
                 clearInterval(ws.watchdog);
-                setTimeout(connectWS, 3000);
+                const delay = WS_RECONNECT_STEPS_MS[
+                    Math.min(wsReconnectAttempts, WS_RECONNECT_STEPS_MS.length - 1)];
+                wsReconnectAttempts += 1;
+                setTimeout(connectWS, delay);
             };
         }
 
