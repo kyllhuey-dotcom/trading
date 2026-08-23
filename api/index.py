@@ -368,38 +368,56 @@ async def require_admin(x_api_key: Optional[str] = Header(default=None)) -> None
 # 7. Background micro-loops                                                    #
 # --------------------------------------------------------------------------- #
 async def tick_capital():
-    """1s — sync balances, equity, drawdown and global safety."""
+    """1s — sync balances, equity, drawdown and global safety.
+    
+    P0: never await network calls while holding state_lock — copy the state,
+    fetch outside, then write back under a short lock.
+    """
+    # Phase 1: snapshot state under fast lock
     async with state_lock:
         mode = bot_state["mode"]
         settings_provider.apply()
-        if mode == "REAL":
-            try:
-                balances = await broker_connector.get_all_balances()
-                total = sum(b.get("total_usdt", 0.0) for b in balances.values()
-                            if isinstance(b, dict) and b.get("type") == "BROKER")
-                portfolio_engine.set_balance("REAL", total)
-            except Exception as e:
-                logger.error(f"Balance sync failed: {e}")
-
-        bot_state["balance"] = portfolio_engine.get_balance(mode)
-        active = demo_execution.active_positions if mode == "DEMO" else db_manager.get_active_positions("REAL")
-        unrealized = sum(p.get("pnl", 0.0) or 0.0 for p in active)
-        bot_state["equity"] = bot_state["balance"] + unrealized
-        bot_state["active_trades"] = active
-
-        daily_pnl = portfolio_engine.get_daily_pnl(mode)
+        eq_state = {
+            "mode": mode,
+            "balance": portfolio_engine.get_balance(mode),
+        }
+    # Phase 2: network calls outside any lock
+    if mode == "REAL":
+        try:
+            balances = await broker_connector.get_all_balances()
+            total = sum(b.get("total_usdt", 0.0) for b in balances.values()
+                        if isinstance(b, dict) and b.get("type") == "BROKER")
+            portfolio_engine.set_balance("REAL", total)
+            eq_state["balance"] = total
+        except Exception as e:
+            logger.error(f"Balance sync failed: {e}")
+    active = demo_execution.active_positions if mode == "DEMO" else db_manager.get_active_positions("REAL")
+    unrealized = sum(p.get("pnl", 0.0) or 0.0 for p in active)
+    equity = eq_state["balance"] + unrealized
+    daily_pnl = portfolio_engine.get_daily_pnl(mode)
+    # Phase 3: short lock to write results
+    safe = True
+    safety_reason = ""
+    async with state_lock:
+        bot_state["balance"] = eq_state["balance"]
+        bot_state["equity"] = equity
+        bot_state["active_trades"] = list(active)
         bot_state["daily_pnl"] = daily_pnl
         risk_engine.daily_pnl = daily_pnl
-        bot_state["drawdown"] = risk_engine.get_current_drawdown_pct(bot_state["equity"])
-
-        safety = risk_engine.check_global_safety(bot_state["equity"], daily_pnl)
-        if not safety["safe"]:
-            logger.error(f"GLOBAL RISK LIMIT: {safety['reason']}")
-            await emergency_stop_logic(safety["reason"])
+        bot_state["drawdown"] = risk_engine.get_current_drawdown_pct(equity)
+        safety = risk_engine.check_global_safety(equity, daily_pnl)
+        safe = safety.get("safe", True)
+        if not safe:
+            safety_reason = safety.get("reason", "Global risk limit")
+            logger.error("GLOBAL RISK LIMIT: %s", safety_reason)
+    # Phase 4: emergency stop outside lock (it acquires its own lock)
+    if not safe:
+        await emergency_stop_logic(safety_reason)
 
 
 _scan_counter = {"n": 0}
-SCAN_STALE_S = 180.0
+SCAN_LOCK_STALE_S = 180.0
+SCAN_ALL_TIMEOUT_S = 600.0
 
 
 def is_serverless_runtime() -> bool:
@@ -416,7 +434,7 @@ def _scan_is_stuck() -> bool:
     return bool(
         bot_state.get("scanning")
         and started
-        and (time.time() - float(started) > SCAN_STALE_S)
+        and (time.time() - float(started) > SCAN_LOCK_STALE_S)
     )
 
 
@@ -485,6 +503,9 @@ def _scanner_payload(sort="score", order="desc", filter_mode="all", live_only=Fa
         "risk_reward_rsi": DEFAULT_RSI_RISK_REWARD,
         "scan_error": bot_state.get("scan_error"),
         "block_reason": bot_state.get("last_block_reason"),
+        "last_block_reason": bot_state.get("last_block_reason"),
+        "excluded": (bot_state.get("opportunity_ranking") or {}).get("excluded", []),
+        "news_unavailable_policy": settings_provider.get().get("news_unavailable_policy", "block_all"),
         **summary,
     }
 
@@ -536,10 +557,10 @@ async def tick_scanner(force: bool = False):
     try:
         results = await asyncio.wait_for(
             scanner_engine.scan_all(progress_callback=publish_progress),
-            timeout=SCAN_STALE_S,
+            timeout=SCAN_ALL_TIMEOUT_S,
         )
     except asyncio.TimeoutError:
-        logger.warning("SCAN_TIMEOUT — scan_all exceeded %ss", SCAN_STALE_S)
+        logger.warning("SCAN_TIMEOUT — scan_all exceeded %ss", SCAN_ALL_TIMEOUT_S)
         bot_state["scan_error"] = "SCAN_TIMEOUT"
         bot_state["last_block_reason"] = "SCAN_TIMEOUT"
         results = list(bot_state.get("latest_scan") or [])
@@ -1089,6 +1110,8 @@ async def get_status(market_id: str = "btc_usdt"):
             diagnosis=snapshot.get("diagnosis"),
             delayed=not data_engine.check_scalping_allowed(market_id).get("allowed"),
         ),
+        "last_block_reason": bot_state.get("last_block_reason"),
+        "excluded": (bot_state.get("opportunity_ranking") or {}).get("excluded", []),
         "scanner": {
             "scanning": bool(bot_state.get("scanning")),
             "progress": f"{bot_state.get('scan_progress_count', 0)}/{bot_state.get('scan_progress_total', 0)}",
@@ -1173,6 +1196,9 @@ async def start_bot():
     state_machine.transition_to(BotState.RUNNING)
     refresh_execution_intent()
     db_manager.log_audit("INFO", "SYSTEM_START", "Bot started")
+    # P0: start triggers an immediate scan if not already scanning
+    if not bot_state.get("scanning"):
+        asyncio.create_task(tick_scanner(force=True))
     return {"success": True, "state": state_machine.current_state.value}
 
 
@@ -1193,6 +1219,9 @@ async def arm_bot():
         armed = bot_state["armed"]
     refresh_execution_intent()
     db_manager.log_audit("INFO", "SYSTEM_ARM", f"System armed state: {armed}")
+    # P0: arming while running triggers an immediate scan
+    if armed and bot_state.get("is_running") and not bot_state.get("scanning"):
+        asyncio.create_task(tick_scanner(force=True))
     return {"armed": armed}
 
 
@@ -1792,6 +1821,11 @@ async def diagnose(market_id: str = "btc_usdt"):
     return {"market_id": market_id, "diagnosis": snapshot["diagnosis"],
             "signal": snapshot["signal"], "news": snapshot["news"],
             "block_reason": block,
+            "last_block_reason": bot_state.get("last_block_reason"),
+            "last_scan_age_s": (
+                max(0.0, time.time() - bot_state["last_scan_completed_at"])
+                if bot_state.get("last_scan_completed_at") else None
+            ),
             "active_strategy": "rsi",
             "risk_reward_rsi": DEFAULT_RSI_RISK_REWARD}
 
@@ -1869,6 +1903,10 @@ async def get_opportunities():
         **ranking,
         "tracker_stats": tracker.get_stats(),
         "floor": AUTO_EXECUTION_SCORE_FLOOR,
+        "last_block_reason": bot_state.get("last_block_reason"),
+        "engine_stats": bot_state.get("engine_stats"),
+        "markets_total": (bot_state.get("engine_stats") or {}).get("markets", 0),
+        "excluded": ranking.get("excluded", []),
     }
 
 

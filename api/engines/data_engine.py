@@ -26,8 +26,10 @@ class DataEngine:
 
     REALTIME_PROVIDERS = (
         "binance", "bybit", "okx", "kraken", "coinbase", "gate",
-        "twelvedata", "finnhub", "alpha_vantage",
     )
+    # Live crypto feeds only. twelvedata/finnhub/alpha_vantage free tiers are
+    # DELAYED — removed from REALTIME_PROVIDERS. The decision now depends on
+    # the actual timestamp received + free-tier rights, not the provider name.
     CRYPTO_PROVIDERS = ("binance", "bybit", "okx", "kraken", "coinbase", "gate")
 
     def __init__(self):
@@ -330,10 +332,18 @@ class DataEngine:
         return await self.layer.get_trades(market_id, self.universe)
 
     def is_fresh(self, ticker: Dict[str, Any], asset_class: str) -> bool:
+        """Check data freshness for execution.
+        
+        P0: Crypto execution freshness is 15s (not 5s) to accommodate exchange
+        timestamps that arrive 6-15s after the close. Tradfi live is 60s.
+        Delayed data is always stale for auto-trade.
+        """
         if not ticker or "timestamp" not in ticker:
             return False
         age_ms = int(datetime.now().timestamp() * 1000) - ticker["timestamp"]
-        return age_ms < (5000 if asset_class == "CRYPTO" else 60000)
+        if asset_class == "CRYPTO":
+            return age_ms < 15000  # 15s for crypto exchanges
+        return age_ms < 60000  # 60s for tradfi live
 
     async def shutdown(self) -> None:
         providers = [self.layer.providers[provider_id] for provider_id in self.CRYPTO_PROVIDERS]

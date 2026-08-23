@@ -299,3 +299,150 @@ def test_serverless_detection(monkeypatch):
     assert idx.is_serverless_runtime() is False
     monkeypatch.setenv("VERCEL", "1")
     assert idx.is_serverless_runtime() is True
+
+
+# ---- P0/P1 new tests -------------------------------------------------------
+
+
+def test_scan_timeout_longer_than_lock_stale():
+    """P0: SCAN_ALL_TIMEOUT_S > SCAN_LOCK_STALE_S so scan_all is not killed at 180s."""
+    assert idx.SCAN_ALL_TIMEOUT_S > idx.SCAN_LOCK_STALE_S
+    assert idx.SCAN_ALL_TIMEOUT_S >= 300
+
+
+def test_scan_constants_defined():
+    """P0: both timeout constants exist with correct values."""
+    assert idx.SCAN_LOCK_STALE_S == 180.0
+    assert idx.SCAN_ALL_TIMEOUT_S == 600.0
+
+
+def test_is_fresh_crypto_15s():
+    """P0: crypto freshness accepts 10s, refuses 20s."""
+    import time
+    now = time.time()
+    ticker_fresh = {"timestamp": int(now * 1000 - 10_000)}
+    ticker_stale = {"timestamp": int(now * 1000 - 20_000)}
+    assert idx.data_engine.is_fresh(ticker_fresh, "CRYPTO") is True
+    assert idx.data_engine.is_fresh(ticker_stale, "CRYPTO") is False
+
+
+def test_is_fresh_tradfi_60s():
+    """P0: tradfi live freshness accepts 45s, refuses 70s."""
+    import time
+    now = time.time()
+    ticker_fresh = {"timestamp": int(now * 1000 - 45_000)}
+    ticker_stale = {"timestamp": int(now * 1000 - 70_000)}
+    assert idx.data_engine.is_fresh(ticker_fresh, "FOREX") is True
+    assert idx.data_engine.is_fresh(ticker_stale, "FOREX") is False
+
+
+@pytest.mark.asyncio
+async def test_start_triggers_scan(monkeypatch):
+    """P0: POST /api/start launches a scan task."""
+    called = {"ok": False}
+
+    async def _mock_scan(force=False):
+        called["ok"] = True
+
+    monkeypatch.setattr(idx, "tick_scanner", _mock_scan)
+    idx.bot_state["scanning"] = False
+    idx.bot_state["is_running"] = False
+    client = TestClient(idx.app)
+    resp = client.post("/api/start", headers={"X-API-Key": ""})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is True
+    assert called["ok"] is True
+
+
+def test_tick_capital_no_await_under_lock():
+    """P0: tick_capital must not await network while holding state_lock (static check)."""
+    source = open("api/index.py", encoding="utf-8").read()
+    in_func = False
+    prev_indent = ""
+    for line in source.split("\n"):
+        if "async def tick_capital" in line:
+            in_func = True
+            continue
+        if not in_func:
+            continue
+        if "async def " in line and "tick_capital" not in line:
+            break
+        stripped = line.strip()
+        if "async with state_lock:" in stripped:
+            prev_indent = line[:len(line) - len(line.lstrip())]
+            # Check subsequent lines until dedent
+            continue
+        if prev_indent:
+            cur_indent = line[:len(line) - len(line.lstrip())]
+            if cur_indent <= prev_indent and stripped:
+                prev_indent = ""
+            elif stripped.startswith("await "):
+                pytest.fail(f"tick_capital awaits '{stripped}' while holding state_lock")
+
+
+@pytest.mark.parametrize(
+    ("policy", "asset_class", "news_ok"),
+    [
+        ("block_all", "CRYPTO", False),
+        ("block_all", "FOREX", False),
+        ("block_tradfi_only", "CRYPTO", True),
+        ("block_tradfi_only", "FOREX", False),
+        ("allow_all", "CRYPTO", True),
+        ("allow_all", "FOREX", True),
+    ],
+)
+@pytest.mark.asyncio
+async def test_calendar_hs_respects_policy(policy, asset_class, news_ok):
+    """P0: Calendar HS + policy respected (block_all blocks RSI crypto too)."""
+    engine = NewsEngine(unavailable_policy=policy)
+    engine.provider.fetch_events = AsyncMock(return_value=[])
+    result = await engine.check_trading_allowed(asset_class=asset_class)
+    assert result["news_ok"] is news_ok
+
+
+def test_ranker_uses_compute_trade_costs():
+    """P0: ranker uses compute_trade_costs not naive 0.001*2."""
+    source = open("api/engines/opportunity_ranker.py", encoding="utf-8").read()
+    assert "compute_trade_costs" in source or "_compute_costs" in source
+    # Old naive formula must not be the primary calculation
+    assert "round_trip_cost = (entry * 0.001 * 2) + spread_abs" not in source
+
+
+def test_full_universe_returned_by_api():
+    """P0: /api/scanner always returns all markets (127+)."""
+    ids = idx.data_engine.universe.get_all_ids()
+    assert len(ids) >= 127
+    idx.bot_state["latest_scan"] = []
+    client = TestClient(idx.app)
+    data = client.get("/api/scanner?filter=all").json()
+    assert len(data["assets"]) == len(ids)
+
+
+def test_last_block_reason_exposed():
+    """P0: last_block_reason and excluded appear in endpoints."""
+    idx.bot_state["last_block_reason"] = "TEST_BLOCK"
+    idx.bot_state["opportunity_ranking"] = {"excluded": [{"symbol": "x"}]}
+    client = TestClient(idx.app)
+    s = client.get("/api/status").json()
+    assert s.get("last_block_reason") == "TEST_BLOCK"
+    r = client.get("/api/scanner").json()
+    assert r.get("last_block_reason") == "TEST_BLOCK"
+    d = client.get("/api/diagnose?market_id=btc_usdt").json()
+    assert d.get("last_block_reason") is None or d.get("last_block_reason") == "TEST_BLOCK"
+    o = client.get("/api/opportunities").json()
+    assert o.get("last_block_reason") == "TEST_BLOCK"
+
+
+def test_yahoo_data_refused_auto_trade():
+    """P0: Yahoo delayed data is not auto-tradable."""
+    row = prepare_radar([{
+        "symbol": "eur_usd", "status": "DELAYED", "tradable": True, "score": 95,
+        "realtime_source": False, "signal_data": {"strategy": "rsi", "status": "SIGNAL_DETECTED"},
+        "data_age_ms": 100,
+    }])[0]
+    assert row["tradable"] is False
+    # Also check scalping guard
+    guard = idx.data_engine.check_scalping_allowed("eur_usd")
+    if not guard["allowed"]:
+        assert "NON_REALTIME_SOURCE" in guard["reason"]

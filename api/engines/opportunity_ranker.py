@@ -20,6 +20,7 @@ from .constants import (
     SHRINKAGE_PRIOR_TRADES,
     SHRINKAGE_PRIOR_WIN_RATE,
 )
+from .cost_calculator import compute_trade_costs as _compute_costs
 
 
 def _bayesian_shrink(observed: float, n: int,
@@ -115,7 +116,12 @@ def _passes_all_gates(
     max_cost_to_risk: float = 0.5,
     quarantined: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Check all gates for a candidate. Returns {passes, reasons}."""
+    """Check all gates for a candidate. Returns {passes, reasons}.
+    
+    P0: uses compute_trade_costs from cost_calculator instead of the naive
+    0.001*2 formula. Net RR threshold stays 1.5, but the calculation is now
+    accurate (fee_pct+slippage_pct as percentages, real spread).
+    """
     reasons: list[str] = []
     quarantined = quarantined or set()
 
@@ -157,16 +163,25 @@ def _passes_all_gates(
     if checks.get("LIQUIDITY_VALID") == "FAIL":
         reasons.append("INSUFFICIENT_LIQUIDITY")
 
-    # Gate 7: Net RR
+    # Gate 7: Net RR using compute_trade_costs (P0: not 0.001*2 naive formula)
     sl = float(sig.get("sl", 0) or 0)
     tp = float(sig.get("tp", 0) or 0)
     risk_distance = abs(entry - sl) if entry > 0 and sl > 0 else 0.0
     if risk_distance > 0:
-        tp_distance = abs(tp - entry)
-        round_trip_cost = (entry * 0.001 * 2) + spread_abs  # approximate
-        net_rr = (tp_distance - round_trip_cost) / risk_distance
-        if net_rr < min_net_rr:
-            reasons.append(f"NET_RR_TOO_LOW ({net_rr:.2f} < {min_net_rr})")
+        costs = _compute_costs(
+            entry=entry, sl=sl, tp=tp,
+            fee_pct=0.05, slippage_pct=0.05,
+            spread=spread_abs,
+        )
+        if costs.get("valid"):
+            net_rr = costs["net_rr"]
+            cost_to_risk = costs["cost_to_risk"]
+            if net_rr < min_net_rr:
+                reasons.append(f"NET_RR_TOO_LOW ({net_rr:.2f} < {min_net_rr})")
+            if cost_to_risk > max_cost_to_risk:
+                reasons.append(f"COST_GATE_BLOCKED (cost_to_risk {cost_to_risk:.2f} > {max_cost_to_risk})")
+        else:
+            reasons.append("COST_CALCULATION_FAILED")
     else:
         reasons.append("ZERO_RISK_DISTANCE")
 
