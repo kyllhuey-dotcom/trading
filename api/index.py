@@ -84,7 +84,7 @@ HEARTBEAT_INTERVAL_S = float(os.getenv("HEARTBEAT_INTERVAL_S", "2.0" if TESTING 
 # --------------------------------------------------------------------------- #
 REAL_MODE_WARNING = "Live execution still experimental – use DEMO for strategies"
 
-app = FastAPI(title="Quantum Trade Pro", version="2.1.0", lifespan=None)
+app = FastAPI(title="Quantum Trade Pro", version="2.6.0", lifespan=None)
 
 # Basic reinforced rate limiting (LOT H): sliding window per client IP,
 # separate budgets for reads and mutations. Env-tunable.
@@ -112,7 +112,7 @@ async def rate_limit_middleware(request: Request, call_next):
 db_manager = DatabaseManager()
 data_engine = DataEngine()
 analysis_engine = AnalysisEngine()
-news_engine = NewsEngine()
+news_engine = NewsEngine(db_manager=db_manager)
 news_aggregator = NewsAggregator()
 signal_engine = SignalEngine(min_score=80)
 risk_engine = RiskEngine()
@@ -136,6 +136,10 @@ _started_at = datetime.now()
 bot_state: Dict[str, Any] = {
     "mode": "DEMO", "armed": False, "equity": 0.0, "balance": 0.0, "drawdown": 0.0,
     "is_running": False, "latest_scan": [], "active_trades": [], "best_setups": [],
+    "scanning": False, "scan_progress_count": 0,
+    "scan_progress_total": len(data_engine.universe.get_all_ids()),
+    "scan_started_at": None, "last_scan_completed_at": None,
+    "execution_intent": {"code": "STOPPED", "message": "System stopped"},
     "engine_stats": {"markets": 0, "scanned": 0, "signals": 0, "tradable": 0},
     "selected_market": "btc_usdt",
     "capital_profile": {"mode": "manual", "bracket": None, "balance": 0.0, "applied": False},
@@ -243,6 +247,7 @@ class SettingsProvider:
         bot_state["regime_adaptation_enabled"] = signal_engine.regime_adaptation_enabled
 
         scanner_engine.apply_settings(s)
+        news_engine.apply_settings(s)
         bot_state["language"] = s.get("language", "en")
 
 
@@ -379,24 +384,56 @@ async def tick_capital():
 
 _scan_counter = {"n": 0}
 
-async def tick_scanner():
-    """5s — rescan the universe (fast cadence when running, slow when idle) and execute signals."""
+async def tick_scanner(force: bool = False):
+    """Rescan immediately at boot, publishing each completed symbol."""
     _scan_counter["n"] += 1
     settings = settings_provider.get()
     try:
-        interval = max(5, int(float(settings.get("scan_interval_seconds", "20"))))
+        interval = max(5, int(float(settings.get("scan_interval_seconds", "30"))))
     except ValueError:
+        # Preserve the historical invalid-value fallback for compatibility.
         interval = 20
 
-    every = max(1, interval // 5) if bot_state["is_running"] else 12  # 60s refresh when idle
-    if _scan_counter["n"] % every != 0:
+    every = max(1, interval // 5) if bot_state["is_running"] else 12
+    if not force and _scan_counter["n"] % every != 0:
+        return
+    if bot_state.get("scanning"):
         return
 
-    results = await scanner_engine.scan_all()
+    total = len(data_engine.universe.get_all_ids())
+    first_scan = bot_state.get("last_scan_completed_at") is None
+    bot_state.update({
+        "scanning": True,
+        "scan_progress_count": 0,
+        "scan_progress_total": total,
+        "scan_started_at": time.time(),
+    })
+    if first_scan:
+        bot_state["latest_scan"] = []
+
+    async def publish_progress(result, completed, progress_total):
+        current = list(bot_state.get("latest_scan") or [])
+        symbol = result.get("symbol")
+        current = [row for row in current if row.get("symbol") != symbol]
+        current.append(result)
+        async with state_lock:
+            bot_state["latest_scan"] = current
+            bot_state["scan_progress_count"] = completed
+            bot_state["scan_progress_total"] = progress_total
+            bot_state["best_setups"] = prepare_radar(current)[:5]
+
+    try:
+        results = await scanner_engine.scan_all(progress_callback=publish_progress)
+    finally:
+        bot_state["scanning"] = False
+
     async with state_lock:
         metrics_state["total_scans"] += 1
         metrics_engine.record_scan(scanner_engine.last_scan_duration, results)
         bot_state["latest_scan"] = results
+        bot_state["scan_progress_count"] = len(results)
+        bot_state["scan_progress_total"] = total
+        bot_state["last_scan_completed_at"] = time.time()
         bot_state["engine_stats"].update({
             "markets": len(results),
             "scanned": len([r for r in results if r.get("status") == "LIVE"]),
@@ -597,6 +634,7 @@ async def emergency_stop_logic(reason: str = "Manual trigger"):
     async with state_lock:
         bot_state["is_running"] = False
         bot_state["armed"] = False
+    refresh_execution_intent()
     state_machine.transition_to(BotState.EMERGENCY_STOP)
     demo_execution.clear_active_positions(bot_state["mode"])
     real_close = await broker_connector.close_all_positions()
@@ -757,7 +795,18 @@ async def get_status(market_id: str = "btc_usdt"):
         "broker_info": broker_connector.get_status(),
         "broker_connected": broker_connector.get_status()["broker_count"] > 0,
         "best_setups": bot_state["best_setups"],
-        "execution_intent": bot_state.get("execution_intent"),
+        "execution_intent": bot_state.get("execution_intent") or {
+            "code": "STOPPED", "message": "System stopped"},
+        "calendar": news_engine.provider.get_state(),
+        "scanner": {
+            "scanning": bool(bot_state.get("scanning")),
+            "progress": f"{bot_state.get('scan_progress_count', 0)}/{bot_state.get('scan_progress_total', 0)}",
+            "last_scan_age_s": (
+                max(0.0, time.time() - bot_state["last_scan_completed_at"])
+                if bot_state.get("last_scan_completed_at") else None
+            ),
+        },
+        "language": bot_state.get("language", "en"),
         "capital_profile": bot_state.get("capital_profile"),
     }
 
@@ -768,10 +817,27 @@ async def get_history(mode: str = "DEMO", limit: int = 100):
 
 
 @app.get("/api/scanner")
-async def get_scanner(sort: str = "score", order: str = "desc", filter: str = "all"):
-    assets = prepare_radar(bot_state.get("latest_scan") or [], sort=sort, order=order, filter_mode=filter)
-    return {"assets": assets, "duration_s": scanner_engine.last_scan_duration,
-            "sort": sort, "order": order, "filter": filter}
+async def get_scanner(sort: str = "score", order: str = "desc", filter: str = "all",
+                      live_only: bool = False):
+    assets = prepare_radar(bot_state.get("latest_scan") or [], sort=sort, order=order,
+                           filter_mode=filter, live_only=live_only)
+    completed_at = bot_state.get("last_scan_completed_at")
+    age_s = max(0.0, time.time() - completed_at) if completed_at else None
+    completed = int(bot_state.get("scan_progress_count") or 0)
+    total = int(bot_state.get("scan_progress_total") or len(data_engine.universe.get_all_ids()))
+    return {
+        "assets": assets,
+        "duration_s": scanner_engine.last_scan_duration,
+        "sort": sort,
+        "order": order,
+        "filter": filter,
+        "live_only": live_only,
+        "scanning": bool(bot_state.get("scanning")),
+        "progress": f"{completed}/{total}",
+        "progress_count": completed,
+        "progress_total": total,
+        "last_scan_age_s": round(age_s, 3) if age_s is not None else None,
+    }
 
 
 @app.get("/api/markets")
@@ -799,11 +865,22 @@ async def save_settings(new_settings: Dict[str, str] = Body(...)):
             "message": "Parameters deployed live"}
 
 
+def refresh_execution_intent(n_candidates: int = 0) -> Dict[str, Any]:
+    intent = describe_intent(
+        bot_state["is_running"], bot_state["armed"], n_candidates,
+        len(bot_state.get("active_trades") or []), risk_engine.max_open_positions,
+        signal_engine.min_score,
+    )
+    bot_state["execution_intent"] = intent
+    return intent
+
+
 @app.post("/api/start", dependencies=[Depends(require_admin)])
 async def start_bot():
     async with state_lock:
         bot_state["is_running"] = True
     state_machine.transition_to(BotState.RUNNING)
+    refresh_execution_intent()
     db_manager.log_audit("INFO", "SYSTEM_START", "Bot started")
     return {"success": True, "state": state_machine.current_state.value}
 
@@ -813,6 +890,7 @@ async def stop_bot():
     async with state_lock:
         bot_state["is_running"] = False
     state_machine.transition_to(BotState.STOPPED)
+    refresh_execution_intent()
     db_manager.log_audit("INFO", "SYSTEM_STOP", "Bot stopped")
     return {"success": True, "state": state_machine.current_state.value}
 
@@ -822,6 +900,7 @@ async def arm_bot():
     async with state_lock:
         bot_state["armed"] = not bot_state["armed"]
         armed = bot_state["armed"]
+    refresh_execution_intent()
     db_manager.log_audit("INFO", "SYSTEM_ARM", f"System armed state: {armed}")
     return {"armed": armed}
 
@@ -1213,7 +1292,11 @@ async def get_news():
 @app.get("/api/health")
 async def get_health():
     report = await data_engine.health_monitor.get_health_report()
-    return {"providers": report}
+    return {
+        "providers": report,
+        "markets": data_engine.get_market_source_health(),
+        "calendar": news_engine.provider.get_state(),
+    }
 
 
 @app.post("/api/backtest", dependencies=[Depends(require_admin)])
@@ -1393,6 +1476,25 @@ app.mount("/", StaticFiles(directory="public"), name="public")
 # --------------------------------------------------------------------------- #
 # 10. Lifespan + entry point                                                  #
 # --------------------------------------------------------------------------- #
+def apply_startup_automation(settings: Dict[str, str]) -> None:
+    """Apply persisted startup intent without ever enabling REAL mode."""
+    auto_arm = str(settings.get("auto_arm_on_startup", "false")).lower() == "true"
+    auto_start = str(settings.get("auto_start_on_startup", "false")).lower() == "true"
+    # Arming implies starting: an armed-but-stopped process was the original
+    # production ambiguity. auto_start alone intentionally remains unarmed.
+    bot_state["armed"] = auto_arm
+    bot_state["is_running"] = auto_arm or auto_start
+    if bot_state["is_running"]:
+        state_machine.transition_to(BotState.RUNNING)
+    else:
+        state_machine.transition_to(BotState.STOPPED)
+    bot_state["execution_intent"] = describe_intent(
+        bot_state["is_running"], bot_state["armed"], 0,
+        len(bot_state.get("active_trades") or []), risk_engine.max_open_positions,
+        signal_engine.min_score,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("QUANTUM TRADE PRO STARTING...")
@@ -1405,8 +1507,12 @@ async def lifespan(app: FastAPI):
         logger.error(f"Broker initialization failed: {e}")
     state_machine.transition_to(BotState.STOPPED)
     settings_provider.apply()
+    apply_startup_automation(settings_provider.get())
 
     tasks = [
+        # Do not await the whole universe: expose progress while startup stays
+        # responsive. Crypto rows are emitted first by ScannerEngine.
+        asyncio.create_task(tick_scanner(force=True)),
         asyncio.create_task(loop_wrapper(tick_capital, 1.0, "tick_capital")),
         asyncio.create_task(loop_wrapper(tick_scanner, 5.0, "tick_scanner")),
         asyncio.create_task(loop_wrapper(tick_management, 1.0, "tick_management")),

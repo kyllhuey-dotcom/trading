@@ -27,14 +27,17 @@ def select_candidates(results: List[Dict[str, Any]], min_score: float,
 def describe_intent(running: bool, armed: bool, n_candidates: int, n_active: int,
                     max_positions: int, min_score: float) -> Dict[str, Any]:
     if not running:
-        return {"code": "STOPPED", "message": "System stopped"}
+        return {"code": "STOPPED", "state": "STOPPED", "message": "System stopped"}
     if not armed:
-        return {"code": "DISARMED", "message": "Execution disarmed"}
+        return {"code": "DISARMED", "state": "WAITING_SETUP", "message": "Execution disarmed"}
     if n_active >= int(max_positions):
-        return {"code": "FULL", "message": f"All {max_positions} slots filled"}
+        return {"code": "FULL", "state": "WAITING_SETUP",
+                "message": f"All {max_positions} slots filled"}
     if n_candidates <= 0:
         return {
             "code": "IDLE",
+            "state": "WAITING_SETUP",
             "message": f"Waiting for institutional setup ≥ {int(min_score)}",
         }
-    return {"code": "EXECUTING", "message": "Executing high-conviction trade…"}
+    return {"code": "EXECUTING", "state": "EXECUTING",
+            "message": "Executing high-conviction trade…"}

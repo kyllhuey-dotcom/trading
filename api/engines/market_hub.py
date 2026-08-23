@@ -36,26 +36,57 @@ def enrich_market_item(item: Dict[str, Any], scan_by_id: Dict[str, Any] = None) 
     row["score"] = int(scan.get("score") or row.get("score") or 0)
     row["trend"] = scan.get("trend") or row.get("trend")
     row["data_age_ms"] = scan.get("data_age_ms") if scan.get("data_age_ms") is not None else row.get("data_age_ms")
+    row["realtime_source"] = bool(
+        scan.get("realtime_source") if "realtime_source" in scan
+        else row.get("realtime_source", False)
+    )
+    row["active_source"] = scan.get("active_source") or row.get("active_source") or row.get("source")
     row["strategy"] = scan.get("strategy") or (scan.get("signal_data") or {}).get("strategy") or row.get("strategy")
     row["change"] = float(change or 0)
     row["sparkline"] = row.get("sparkline") or synthetic_sparkline(price, row["change"])
     row["display_symbol"] = row.get("display_symbol") or scan.get("display_symbol")
     row["name"] = row.get("name") or scan.get("name")
+    row["underlying"] = row.get("underlying") or scan.get("underlying") or mid
     row["market_id"] = mid
     return row
 
 
 def enrich_overview(overview: Dict[str, List[Dict[str, Any]]], scan: List[Dict[str, Any]] = None,
                     sort: str = "score", order: str = "desc") -> Dict[str, List[Dict[str, Any]]]:
-    scan_by = {}
-    for a in scan or []:
-        scan_by[a.get("symbol")] = a
-    out = {}
+    """Merge scan data by market id and expose one row per underlying."""
+    scan_by = {asset.get("symbol"): asset for asset in (scan or [])}
+    categories = list((overview or {}).keys())
+    all_rows = []
+    for category, items in (overview or {}).items():
+        for item in items:
+            row = enrich_market_item(item, scan_by)
+            row["_category"] = category
+            all_rows.append(row)
+
+    selected: Dict[str, Dict[str, Any]] = {}
+    for row in all_rows:
+        key = str(row.get("underlying") or row.get("market_id"))
+        current = selected.get(key)
+        if current is None or _source_rank(row) > _source_rank(current):
+            selected[key] = row
+
+    out = {category: [] for category in categories}
+    for row in selected.values():
+        category = row.pop("_category", None)
+        if category in out:
+            out[category].append(row)
     descending = str(order or "desc").lower() != "asc"
-    for cat, items in (overview or {}).items():
-        enriched = [enrich_market_item(it, scan_by) for it in items]
-        out[cat] = sort_hub_items(enriched, sort, descending)
+    for category in out:
+        out[category] = sort_hub_items(out[category], sort, descending)
     return out
+
+
+def _source_rank(row: Dict[str, Any]):
+    try:
+        freshness = -float(row.get("data_age_ms"))
+    except (TypeError, ValueError):
+        freshness = float("-inf")
+    return bool(row.get("realtime_source")), freshness, float(row.get("score") or 0)
 
 
 def sort_hub_items(items: List[Dict[str, Any]], key: str = "score", descending: bool = True) -> List[Dict[str, Any]]:

@@ -35,6 +35,8 @@ class DataLayer:
         self.provider_timeout_s = 5.0
         self._quote_cache: Dict[str, tuple] = {}
         self._quote_cache_ttl = 0.25
+        # Last successful source and provider timestamp for /api/health.
+        self.market_source_state: Dict[str, Dict[str, Any]] = {}
 
     # ------------------------------------------------------------------ #
     # Failure tracking (escalating cooldown)                             #
@@ -118,6 +120,13 @@ class DataLayer:
                     if quote:
                         self._record_success(cache_key)
                         self._quote_cache[mid] = (now, quote)
+                        quote_ts = getattr(quote, "timestamp", None)
+                        self.market_source_state[mid] = {
+                            "provider_id": pid,
+                            "source": getattr(quote, "source", pid),
+                            "timestamp": quote_ts,
+                            "received_at": int(time.time() * 1000),
+                        }
                         return quote
                     self._record_failure(cache_key)
                 except Exception as e:

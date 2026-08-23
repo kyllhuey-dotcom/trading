@@ -159,6 +159,20 @@ class MarketUniverse:
             "xlf": {"display_symbol": "XLF FIN", "asset_class": "ETFS", "name": "Financial Select Sector SPDR", "providers": {"yahoo_etfs": "XLF"}, "broker_symbols": {"gate": "XLF"}, "tick_size": 0.01, "lot_size": 1, "min_order": 1.0, "leverage_max": 5, "timezone": "America/New_York"}
         }
 
+        # v2.6: remove three duplicate contracts that represented an already
+        # tracked underlying (gold/gc_f, spx/es_f, nasdaq/nq_f).  Replace them
+        # with liquid, independent crypto underlyings so the universe remains
+        # 127 instruments without showing or trading the same exposure twice.
+        for duplicate_id in ("gc_f", "es_f", "nq_f"):
+            self.universe.pop(duplicate_id, None)
+        self.universe.update({
+            "inj_usdt": {"display_symbol": "INJ/USDT", "asset_class": "CRYPTO", "name": "Injective", "providers": {"gate": "INJ/USDT", "bybit": "INJ/USDT"}, "broker_symbols": {"gate": "INJ/USDT"}, "tick_size": 0.001, "lot_size": 0.1, "min_order": 10.0, "leverage_max": 20, "timezone": "UTC"},
+            "wif_usdt": {"display_symbol": "WIF/USDT", "asset_class": "CRYPTO", "name": "dogwifhat", "providers": {"gate": "WIF/USDT", "bybit": "WIF/USDT"}, "broker_symbols": {"gate": "WIF/USDT"}, "tick_size": 0.0001, "lot_size": 1.0, "min_order": 10.0, "leverage_max": 10, "timezone": "UTC"},
+            "ondo_usdt": {"display_symbol": "ONDO/USDT", "asset_class": "CRYPTO", "name": "Ondo", "providers": {"gate": "ONDO/USDT", "bybit": "ONDO/USDT"}, "broker_symbols": {"gate": "ONDO/USDT"}, "tick_size": 0.0001, "lot_size": 1.0, "min_order": 10.0, "leverage_max": 10, "timezone": "UTC"},
+        })
+        for market_id, instrument in self.universe.items():
+            instrument.setdefault("underlying", market_id)
+
     def get_all_ids(self) -> List[str]:
         return list(self.universe.keys())
 

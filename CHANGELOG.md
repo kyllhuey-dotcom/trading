@@ -1,5 +1,69 @@
 # Changelog - Quantum Trade Pro
 
+## [2.6.0] - 2026-08-22 — Correctifs des 8 causes racines de production
+
+### Fiabilité et sûreté
+- **Calendrier économique sans point unique de panne** : priorité au flux JSON
+  Fair Economy, fallback vers le scraper HTML ForexFactory, puis dernier
+  calendrier normalisé persisté dans SQLite (durée de validité maximale : 7
+  jours). `/api/status` et `/api/health` exposent source, statut et âge.
+- Nouveau réglage chaud `news_unavailable_policy` : `block_all` (**défaut
+  fail-safe**), `block_tradfi_only` ou `allow_all`. Les timeouts scanner suivent
+  la même politique au lieu de contourner le moteur news.
+- **Données crypto sans clé** : cascade déterministe Binance → Bybit → OKX →
+  Kraken → Coinbase → Gate, avec cooldown/backoff existant conservé. Chaque
+  crypto dispose d'au moins trois mappings possibles.
+- **Tradfi optionnel** : TwelveData et Finnhub ne sont enregistrés que lorsque
+  `TWELVEDATA_API_KEY` / `FINNHUB_API_KEY` sont définies ; rate limiter isolé
+  par provider ; Yahoo reste le fallback sans clé.
+- `/api/health` rapporte aussi, pour chacun des 127 marchés, la source active,
+  l'âge de la donnée et le nombre de sources enregistrées.
+
+### Scanner, démarrage et données
+- Premier scan lancé immédiatement au startup et publié **incrémentalement** :
+  phase crypto temps réel en premier, classes Yahoo ensuite. `/api/scanner`
+  ajoute `scanning`, `progress` (`n/127`) et `last_scan_age_s`.
+- `auto_start_on_startup` ajouté (défaut `false`) ;
+  `auto_arm_on_startup=true` arme désormais **et démarre**. L'intention
+  normalisée `STOPPED` / `WAITING_SETUP` / `EXECUTING` est visible dans le
+  header et `/api/status` (anciens codes détaillés conservés pour compatibilité).
+- Yahoo Finance est groupé par classe d'actifs et par cycle : cache ticker/1m
+  60 s, 15m 5 min, dérivation 15m locale et backoff par symbole. Intervalle de
+  scan par défaut porté de 20 à 30 s.
+- Garde anti-données-différées inchangée : le badge n'autorise pas l'exécution ;
+  `allow_delayed_data_trading=false` reste le défaut.
+
+### Dashboard et qualité des vues
+- Suppression des trois CDN runtime : Tailwind compilé dans
+  `public/css/app.css`, Lucide dans `public/js/lucide.min.js`, police système et
+  garde défensive sur chaque `lucide.createIcons`. `GET /` ne référence aucune
+  ressource HTTP(S) externe.
+- Compteur d'échecs `fetchAPI` avec bannière **API INJOIGNABLE** après trois
+  échecs consécutifs ; bannière **CALENDRIER HORS LIGNE — exécution bloquée
+  (fail-safe)** lorsque la politique bloque réellement.
+- Radar jamais muet : skeleton `Scan en cours n/127…`, badges LIVE / DIFFÉRÉ
+  ~15 min, filtre « Live seulement » et raison principale de refus par ligne.
+  Les mêmes badges et filtre sont présents dans le Market Hub.
+- Champ `underlying` sur tous les instruments ; suppression de `gc_f`, `es_f`
+  et `nq_f` qui dupliquaient gold, spx et nasdaq, remplacés par trois
+  sous-jacents liquides indépendants pour conserver 127 lignes uniques.
+  Radar et Hub ont en plus une déduplication défensive, temps réel puis
+  fraîcheur en priorité.
+- i18n en/fr/es/de : dictionnaires strictement isomorphes (> 150 clés), `t(key)`
+  dans les rendus dynamiques, plus de 160 hooks `data-i18n`, réapplication après rendu
+  et langue serveur appliquée au chargement.
+
+### Protections préservées et tests
+- Aucune modification des protections de sizing à risque fixe,
+  anti-martingale, profils de capital, tuning par marché, restrictions de
+  session/news ou garde de fraîcheur. Cibles inchangées : **win rate ≥ 45 %**,
+  **RR ≥ 1,5**, **espérance positive** — aucune promesse de 99 %.
+- `tests/test_v26_root_causes.py` ajoute 15 tests hors réseau : JSON/HTML/cache
+  7 jours/politiques, batch Yahoo/cache, parsing/cascade/activation providers,
+  priorité crypto, progression, auto-start/arm, doublons Hub/Radar, autonomie
+  du dashboard et parité i18n.
+- Suite complète : **390 passés / 6 skips réseau / 0 échec** ; Ruff propre.
+
 ## [2.5.0] - 2026-08-22 — LOT R : Audit & optimisation PAR MARCHÉ + adaptation au régime
 
 ### Added (audit par marché — méthodologie demandée)

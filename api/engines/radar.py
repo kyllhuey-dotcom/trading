@@ -37,7 +37,32 @@ def filter_assets(assets: List[Dict[str, Any]], mode: str = "all") -> List[Dict[
         return [a for a in out if float(a.get("score") or 0) >= 90]
     if mode == "crypto":
         return [a for a in out if str(a.get("asset_class") or "").upper() == "CRYPTO"]
+    if mode in ("live", "live_only"):
+        return [a for a in out if bool(a.get("realtime_source"))]
     return out
+
+
+def deduplicate_underlyings(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep one row per exposure, preferring realtime then freshest data."""
+    selected: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+
+    def rank(row: Dict[str, Any]):
+        age = row.get("data_age_ms")
+        try:
+            age_rank = -float(age) if age is not None else float("-inf")
+        except (TypeError, ValueError):
+            age_rank = float("-inf")
+        return bool(row.get("realtime_source")), age_rank, float(row.get("score") or 0)
+
+    for asset in assets or []:
+        key = str(asset.get("underlying") or asset.get("symbol") or asset.get("display_symbol"))
+        if key not in selected:
+            selected[key] = asset
+            order.append(key)
+        elif rank(asset) > rank(selected[key]):
+            selected[key] = asset
+    return [selected[key] for key in order]
 
 
 def enrich_radar_row(asset: Dict[str, Any]) -> Dict[str, Any]:
@@ -47,12 +72,16 @@ def enrich_radar_row(asset: Dict[str, Any]) -> Dict[str, Any]:
     row["strategy"] = row.get("strategy") or sig.get("strategy") or "structure"
     row["direction"] = row.get("direction") or sig.get("direction") or row.get("trend")
     row["data_age_label"] = format_data_age(row.get("data_age_ms"))
+    row["data_source_label"] = "LIVE" if row.get("realtime_source") else "DELAYED"
     return row
 
 
 def prepare_radar(assets: List[Dict[str, Any]], sort: str = "score", order: str = "desc",
-                  filter_mode: str = "all") -> List[Dict[str, Any]]:
-    filtered = filter_assets(assets, filter_mode)
+                  filter_mode: str = "all", live_only: bool = False) -> List[Dict[str, Any]]:
+    unique = deduplicate_underlyings(assets)
+    filtered = filter_assets(unique, filter_mode)
+    if live_only:
+        filtered = [asset for asset in filtered if bool(asset.get("realtime_source"))]
     descending = str(order or "desc").lower() != "asc"
     key = sort or "score"
     sorted_rows = sort_assets(filtered, key=key, descending=descending)

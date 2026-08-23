@@ -1,16 +1,22 @@
-"""Provider priority: Binance → Bybit → Gate → rest (LOT 7)."""
+"""Deterministic provider cascade used by every market-data path."""
 from typing import Any, Iterable, List, Tuple
 
-PRIORITY = {"binance": 0, "bybit": 1, "gate": 2}
+# Required crypto cascade, followed by optional keyed tradfi and keyless Yahoo.
+PRIORITY = {
+    "binance": 0,
+    "bybit": 1,
+    "okx": 2,
+    "kraken": 3,
+    "coinbase": 4,
+    "gate": 5,
+    "twelvedata": 10,
+    "finnhub": 11,
+}
 
 
 def prioritize_providers(items: Iterable) -> List[Tuple[str, Any]]:
-    seq = list(items or [])
-    # accept dict.items() or list of pairs
     pairs = []
-    for it in seq:
-        if isinstance(it, tuple) and len(it) == 2:
-            pairs.append(it)
-        else:
-            continue
-    return sorted(pairs, key=lambda kv: PRIORITY.get(str(kv[0]).lower(), 50))
+    for item in list(items or []):
+        if isinstance(item, tuple) and len(item) == 2:
+            pairs.append(item)
+    return sorted(pairs, key=lambda pair: PRIORITY.get(str(pair[0]).lower(), 50))

@@ -17,8 +17,14 @@ SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
     "trailing_stop_distance_atr": {"type": "float", "min": 0.1, "max": 10.0, "default": "1.5"},
     "emergency_stop_drawdown_pct": {"type": "float", "min": 1.0, "max": 50.0, "default": "10.0"},
     "auto_arm_on_startup": {"type": "bool", "default": "false"},
+    "auto_start_on_startup": {"type": "bool", "default": "false"},
+    "news_unavailable_policy": {
+        "type": "enum",
+        "choices": ("block_all", "block_tradfi_only", "allow_all"),
+        "default": "block_all",
+    },
     "active_strategies": {"type": "str", "default": "structure,arbitrage,tape,liquidity"},
-    "scan_interval_seconds": {"type": "int", "min": 5, "max": 300, "default": "20"},
+    "scan_interval_seconds": {"type": "int", "min": 5, "max": 300, "default": "30"},
     "sim_latency_ms": {"type": "int", "min": 0, "max": 5000, "default": "100"},
     "sim_slippage_pct": {"type": "float", "min": 0.0, "max": 5.0, "default": "0.05"},
     "sim_rejection_prob": {"type": "float", "min": 0.0, "max": 1.0, "default": "0.01"},
@@ -65,7 +71,7 @@ def validate_settings(raw: Dict[str, Any]) -> Tuple[Dict[str, str], List[str]]:
                 s = str(value).strip().lower()
                 if s not in spec["choices"]:
                     cleaned[key] = spec["default"]
-                    errors.append(f"{key}: invalid language, defaulted to {spec['default']}")
+                    errors.append(f"{key}: invalid choice, defaulted to {spec['default']}")
                 else:
                     cleaned[key] = s
                 continue
