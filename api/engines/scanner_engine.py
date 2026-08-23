@@ -6,6 +6,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 from .diagnostic_engine import DiagnosticEngine
+from .provider_capabilities import classify_quote_status, looks_like_quota_error
+from .scan_contract import placeholder_row
 
 logger = logging.getLogger("ScannerEngine")
 
@@ -14,10 +16,14 @@ class ScannerEngine:
     """
     Market Scanner: analyzes the whole universe with concurrency control
     and attaches a full diagnostic to every non-tradable result.
+
+    The automatic path is RSI-only. RSI needs OHLCV + ticker — never an
+    order book, recent trades or cross-quotes. One market error cannot
+    stop the rest of the scan.
     """
 
     def __init__(self, data_engine: Any, analysis_engine: Any, signal_engine: Any,
-                 news_engine: Any, max_concurrent: int = 5):
+                 news_engine: Any, max_concurrent: int = 8):
         self.data = data_engine
         self.analysis = analysis_engine
         self.signal = signal_engine
@@ -50,12 +56,17 @@ class ScannerEngine:
         trend_valid = True if is_rsi_strategy else ltf_analysis.get("trend") not in (None, "NEUTRAL")
         structure_valid = True if is_rsi_strategy else bool(ltf_analysis.get("is_hh") or ltf_analysis.get("is_ll"))
         signal_valid = signal.get("status") == "SIGNAL_DETECTED"
-        spread = float(ticker.get("spread", 0) or 0)
-        last = float(ticker.get("last", 0) or 0)
+        spread = float((ticker or {}).get("spread", 0) or 0)
+        last = float((ticker or {}).get("last", 0) or 0)
         spread_pct = (spread / last * 100) if last else 0.0
-        spread_valid = spread_pct <= self.max_spread_pct
-        liquidity_valid = float(ticker.get("volume", 0) or 0) > 0
-        # Risk/leverage/broker are validated at execution time (balance & mode dependent)
+        spread_valid = (not ticker) or spread_pct <= self.max_spread_pct
+        volume = float((ticker or {}).get("volume", 0) or 0)
+        # RSI may trade markets whose free feed has no usable volume (spot FX).
+        # Zero volume is not liquidity when a last price exists.
+        if is_rsi_strategy:
+            liquidity_valid = bool(ticker and last > 0)
+        else:
+            liquidity_valid = volume > 0
         risk_valid = True
         leverage_valid = True
         broker_valid = True
@@ -97,77 +108,93 @@ class ScannerEngine:
             broker_valid=broker_valid,
             system_armed=system_armed,
             reasons=reasons,
-            strategy_info={"strategy": signal.get("strategy", "structure"), "score": signal.get("score", 0)}
+            strategy_info={"strategy": signal.get("strategy", "rsi"), "score": signal.get("score", 0)}
         )
+
+    async def _safe_fetch(self, coro, default, label: str, symbol: str):
+        try:
+            result = await coro
+            if isinstance(result, Exception):
+                raise result
+            return result
+        except asyncio.TimeoutError:
+            logger.warning("Scanner timeout (%s/%s)", symbol, label)
+            return default
+        except Exception as exc:
+            if looks_like_quota_error(exc):
+                logger.warning("Provider quota exceeded (%s/%s)", symbol, label)
+            else:
+                logger.debug("Provider failed (%s/%s): %s", symbol, label, exc)
+            return default
 
     async def scan_asset(self, symbol: str, semaphore: asyncio.Semaphore,
                          strategy_mode: Optional[str] = None) -> Dict[str, Any]:
         """Full analysis of one asset; automatic scans are RSI-only in v2.9."""
-        # A caller cannot opt the automatic scanner into a legacy strategy.
-        # Those strategy modules remain directly testable/backtestable.
         del strategy_mode
         strategy_mode = "rsi"
         async with semaphore:
+            info = self.data.universe.get_info(symbol) if self.data and self.data.universe else None
+            if not info:
+                return {"symbol": symbol, "asset_class": "UNKNOWN", "status": "UNKNOWN_SYMBOL",
+                        "tradable": False, "reason": "Not in universe",
+                        "strategy": "rsi", "signal": "NO_TRADE",
+                        "realtime_source": False, "block_reason": "DATA_UNAVAILABLE"}
+
             try:
-                info = self.data.universe.get_info(symbol)
-                if not info:
-                    return {"symbol": symbol, "asset_class": "UNKNOWN", "status": "UNKNOWN_SYMBOL",
-                            "tradable": False, "reason": "Not in universe",
-                            "realtime_source": False}
-
-                # Parallel data fetch: LTF, HTF, ticker, orderbook, trades
-                # (hard timeout so one hung provider can never stall the whole scan)
-                df_ltf, df_htf, ticker, orderbook, trades = await asyncio.wait_for(asyncio.gather(
-                    self.data.fetch_ohlcv(symbol, timeframe='1m', limit=50),
-                    self.data.fetch_ohlcv(symbol, timeframe='15m', limit=30),
-                    self.data.fetch_ticker(symbol),
-                    self.data.fetch_order_book(symbol),
-                    self.data.fetch_trades(symbol),
-                ), timeout=30.0)
-
-                # Cross quotes for arbitrage (crypto only)
-                cross_quotes = None
-                if info.get("asset_class") == "CRYPTO":
-                    try:
-                        cross_quotes = await asyncio.wait_for(
-                            self.data.fetch_cross_quotes(symbol), timeout=15.0)
-                    except asyncio.TimeoutError:
-                        cross_quotes = None
+                # RSI path: OHLCV + ticker only. Order book / trades / cross
+                # quotes are unused and would burn free-tier quota.
+                fetched = await asyncio.wait_for(asyncio.gather(
+                    self._safe_fetch(
+                        self.data.fetch_ohlcv(symbol, timeframe="1m", limit=60),
+                        pd.DataFrame(), "ohlcv", symbol),
+                    self._safe_fetch(
+                        self.data.fetch_ticker(symbol),
+                        None, "ticker", symbol),
+                    return_exceptions=True,
+                ), timeout=15.0)
+                df_ltf = fetched[0] if not isinstance(fetched[0], Exception) else pd.DataFrame()
+                ticker = fetched[1] if not isinstance(fetched[1], Exception) else None
+                if not isinstance(df_ltf, pd.DataFrame):
+                    df_ltf = pd.DataFrame()
 
                 if df_ltf.empty or not ticker:
-                    return {
-                        "symbol": symbol,
-                        "asset_class": info.get("asset_class"),
-                        "status": "DATA_UNAVAILABLE",
-                        "tradable": False,
-                        "reason": "Missing data",
-                        "display_symbol": info.get("display_symbol"),
-                        "underlying": info.get("underlying", symbol),
-                        "realtime_source": self.data.is_realtime_capable(symbol),
-                        "diagnosis": {
-                            "main_blocker": "DATA_VALID",
-                            "main_reason": "No market data available",
-                            "checks": {"DATA_VALID": "FAIL"}
-                        }
+                    row = placeholder_row(
+                        symbol, info,
+                        status="DATA_UNAVAILABLE",
+                        reason="Missing data",
+                        block_reason="DATA_UNAVAILABLE",
+                    )
+                    row["diagnosis"] = {
+                        "main_blocker": "DATA_VALID",
+                        "main_reason": "No market data available",
+                        "checks": {"DATA_VALID": "FAIL"},
                     }
+                    return row
 
-                # Market analysis (LTF + HTF bias)
-                htf_analysis = self.analysis.identify_structure(df_htf)
-                ltf_analysis = self.analysis.identify_structure(df_ltf, htf_bias=htf_analysis.get("trend"))
-                ltf_analysis["market_id"] = symbol
+                classified = classify_quote_status(
+                    ticker,
+                    ticker.get("source") or getattr(self.data.layer, "market_source_state", {}).get(symbol, {}).get("provider_id"),
+                )
+                status = classified["status"]
 
-                # News risk
+                ltf_analysis: Dict[str, Any] = {"trend": "NEUTRAL", "market_id": symbol}
+                if self.analysis is not None:
+                    try:
+                        ltf_analysis = self.analysis.identify_structure(df_ltf)
+                        ltf_analysis["market_id"] = symbol
+                    except Exception as exc:
+                        logger.debug("Structure analysis skipped (%s): %s", symbol, exc)
+
                 asset_currency = None
                 if info.get("asset_class") == "FOREX":
-                    asset_currency = info["display_symbol"].split('/')[0]
+                    asset_currency = info["display_symbol"].split("/")[0]
                 try:
                     news_status = await asyncio.wait_for(
                         self.news.check_trading_allowed(
                             asset_currency=asset_currency, asset_class=info.get("asset_class")),
                         timeout=10.0)
                 except asyncio.TimeoutError:
-                    # Preserve the configured outage policy, whose safe default
-                    # remains ``block_all``.
+                    logger.warning("Calendar timeout (%s)", symbol)
                     if hasattr(self.news, "unavailable_status"):
                         news_status = self.news.unavailable_status(
                             asset_class=info.get("asset_class"), title="Calendar timeout")
@@ -177,46 +204,54 @@ class ScannerEngine:
                                        "blocking_event": {"title": "Calendar timeout"},
                                        "next_events": [], "status": "DATA_UNAVAILABLE"}
 
-                # Ranking score (news bypassed for ranking only)
-                scoring_news = news_status.copy()
-                scoring_news["trading_allowed"] = True
-                raw_signal = self.signal.generate_signal(
-                    ltf_analysis, scoring_news, df_ltf, strategy_mode=strategy_mode,
-                    market_id=symbol, cross_quotes=cross_quotes, orderbook=orderbook, trades=trades)
-
-                # Real signal (all filters applied)
                 signal = self.signal.generate_signal(
                     ltf_analysis, news_status, df_ltf, strategy_mode=strategy_mode,
-                    market_id=symbol, cross_quotes=cross_quotes, orderbook=orderbook, trades=trades)
-
-                # Attach display symbol so the execution layer can route and display
+                    market_id=symbol)
                 signal["display_symbol"] = info.get("display_symbol")
 
                 diagnosis = self._build_diagnosis(symbol, info, ticker, df_ltf, ltf_analysis,
                                                   news_status, signal)
 
-                data_age_ms = None
-                if isinstance(ticker.get("timestamp"), (int, float)):
+                data_age_ms = classified.get("data_age_ms")
+                if data_age_ms is None and isinstance(ticker.get("timestamp"), (int, float)):
                     data_age_ms = max(0, int(datetime.now().timestamp() * 1000) - int(ticker["timestamp"]))
+
+                if hasattr(self.data, "is_quote_realtime"):
+                    realtime = bool(self.data.is_quote_realtime(symbol, ticker))
+                elif hasattr(self.data, "is_realtime_capable"):
+                    realtime = bool(
+                        self.data.is_realtime_capable(symbol) and classified.get("realtime")
+                    )
+                else:
+                    realtime = bool(classified.get("realtime"))
+                block_reason = signal.get("block_reason") or diagnosis.get("main_blocker")
+                if news_status.get("status") == "DATA_UNAVAILABLE" and not news_status.get("news_ok", True):
+                    block_reason = "CALENDAR_UNAVAILABLE"
+                elif not realtime:
+                    # Delayed quotes stay visible but are never auto-tradable.
+                    if signal.get("status") == "SIGNAL_DETECTED":
+                        block_reason = "NON_REALTIME_SOURCE"
+
+                tradable = (
+                    signal.get("status") == "SIGNAL_DETECTED"
+                    and signal.get("tradable", True) is not False
+                    and realtime
+                )
 
                 return {
                     "symbol": symbol,
                     "display_symbol": info.get("display_symbol"),
-                    "strategy": signal.get("strategy") or raw_signal.get("strategy") or "structure",
-                    "direction": signal.get("direction") or raw_signal.get("direction"),
+                    "strategy": "rsi",
+                    "direction": signal.get("direction") or ltf_analysis.get("trend"),
                     "asset_class": info.get("asset_class"),
                     "name": info.get("name"),
-                    "price": float(ticker.get("last", 0)),
+                    "price": float(ticker.get("last", 0) or 0),
                     "change": float(ticker.get("change_24h", 0) or 0),
                     "spread": float(ticker.get("spread", 0) or 0),
                     "volume": float(ticker.get("volume", 0) or 0),
-                    "status": ticker.get("status"),
+                    "status": status,
                     "data_age_ms": data_age_ms,
-                    "realtime_source": (
-                        self.data.is_quote_realtime(symbol, ticker)
-                        if hasattr(self.data, "is_quote_realtime")
-                        else self.data.is_realtime_capable(symbol)
-                    ),
+                    "realtime_source": bool(realtime),
                     "active_source": ticker.get("source"),
                     "underlying": info.get("underlying", symbol),
                     "trend": ltf_analysis.get("trend"),
@@ -225,18 +260,23 @@ class ScannerEngine:
                     "market_state": ltf_analysis.get("market_state"),
                     "volatility": ltf_analysis.get("volatility"),
                     "market_status": self.data.universe.get_market_status(symbol),
-                    "news_risk": "High" if not news_status["news_ok"] else "Low",
-                    "signal": signal.get("status"),
-                    "score": int(raw_signal.get("score", 0)),
-                    "tradable": (signal.get("status") == "SIGNAL_DETECTED"
-                                 and signal.get("tradable", True) is not False),
+                    "news_risk": "High" if not news_status.get("news_ok", True) else "Low",
+                    "signal": signal.get("status") or "NO_TRADE",
+                    "score": int(signal.get("score", 0) or 0),
+                    "tradable": bool(tradable),
                     "reason": signal.get("reason", ltf_analysis.get("market_state")),
+                    "block_reason": block_reason,
                     "signal_data": signal,
-                    "diagnosis": diagnosis
+                    "diagnosis": diagnosis,
+                    "unavailable_policy": news_status.get("unavailable_policy"),
                 }
             except Exception as e:
-                logger.warning(f"Scanner Error ({symbol}): {e}")
-                return {"symbol": symbol, "status": "ERROR", "tradable": False, "reason": str(e)}
+                logger.warning("Scanner Error (%s): %s", symbol, e)
+                row = placeholder_row(
+                    symbol, info, status="ERROR", reason=str(e),
+                    block_reason="PROVIDER_ERROR" if not looks_like_quota_error(e) else "PROVIDER_QUOTA_EXCEEDED",
+                )
+                return row
 
     async def scan_all(self, strategy_mode: Optional[str] = None,
                        progress_callback: Any = None) -> List[Dict[str, Any]]:
@@ -263,12 +303,37 @@ class ScannerEngine:
             if not phase:
                 return
             if hasattr(self.data, "prepare_scan_cycle"):
-                await self.data.prepare_scan_cycle(phase)
-            tasks = [asyncio.create_task(
-                self.scan_asset(symbol, semaphore, strategy_mode=strategy_mode)
-            ) for symbol in phase]
-            for future in asyncio.as_completed(tasks):
-                result = await future
+                try:
+                    await asyncio.wait_for(self.data.prepare_scan_cycle(phase), timeout=25.0)
+                except Exception as exc:
+                    logger.warning("prepare_scan_cycle failed: %s", exc)
+            async def _one(symbol: str) -> Dict[str, Any]:
+                try:
+                    return await self.scan_asset(symbol, semaphore, strategy_mode=strategy_mode)
+                except Exception as exc:
+                    logger.warning("Scanner Error (%s): %s", symbol, exc)
+                    info = self.data.universe.get_info(symbol) or {}
+                    return placeholder_row(
+                        symbol, info, status="ERROR", reason=str(exc),
+                        block_reason="PROVIDER_ERROR",
+                    )
+
+            pending = {asyncio.create_task(_one(symbol)): symbol for symbol in phase}
+            done_set, _ = await asyncio.wait(pending.keys())
+            # Preserve crypto-first phase order while remaining resilient.
+            by_symbol = {}
+            for task in done_set:
+                symbol = pending[task]
+                try:
+                    by_symbol[symbol] = task.result()
+                except Exception as exc:
+                    info = self.data.universe.get_info(symbol) or {}
+                    by_symbol[symbol] = placeholder_row(
+                        symbol, info, status="ERROR", reason=str(exc),
+                        block_reason="PROVIDER_ERROR",
+                    )
+            for symbol in phase:
+                result = by_symbol[symbol]
                 results.append(result)
                 completed += 1
                 if progress_callback:
@@ -276,8 +341,6 @@ class ScannerEngine:
                     if inspect.isawaitable(callback_result):
                         await callback_result
 
-        # Phase ordering is intentional: no delayed provider can hold up the
-        # first useful realtime rows in the dashboard.
         await scan_phase(crypto)
         await scan_phase(tradfi)
         self.last_scan_duration = (datetime.now() - start_time).total_seconds()

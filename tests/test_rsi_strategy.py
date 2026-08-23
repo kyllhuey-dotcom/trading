@@ -3,6 +3,7 @@
 import pandas as pd
 import pytest
 
+from api.engines.constants import DEFAULT_RSI_RISK_REWARD
 from api.engines.signal_engine import SignalEngine
 from api.engines.strategies.rsi_mean_reversion import RSIMeanReversionStrategy
 
@@ -30,6 +31,8 @@ def _reversal_frame(direction="BUY", volume="high", n=40):
         volumes = [100.0] * (n - 1) + [105.0]
     elif volume == "low":
         volumes = [100.0] * n
+    elif volume == "nan":
+        volumes = [float("nan")] * n
     else:
         volumes = None
 
@@ -45,6 +48,8 @@ def test_exact_bullish_rsi_exit_and_price_rebound():
     assert result["direction"] == "BUY"
     assert result["rsi_previous"] <= 30 < result["rsi"]
     assert result["metadata"]["ma_confirmation"] is True
+    assert result["strategy"] == "rsi"
+    assert result["risk_reward"] == DEFAULT_RSI_RISK_REWARD
 
 
 def test_exact_bearish_rsi_exit_and_price_recoil():
@@ -54,12 +59,21 @@ def test_exact_bearish_rsi_exit_and_price_recoil():
     assert result["rsi_previous"] >= 70 > result["rsi"]
 
 
-def test_price_pattern_is_required():
+def test_green_candle_and_higher_low_required():
     frame = _reversal_frame("BUY")
     frame.loc[39, "Open"] = frame.loc[39, "Close"] + 1.0
     result = RSIMeanReversionStrategy().generate_signal("btc_usdt", frame)
     assert result["status"] == "NO_TRADE"
     assert "price" in result["reason"]
+    assert result["block_reason"] == "PRICE_CONFIRMATION_MISSING"
+
+
+def test_red_candle_and_lower_high_required():
+    frame = _reversal_frame("SELL")
+    frame.loc[39, "Open"] = frame.loc[39, "Close"] - 1.0
+    result = RSIMeanReversionStrategy().generate_signal("btc_usdt", frame)
+    assert result["status"] == "NO_TRADE"
+    assert result["block_reason"] == "PRICE_CONFIRMATION_MISSING"
 
 
 def test_volume_confirmation_and_ma_fallback():
@@ -67,21 +81,38 @@ def test_volume_confirmation_and_ma_fallback():
     low_volume = strategy.generate_signal("btc_usdt", _reversal_frame("BUY", "low"))
     assert low_volume["status"] == "NO_TRADE"
     assert low_volume["metadata"].get("volume_available") is True
+    assert low_volume["block_reason"] == "VOLUME_CONFIRMATION_MISSING"
 
     no_volume_frame = _reversal_frame("BUY", None)
-    # A strong final close also gives the optional EMA8/EMA21 alignment bonus.
     no_volume_frame.loc[39, ["Open", "High", "Low", "Close"]] = [90.0, 111.0, 99.0, 110.0]
     no_volume = strategy.generate_signal("eur_usd", no_volume_frame)
     assert no_volume["status"] == "SIGNAL_DETECTED"
     assert no_volume["metadata"]["volume_available"] is False
     assert no_volume["metadata"]["volume_confirmed"] is True
     assert no_volume["metadata"]["vol_ratio"] is None
+    assert no_volume["metadata"]["score_components"]["ema21"] == 25
+    assert no_volume["metadata"]["score_components"]["volume"] == 0
 
     null_volume_frame = no_volume_frame.copy()
     null_volume_frame["Volume"] = 0.0
     null_volume = strategy.generate_signal("eur_usd", null_volume_frame)
     assert null_volume["status"] == "SIGNAL_DETECTED"
     assert null_volume["metadata"]["volume_available"] is False
+
+    nan_volume_frame = no_volume_frame.copy()
+    nan_volume_frame["Volume"] = float("nan")
+    nan_volume = strategy.generate_signal("eur_usd", nan_volume_frame)
+    assert nan_volume["status"] == "SIGNAL_DETECTED"
+    assert nan_volume["metadata"]["volume_available"] is False
+
+
+def test_ema8_ema21_alignment_bonus():
+    strategy = RSIMeanReversionStrategy()
+    frame = _reversal_frame("BUY")
+    result = strategy.generate_signal("btc_usdt", frame)
+    assert result["status"] == "SIGNAL_DETECTED"
+    assert "ema_alignment" in result["metadata"]
+    assert result["metadata"]["score_components"]["ema_alignment"] in (0, 10)
 
 
 def test_stops_use_five_bar_extreme_and_atr_buffer():
@@ -100,7 +131,16 @@ def test_stops_use_five_bar_extreme_and_atr_buffer():
     assert sell["sl"] == pytest.approx(expected_sell_sl)
 
 
-def test_take_profit_is_clamped_to_one_to_two_risk():
+def test_take_profit_is_symmetric_rr_1_5_and_clamped():
+    strategy = RSIMeanReversionStrategy()
+    buy = strategy.generate_signal("btc_usdt", _reversal_frame("BUY"))
+    assert buy["risk_reward"] == pytest.approx(1.5)
+    assert buy["tp"] == pytest.approx(buy["entry"] + 1.5 * (buy["entry"] - buy["sl"]))
+
+    sell = strategy.generate_signal("btc_usdt", _reversal_frame("SELL"))
+    assert sell["risk_reward"] == pytest.approx(1.5)
+    assert sell["tp"] == pytest.approx(sell["entry"] - 1.5 * (sell["sl"] - sell["entry"]))
+
     strategy = RSIMeanReversionStrategy(risk_reward_ratio=5.0)
     result = strategy.generate_signal("btc_usdt", _reversal_frame("BUY"))
     assert result["risk_reward"] == 2.0
@@ -117,18 +157,41 @@ def test_nan_indicator_is_a_clean_no_trade():
     result = RSIMeanReversionStrategy().generate_signal("btc_usdt", frame)
     assert result["status"] == "NO_TRADE"
     assert "indicators" in result["reason"] or "NaN" in result["reason"]
+    assert result["entry"] == 0.0
 
 
 def test_partial_score_and_insufficient_data_are_safe():
     partial = RSIMeanReversionStrategy().generate_signal(
         "btc_usdt", _reversal_frame("BUY", "moderate"))
-    # The moderate-volume setup without EMA alignment is below the 84 floor.
     assert partial["score"] < 84
     assert partial["status"] == "NO_TRADE"
+    assert partial["block_reason"] == "SCORE_BELOW_84"
 
     short = RSIMeanReversionStrategy().generate_signal("btc_usdt", _reversal_frame("BUY", n=39))
     assert short["status"] == "NO_TRADE"
     assert "Insufficient" in short["reason"]
+    assert short["block_reason"] == "INSUFFICIENT_CANDLES"
+
+
+def test_score_83_refused_84_accepted_only_with_gates():
+    engine = SignalEngine(min_score=84)
+    fake = {"status": "SIGNAL_DETECTED", "strategy": "rsi", "market_id": "btc_usdt",
+            "score": 83, "entry": 100.0, "sl": 99.0, "tp": 101.5}
+    engine.strategies["rsi"].generate_signal = lambda **_: dict(fake)
+    refused = engine.generate_signal(
+        {"market_id": "btc_usdt", "volatility": "MEDIUM"},
+        {"trading_allowed": True}, _reversal_frame("BUY"),
+        strategy_mode="rsi", market_id="btc_usdt")
+    assert refused["status"] == "NO_TRADE"
+    assert refused["block_reason"] == "SCORE_BELOW_84"
+
+    fake["score"] = 84
+    engine.strategies["rsi"].generate_signal = lambda **_: dict(fake)
+    accepted = engine.generate_signal(
+        {"market_id": "btc_usdt", "volatility": "MEDIUM"},
+        {"trading_allowed": True}, _reversal_frame("BUY"),
+        strategy_mode="rsi", market_id="btc_usdt")
+    assert accepted["status"] == "SIGNAL_DETECTED"
 
 
 def test_signal_engine_applies_news_and_volatile_score_gates(monkeypatch):
@@ -139,6 +202,13 @@ def test_signal_engine_applies_news_and_volatile_score_gates(monkeypatch):
         {"trading_allowed": False}, frame, strategy_mode="rsi", market_id="btc_usdt")
     assert blocked["status"] == "NO_TRADE"
     assert blocked["news_blocked"] is True
+    assert blocked["block_reason"] in {"NEWS_BLOCKED", "CALENDAR_UNAVAILABLE"}
+
+    calendar = engine.generate_signal(
+        {"market_id": "btc_usdt", "volatility": "MEDIUM"},
+        {"trading_allowed": False, "status": "DATA_UNAVAILABLE", "news_ok": False},
+        frame, strategy_mode="rsi", market_id="btc_usdt")
+    assert calendar["block_reason"] == "CALENDAR_UNAVAILABLE"
 
     fake = {"status": "SIGNAL_DETECTED", "strategy": "rsi", "market_id": "btc_usdt", "score": 84,
             "entry": 100.0, "sl": 99.0, "tp": 102.0}
@@ -148,11 +218,4 @@ def test_signal_engine_applies_news_and_volatile_score_gates(monkeypatch):
         {"trading_allowed": True}, frame, strategy_mode="rsi", market_id="btc_usdt")
     assert volatile["status"] == "NO_TRADE"
     assert volatile["min_score_applied"] == 89
-
-    fake["score"] = 83
-    monkeypatch.setattr(engine.strategies["rsi"], "generate_signal", lambda **_: dict(fake))
-    below_floor = engine.generate_signal(
-        {"market_id": "btc_usdt", "volatility": "MEDIUM"},
-        {"trading_allowed": True}, frame, strategy_mode="rsi", market_id="btc_usdt")
-    assert below_floor["status"] == "NO_TRADE"
-    assert below_floor["min_score_applied"] == 84
+    assert volatile["block_reason"] == "VOLATILE_THRESHOLD_89"

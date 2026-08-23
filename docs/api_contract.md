@@ -65,6 +65,10 @@ Objet par classe d'actif (`CRYPTO`, `FOREX`, `INDICES`, `COMMODITIES`, `STOCKS`,
 `FUTURES`, `BONDS`, `ETFS`) ; chaque entrée : `market_id`, `display_symbol`,
 `name`, `price` (= `last`), `bid/ask/spread/volume`, `market_status`, `leverage_max`.
 
+### `POST /api/scanner/trigger` 🔐
+Déclenche un scan RSI contrôlé. Refuse un second scan simultané
+(`SCAN_IN_PROGRESS`). Ne contourne aucune protection.
+
 ### `GET /api/scanner?sort=score&order=desc&filter=all`
 ```json
 { "assets": [ { "symbol": "btc_usdt", "asset_class": "CRYPTO", "price": 60000.0,

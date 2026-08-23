@@ -172,6 +172,13 @@ class DatabaseManager:
                     events_json TEXT NOT NULL
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS scanner_cache (
+                    cache_id INTEGER PRIMARY KEY CHECK (cache_id = 1),
+                    saved_at REAL NOT NULL,
+                    payload_json TEXT NOT NULL
+                )
+            """)
 
             # Seed default settings
             cursor = conn.execute("SELECT COUNT(*) FROM settings")
@@ -185,7 +192,7 @@ class DatabaseManager:
                     "trailing_stop_active": "true",
                     "max_spread_pct": "0.5",
                     "min_signal_score": "84",
-                    "risk_reward_ratio": "2.0",
+                    "risk_reward_ratio": "1.5",
                     "trailing_stop_distance_atr": "1.5",
                     "emergency_stop_drawdown_pct": "10.0",
                     "auto_arm_on_startup": "false",
@@ -215,6 +222,10 @@ class DatabaseManager:
                     """UPDATE settings SET value = 'rsi'
                        WHERE key = 'active_strategies'
                          AND value = 'structure,arbitrage,tape,liquidity'"""
+                )
+                conn.execute(
+                    """UPDATE settings SET value = '1.5'
+                       WHERE key = 'risk_reward_ratio' AND value = '2.0'"""
                 )
 
             # Seed default accounts
@@ -447,6 +458,35 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cur = conn.execute("DELETE FROM web3_wallets WHERE wallet_id = ?", (wallet_id,))
             return cur.rowcount > 0
+
+    def save_scanner_cache(self, payload: Dict[str, Any],
+                           saved_at: Optional[float] = None) -> None:
+        import time
+
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO scanner_cache
+                   (cache_id, saved_at, payload_json) VALUES (1, ?, ?)""",
+                (float(saved_at or time.time()), json.dumps(payload, default=str)),
+            )
+
+    def load_scanner_cache(self, max_age_s: float = 86400.0) -> Optional[Dict[str, Any]]:
+        import time
+
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT saved_at, payload_json FROM scanner_cache WHERE cache_id = 1"
+            ).fetchone()
+        if not row or time.time() - float(row["saved_at"]) > float(max_age_s):
+            return None
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        payload["saved_at"] = float(row["saved_at"])
+        return payload
 
     # ------------------------------------------------------------------ #
     # Helpers                                                             #

@@ -41,6 +41,10 @@ from api.engines.notification_engine import NotificationEngine
 from api.engines.backtest_engine import BacktestEngine
 from api.engines.radar import prepare_radar
 from api.engines.market_hub import enrich_overview
+from api.engines.scan_contract import (
+    classify_block_reason, merge_universe_rows, summarize_scan,
+)
+from api.engines.provider_capabilities import PROVIDER_CAPABILITIES
 from api.engines.order_types import normalize_order_type, risk_based_quantity
 from api.engines.settings_schema import validate_settings, ensure_defaults
 from api.engines.capital_profiles import resolve_bracket, profile_overrides
@@ -49,6 +53,7 @@ from api.engines import market_tuning as market_tuning_engine
 from api.engines.constants import (
     AUTO_EXECUTION_SCORE_FLOOR,
     DEFAULT_MAX_NEW_POSITIONS_PER_SCAN,
+    DEFAULT_RSI_RISK_REWARD,
 )
 from api.engines.opportunity_ranker import rank_opportunities
 from api.engines.opportunity_tracker import get_tracker
@@ -92,7 +97,7 @@ HEARTBEAT_INTERVAL_S = float(os.getenv("HEARTBEAT_INTERVAL_S", "2.0" if TESTING 
 # --------------------------------------------------------------------------- #
 REAL_MODE_WARNING = "Live execution still experimental – use DEMO for strategies"
 
-app = FastAPI(title="Quantum Trade Pro", version="2.9.0", lifespan=None)
+app = FastAPI(title="Quantum Trade Pro", version="2.9.1", lifespan=None)
 
 # Basic reinforced rate limiting (LOT H): sliding window per client IP,
 # separate budgets for reads and mutations. Env-tunable.
@@ -151,7 +156,10 @@ bot_state: Dict[str, Any] = {
     "engine_stats": {"markets": 0, "scanned": 0, "signals": 0, "tradable": 0},
     "selected_market": "btc_usdt",
     "capital_profile": {"mode": "manual", "bracket": None, "balance": 0.0, "applied": False},
+    "last_block_reason": "SYSTEM_NOT_RUNNING",
+    "scan_error": None,
 }
+
 
 metrics_state: Dict[str, Any] = {
     "total_scans": 0, "total_trades": 0, "total_errors": 0,
@@ -195,7 +203,7 @@ class SettingsProvider:
         except ValueError:
             pass
         # LOT P: wire the profit levers that were previously dead settings
-        signal_engine.set_risk_reward(s.get("risk_reward_ratio", 2.0))
+        signal_engine.set_risk_reward(s.get("risk_reward_ratio", DEFAULT_RSI_RISK_REWARD))
         signal_engine.set_atr_stop_multiplier(s.get("atr_stop_multiplier", 1.5))
         signal_engine.set_alpha_override(s.get("alpha_override_enabled", "false").lower() == "true")
         try:
@@ -391,6 +399,95 @@ async def tick_capital():
 
 
 _scan_counter = {"n": 0}
+SCAN_STALE_S = 180.0
+
+
+def is_serverless_runtime() -> bool:
+    """Vercel / Lambda cannot host a permanent asyncio scanner loop."""
+    return bool(
+        os.getenv("VERCEL")
+        or os.getenv("AWS_LAMBDA_FUNCTION_NAME")
+        or os.getenv("FUNCTIONS_WORKER_RUNTIME")
+    )
+
+
+def _scan_is_stuck() -> bool:
+    started = bot_state.get("scan_started_at")
+    return bool(
+        bot_state.get("scanning")
+        and started
+        and (time.time() - float(started) > SCAN_STALE_S)
+    )
+
+
+def persist_latest_scan() -> None:
+    try:
+        db_manager.save_scanner_cache({
+            "latest_scan": bot_state.get("latest_scan") or [],
+            "engine_stats": bot_state.get("engine_stats") or {},
+            "scan_progress_count": bot_state.get("scan_progress_count"),
+            "scan_progress_total": bot_state.get("scan_progress_total"),
+            "last_scan_completed_at": bot_state.get("last_scan_completed_at"),
+            "last_block_reason": bot_state.get("last_block_reason"),
+        })
+    except Exception as exc:
+        logger.debug("Scanner cache persist failed: %s", exc)
+
+
+def restore_latest_scan() -> None:
+    try:
+        cached = db_manager.load_scanner_cache()
+    except Exception as exc:
+        logger.debug("Scanner cache load failed: %s", exc)
+        return
+    if not cached:
+        return
+    rows = cached.get("latest_scan") or []
+    if rows and not bot_state.get("latest_scan"):
+        bot_state["latest_scan"] = rows
+        bot_state["engine_stats"] = cached.get("engine_stats") or bot_state["engine_stats"]
+        bot_state["scan_progress_count"] = cached.get("scan_progress_count") or len(rows)
+        bot_state["scan_progress_total"] = cached.get("scan_progress_total") or len(rows)
+        bot_state["last_scan_completed_at"] = cached.get("last_scan_completed_at")
+        bot_state["last_block_reason"] = cached.get("last_block_reason")
+
+
+def _scanner_payload(sort="score", order="desc", filter_mode="all", live_only=False):
+    universe_rows = merge_universe_rows(
+        bot_state.get("latest_scan") or [], data_engine.universe,
+        missing_reason="DATA_UNAVAILABLE",
+    )
+    assets = prepare_radar(universe_rows, sort=sort, order=order,
+                           filter_mode=filter_mode, live_only=live_only)
+    completed_at = bot_state.get("last_scan_completed_at")
+    age_s = max(0.0, time.time() - completed_at) if completed_at else None
+    total = len(data_engine.universe.get_all_ids())
+    completed = int(bot_state.get("scan_progress_count") or 0)
+    summary = summarize_scan(universe_rows, total)
+    last_iso = (
+        datetime.fromtimestamp(completed_at).isoformat() if completed_at else None
+    )
+    return {
+        "assets": assets,
+        "duration_s": scanner_engine.last_scan_duration,
+        "sort": sort,
+        "order": order,
+        "filter": filter_mode,
+        "live_only": live_only,
+        "scanning": bool(bot_state.get("scanning")),
+        "progress": f"{completed}/{total}",
+        "progress_count": completed,
+        "progress_total": total,
+        "last_scan_age_s": round(age_s, 3) if age_s is not None else None,
+        "last_scan": last_iso,
+        "active_strategy": "rsi",
+        "strategy_name": "RSI-14 Reversal",
+        "risk_reward_rsi": DEFAULT_RSI_RISK_REWARD,
+        "scan_error": bot_state.get("scan_error"),
+        "block_reason": bot_state.get("last_block_reason"),
+        **summary,
+    }
+
 
 async def tick_scanner(force: bool = False):
     """Rescan immediately at boot, publishing each completed symbol."""
@@ -405,8 +502,13 @@ async def tick_scanner(force: bool = False):
     every = max(1, interval // 5) if bot_state["is_running"] else 12
     if not force and _scan_counter["n"] % every != 0:
         return
-    if bot_state.get("scanning"):
+    if bot_state.get("scanning") and not _scan_is_stuck():
         return
+    if _scan_is_stuck():
+        logger.warning("SCAN_TIMEOUT — resetting stuck scanner lock")
+        bot_state["scanning"] = False
+        bot_state["scan_error"] = "SCAN_TIMEOUT"
+        bot_state["last_block_reason"] = "SCAN_TIMEOUT"
 
     total = len(data_engine.universe.get_all_ids())
     first_scan = bot_state.get("last_scan_completed_at") is None
@@ -430,8 +532,22 @@ async def tick_scanner(force: bool = False):
             bot_state["scan_progress_total"] = progress_total
             bot_state["best_setups"] = prepare_radar(current)[:5]
 
+    results = []
     try:
-        results = await scanner_engine.scan_all(progress_callback=publish_progress)
+        results = await asyncio.wait_for(
+            scanner_engine.scan_all(progress_callback=publish_progress),
+            timeout=SCAN_STALE_S,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("SCAN_TIMEOUT — scan_all exceeded %ss", SCAN_STALE_S)
+        bot_state["scan_error"] = "SCAN_TIMEOUT"
+        bot_state["last_block_reason"] = "SCAN_TIMEOUT"
+        results = list(bot_state.get("latest_scan") or [])
+    except Exception as exc:
+        logger.error("Scanner Error (scan_all): %s", exc)
+        bot_state["scan_error"] = "PROVIDER_ERROR"
+        bot_state["last_block_reason"] = "PROVIDER_ERROR"
+        results = list(bot_state.get("latest_scan") or [])
     finally:
         bot_state["scanning"] = False
 
@@ -445,17 +561,23 @@ async def tick_scanner(force: bool = False):
     async with state_lock:
         metrics_state["total_scans"] += 1
         metrics_engine.record_scan(scanner_engine.last_scan_duration, results)
-        bot_state["latest_scan"] = results
-        bot_state["scan_progress_count"] = len(results)
+        merged = merge_universe_rows(results, data_engine.universe)
+        bot_state["latest_scan"] = merged
+        bot_state["scan_progress_count"] = len(merged)
         bot_state["scan_progress_total"] = total
         bot_state["last_scan_completed_at"] = time.time()
+        bot_state["scan_error"] = None
+        summary = summarize_scan(merged, total)
         bot_state["engine_stats"].update({
-            "markets": len(results),
-            "scanned": len([r for r in results if r.get("status") == "LIVE"]),
-            "signals": len([r for r in results if r.get("score", 0) >= AUTO_EXECUTION_SCORE_FLOOR]),
-            "tradable": len([r for r in results if r.get("tradable")]),
+            "markets": summary["markets_total"],
+            "scanned": summary["markets_processed"],
+            "signals": summary["rsi_signals"],
+            "tradable": summary["markets_tradable"],
+            "unavailable": summary["markets_unavailable"],
+            "errors": summary["markets_error"],
         })
-        bot_state["best_setups"] = prepare_radar(results)[:5]
+        persist_latest_scan()
+        bot_state["best_setups"] = prepare_radar(merged)[:5]
         armed = bot_state["armed"] and bot_state["is_running"]
         active = list(bot_state["active_trades"])
         mode = bot_state["mode"]
@@ -944,14 +1066,6 @@ async def get_status(market_id: str = "btc_usdt"):
         "execution_intent": bot_state.get("execution_intent") or {
             "code": "STOPPED", "message": "System stopped"},
         "calendar": news_engine.provider.get_state(),
-        "scanner": {
-            "scanning": bool(bot_state.get("scanning")),
-            "progress": f"{bot_state.get('scan_progress_count', 0)}/{bot_state.get('scan_progress_total', 0)}",
-            "last_scan_age_s": (
-                max(0.0, time.time() - bot_state["last_scan_completed_at"])
-                if bot_state.get("last_scan_completed_at") else None
-            ),
-        },
         "language": bot_state.get("language", "en"),
         "capital_profile": bot_state.get("capital_profile"),
         "opportunity_ranking": bot_state.get("opportunity_ranking"),
@@ -960,6 +1074,36 @@ async def get_status(market_id: str = "btc_usdt"):
         "trades_today": _count_trades_today(mode),
         "scan_interval_s": scan_interval_s,
         "next_scan_in_s": next_scan_in_s,
+        "active_strategy": "rsi",
+        "strategy_name": "RSI-14 Reversal",
+        "risk_reward_rsi": DEFAULT_RSI_RISK_REWARD,
+        "news_unavailable_policy": news_engine.news_unavailable_policy,
+        "block_reason": classify_block_reason(
+            running=bot_state["is_running"],
+            armed=bot_state["armed"],
+            scanning=bool(bot_state.get("scanning")),
+            scan_timeout=bot_state.get("last_block_reason") == "SCAN_TIMEOUT",
+            ticker=snapshot.get("ticker"),
+            signal=snapshot.get("signal"),
+            news=snapshot.get("news"),
+            diagnosis=snapshot.get("diagnosis"),
+            delayed=not data_engine.check_scalping_allowed(market_id).get("allowed"),
+        ),
+        "scanner": {
+            "scanning": bool(bot_state.get("scanning")),
+            "progress": f"{bot_state.get('scan_progress_count', 0)}/{bot_state.get('scan_progress_total', 0)}",
+            "last_scan_age_s": (
+                max(0.0, time.time() - bot_state["last_scan_completed_at"])
+                if bot_state.get("last_scan_completed_at") else None
+            ),
+            "last_scan": (
+                datetime.fromtimestamp(bot_state["last_scan_completed_at"]).isoformat()
+                if bot_state.get("last_scan_completed_at") else None
+            ),
+            "error": bot_state.get("scan_error"),
+            **summarize_scan(bot_state.get("latest_scan") or [],
+                             int(bot_state.get("scan_progress_total") or 0)),
+        },
     }
 
 
@@ -971,25 +1115,20 @@ async def get_history(mode: str = "DEMO", limit: int = 100):
 @app.get("/api/scanner")
 async def get_scanner(sort: str = "score", order: str = "desc", filter: str = "all",
                       live_only: bool = False):
-    assets = prepare_radar(bot_state.get("latest_scan") or [], sort=sort, order=order,
-                           filter_mode=filter, live_only=live_only)
-    completed_at = bot_state.get("last_scan_completed_at")
-    age_s = max(0.0, time.time() - completed_at) if completed_at else None
-    completed = int(bot_state.get("scan_progress_count") or 0)
-    total = int(bot_state.get("scan_progress_total") or len(data_engine.universe.get_all_ids()))
-    return {
-        "assets": assets,
-        "duration_s": scanner_engine.last_scan_duration,
-        "sort": sort,
-        "order": order,
-        "filter": filter,
-        "live_only": live_only,
-        "scanning": bool(bot_state.get("scanning")),
-        "progress": f"{completed}/{total}",
-        "progress_count": completed,
-        "progress_total": total,
-        "last_scan_age_s": round(age_s, 3) if age_s is not None else None,
-    }
+    return _scanner_payload(sort=sort, order=order, filter_mode=filter, live_only=live_only)
+
+
+@app.post("/api/scanner/trigger", dependencies=[Depends(require_admin)])
+async def trigger_scanner():
+    """Protected on-demand scan. Refuses a second concurrent scan."""
+    if bot_state.get("scanning") and not _scan_is_stuck():
+        payload = _scanner_payload()
+        payload.update({"success": False, "reason": "SCAN_IN_PROGRESS"})
+        return payload
+    asyncio.create_task(tick_scanner(force=True))
+    payload = _scanner_payload()
+    payload.update({"success": True, "reason": None, "scanning": True})
+    return payload
 
 
 @app.get("/api/markets")
@@ -1606,6 +1745,8 @@ async def get_health():
         "providers": report,
         "markets": data_engine.get_market_source_health(),
         "calendar": news_engine.provider.get_state(),
+        "provider_capabilities": PROVIDER_CAPABILITIES,
+        "news_unavailable_policy": news_engine.news_unavailable_policy,
     }
 
 
@@ -1638,8 +1779,21 @@ async def run_backtest(body: Dict[str, Any] = Body(...)):
 @app.get("/api/diagnose")
 async def diagnose(market_id: str = "btc_usdt"):
     snapshot = await get_market_snapshot(market_id)
+    block = classify_block_reason(
+        running=bot_state["is_running"],
+        armed=bot_state["armed"],
+        scanning=bool(bot_state.get("scanning")),
+        ticker=snapshot.get("ticker"),
+        signal=snapshot.get("signal"),
+        news=snapshot.get("news"),
+        diagnosis=snapshot.get("diagnosis"),
+        delayed=not data_engine.check_scalping_allowed(market_id).get("allowed"),
+    )
     return {"market_id": market_id, "diagnosis": snapshot["diagnosis"],
-            "signal": snapshot["signal"], "news": snapshot["news"]}
+            "signal": snapshot["signal"], "news": snapshot["news"],
+            "block_reason": block,
+            "active_strategy": "rsi",
+            "risk_reward_rsi": DEFAULT_RSI_RISK_REWARD}
 
 
 async def _execute_signal_for_market(market_id: str) -> Dict[str, Any]:
@@ -1892,17 +2046,25 @@ async def lifespan(app: FastAPI):
     state_machine.transition_to(BotState.STOPPED)
     settings_provider.apply()
     apply_startup_automation(settings_provider.get())
+    restore_latest_scan()
 
-    tasks = [
-        # Do not await the whole universe: expose progress while startup stays
-        # responsive. Crypto rows are emitted first by ScannerEngine.
-        asyncio.create_task(tick_scanner(force=True)),
-        asyncio.create_task(loop_wrapper(tick_capital, 1.0, "tick_capital")),
-        asyncio.create_task(loop_wrapper(tick_scanner, 5.0, "tick_scanner")),
-        asyncio.create_task(loop_wrapper(tick_management, 1.0, "tick_management")),
-        asyncio.create_task(loop_wrapper(tick_broadcaster, 1.0, "tick_broadcaster")),
-        asyncio.create_task(loop_wrapper(tick_heartbeat, HEARTBEAT_INTERVAL_S, "tick_heartbeat")),
-    ]
+    if is_serverless_runtime():
+        logger.warning(
+            "Serverless runtime detected — background scanner loops are disabled. "
+            "Use Railway (python3 -m api.index) or POST /api/scanner/trigger."
+        )
+        tasks = []
+    else:
+        tasks = [
+            # Do not await the whole universe: expose progress while startup stays
+            # responsive. Crypto rows are emitted first by ScannerEngine.
+            asyncio.create_task(tick_scanner(force=True)),
+            asyncio.create_task(loop_wrapper(tick_capital, 1.0, "tick_capital")),
+            asyncio.create_task(loop_wrapper(tick_scanner, 5.0, "tick_scanner")),
+            asyncio.create_task(loop_wrapper(tick_management, 1.0, "tick_management")),
+            asyncio.create_task(loop_wrapper(tick_broadcaster, 1.0, "tick_broadcaster")),
+            asyncio.create_task(loop_wrapper(tick_heartbeat, HEARTBEAT_INTERVAL_S, "tick_heartbeat")),
+        ]
     try:
         yield
     finally:
