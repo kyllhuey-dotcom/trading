@@ -87,6 +87,8 @@ logger = logging.getLogger("QuantumTradePro")
 # 2. Configuration                                                             #
 # --------------------------------------------------------------------------- #
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
+QUANTUM_ENV = os.getenv("QUANTUM_ENV", "dev").lower()  # "production" | "prod" | autre = dev
+IS_PRODUCTION = QUANTUM_ENV in ("production", "prod")
 TESTING = os.getenv("TESTING", "false").lower() == "true"
 PORT = int(os.getenv("PORT", 8000))
 # WebSocket heartbeat cadence (accelerated in tests so coverage stays fast)
@@ -2071,8 +2073,19 @@ def apply_startup_automation(settings: Dict[str, str]) -> None:
     )
 
 
+def assert_production_security() -> None:
+    """Fail-fast in production if required secrets are missing."""
+    if not IS_PRODUCTION:
+        return
+    if not ADMIN_API_KEY:
+        raise RuntimeError("ADMIN_API_KEY is required in production")
+    if not os.getenv("FERNET_KEY"):
+        raise RuntimeError("FERNET_KEY is required in production")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    assert_production_security()
     logger.info("QUANTUM TRADE PRO STARTING...")
     if not ADMIN_API_KEY:
         logger.warning("ADMIN_API_KEY not set: mutating endpoints are UNPROTECTED. "
