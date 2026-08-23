@@ -45,6 +45,12 @@
 - `POST /api/start` renvoie désormais `armed` ; le toast UI documente
   « START scan ; ARM pour exécuter » (clé i18n `startHint` en/fr/es/de).
 
+### P1 — Fraîcheur crypto 30s
+- `is_fresh` CRYPTO : 15s → **30s** (les timestamps exchange dépassent
+  souvent 15s ; les ticks parfaitement live n'étaient plus exécutables).
+- Tradfi live inchangé (60s). Les sources différées (Yahoo) restent
+  **jamais auto-tradables** (`check_scalping_allowed` inchangé).
+
 ## [2.9.1] - 2026-08-23 — Scanner fiable, Radar complet, RR RSI 1.5
 
 ### Résumé

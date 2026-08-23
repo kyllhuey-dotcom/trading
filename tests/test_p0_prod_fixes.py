@@ -350,3 +350,30 @@ def test_start_toast_documents_start_vs_arm():
     assert "showToast(t('startHint')" in html
     js = open("public/js/i18n.js", encoding="utf-8").read()
     assert js.count("startHint:") == 4  # en/fr/es/de strict parity
+
+
+# --------------------------------------------------------------------------- #
+# P1 — crypto freshness 30s (delayed data still never auto-tradable)
+# --------------------------------------------------------------------------- #
+def test_is_fresh_crypto_30s_window():
+    """P1: crypto 20s → True, 35s → False (exchange timestamps often >15s)."""
+    import time
+    now = time.time()
+    fresh = {"timestamp": int(now * 1000 - 20_000)}
+    stale = {"timestamp": int(now * 1000 - 35_000)}
+    assert idx.data_engine.is_fresh(fresh, "CRYPTO") is True
+    assert idx.data_engine.is_fresh(stale, "CRYPTO") is False
+    assert idx.data_engine.is_fresh(None, "CRYPTO") is False
+
+
+def test_is_fresh_tradfi_unchanged_60s():
+    import time
+    now = time.time()
+    assert idx.data_engine.is_fresh({"timestamp": int(now * 1000 - 45_000)}, "FOREX") is True
+    assert idx.data_engine.is_fresh({"timestamp": int(now * 1000 - 70_000)}, "FOREX") is False
+
+
+def test_delayed_quotes_still_never_auto_tradable():
+    """P1: relaxing freshness never unlocks delayed (Yahoo) sources."""
+    assert idx.data_engine.check_scalping_allowed(
+        "eur_usd", allow_delayed=False)["allowed"] is False

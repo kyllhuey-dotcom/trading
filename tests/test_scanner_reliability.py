@@ -316,12 +316,12 @@ def test_scan_constants_defined():
     assert idx.SCAN_ALL_TIMEOUT_S == 600.0
 
 
-def test_is_fresh_crypto_15s():
-    """P0: crypto freshness accepts 10s, refuses 20s."""
+def test_is_fresh_crypto_30s():
+    """P1: crypto freshness accepts 20s, refuses 35s (was 10s/20s @15s)."""
     import time
     now = time.time()
-    ticker_fresh = {"timestamp": int(now * 1000 - 10_000)}
-    ticker_stale = {"timestamp": int(now * 1000 - 20_000)}
+    ticker_fresh = {"timestamp": int(now * 1000 - 20_000)}
+    ticker_stale = {"timestamp": int(now * 1000 - 35_000)}
     assert idx.data_engine.is_fresh(ticker_fresh, "CRYPTO") is True
     assert idx.data_engine.is_fresh(ticker_stale, "CRYPTO") is False
 
