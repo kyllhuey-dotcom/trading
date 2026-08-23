@@ -18,6 +18,19 @@
 - Reconnect backoff progressif 1s → 3s → 10s → plafond 15s (3s fixe avant).
 - Contrat serveur `/ws` inchangé (ping→pong, streams).
 
+### P0-3 — Raisons de blocage visibles en prod
+- `rank_opportunities` copie `tradable` + flags symbole (`status`,
+  `active_source`, `underlying`, `market_status`, `block_reason`) vers
+  `all_candidates`.
+- `tick_scanner` : si armed + running + 0 exécution, écrit
+  `last_block_reason` avec la VRAIE raison (CALENDAR_UNAVAILABLE,
+  NO_RSI_SIGNAL, NON_REALTIME_SOURCE, SCORE_BELOW_84, RANKER_EMPTY,
+  STALE_DATA, COST_GATE, refus d'exécution…) et log NO_EXECUTION_DIAGNOSIS.
+  Après exécution réussie la raison est remise à None ; un SCAN_TIMEOUT
+  avec résultats vides n'est jamais écrasé.
+- `GET /api/status` et `GET /api/opportunities` ne renvoient plus un
+  `last_block_reason` perpétuellement None.
+
 ## [2.9.1] - 2026-08-23 — Scanner fiable, Radar complet, RR RSI 1.5
 
 ### Résumé

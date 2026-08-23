@@ -312,6 +312,15 @@ def rank_opportunities(
             "diagnosis": candidate.get("diagnosis"),
             "realtime_source": candidate.get("realtime_source"),
             "asset_class": candidate.get("asset_class"),
+            # P0-3 (2026-08-23): execution-critical flags are copied verbatim
+            # from the raw scan row so downstream consumers (execution loop,
+            # /api/opportunities) never need to re-join with raw results.
+            "tradable": bool(candidate.get("tradable")),
+            "status": candidate.get("status"),
+            "active_source": candidate.get("active_source"),
+            "underlying": candidate.get("underlying"),
+            "market_status": candidate.get("market_status"),
+            "block_reason": candidate.get("block_reason"),
             "expires_at": cycle_ts + 30.0,  # 30s TTL
             "signal_age_ms": metrics["data_age_ms"],
         })

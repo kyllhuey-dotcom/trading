@@ -11,7 +11,9 @@ import pytest
 
 from api.engines.db_manager import DatabaseManager
 from api.engines.news_engine import NewsEngine
+from api.engines.opportunity_ranker import rank_opportunities
 from api.engines.settings_schema import SETTINGS_SPEC, ensure_defaults
+import api.index as idx
 
 
 # --------------------------------------------------------------------------- #
@@ -112,3 +114,141 @@ def test_server_pong_and_streams_unchanged_contract():
     assert "SCAN_COMPLETED" in source
     data_engine_source = open("api/engines/data_engine.py", encoding="utf-8").read()
     assert "MARKET_UPDATE" in data_engine_source
+
+
+# --------------------------------------------------------------------------- #
+# P0-3 — ranker copies tradable + symbol flags
+# --------------------------------------------------------------------------- #
+def _rankable_row(**overrides):
+    from datetime import datetime
+    row = {
+        "symbol": "btc_usdt",
+        "display_symbol": "BTC/USDT",
+        "asset_class": "CRYPTO",
+        "status": "LIVE",
+        "active_source": "binance",
+        "underlying": "BTC",
+        "market_status": "OPEN",
+        "score": 90,
+        "spread": 0.01,
+        "data_age_ms": 500,
+        "tradable": True,
+        "realtime_source": True,
+        "block_reason": None,
+        "signal_data": {
+            "status": "SIGNAL_DETECTED", "strategy": "rsi", "direction": "BUY",
+            "entry": 100.0, "sl": 98.0, "tp": 103.5, "market_id": "btc_usdt",
+            "score": 90, "timestamp": datetime.now().timestamp() * 1000,
+        },
+    }
+    row.update(overrides)
+    return row
+
+
+def test_ranker_copies_tradable_and_symbol_flags():
+    """P0-3: all_candidates carry tradable + symbol flags from the raw row."""
+    out = rank_opportunities([_rankable_row()])
+    assert out["total_passing"] == 1
+    cand = out["all_candidates"][0]
+    assert cand["tradable"] is True
+    assert cand["status"] == "LIVE"
+    assert cand["active_source"] == "binance"
+    assert cand["underlying"] == "BTC"
+    assert cand["market_status"] == "OPEN"
+    assert cand["display_symbol"] == "BTC/USDT"
+    assert cand["asset_class"] == "CRYPTO"
+
+
+def test_ranker_tradable_false_flags_survive_when_other_gates_pass():
+    row = _rankable_row(tradable=False)
+    out = rank_opportunities([row])
+    assert out["total_passing"] == 0
+    reasons = out["excluded"][0]["gate_reasons"]
+    assert any(r.startswith("NOT_TRADABLE") for r in reasons)
+
+
+# --------------------------------------------------------------------------- #
+# P0-3 — tick_scanner exposes the real last_block_reason
+# --------------------------------------------------------------------------- #
+def _arm_engine():
+    """Put the shared app in the armed+running prod state."""
+    idx.bot_state["armed"] = True
+    idx.bot_state["is_running"] = True
+    idx.bot_state["active_trades"] = []
+
+
+@pytest.mark.asyncio
+async def test_tick_scanner_armed_no_signal_sets_block_reason(monkeypatch):
+    """P0-3: armed + running + 0 executions → last_block_reason != None."""
+    async def fake_scan_all(*args, **kwargs):
+        return [dict(_rankable_row(), score=90,
+                     signal_data={"status": "NO_TRADE", "strategy": "rsi",
+                                  "reason": "No RSI cross", "block_reason": None,
+                                  "market_id": "btc_usdt"})]
+
+    monkeypatch.setattr(idx.scanner_engine, "scan_all", fake_scan_all)
+    _arm_engine()
+    try:
+        await idx.tick_scanner(force=True)
+        reason = idx.bot_state.get("last_block_reason")
+        assert reason is not None
+        assert reason not in ("", "None")
+        assert reason == "NO_RSI_SIGNAL"
+    finally:
+        idx.bot_state["armed"] = False
+        idx.bot_state["is_running"] = False
+
+
+@pytest.mark.asyncio
+async def test_tick_scanner_armed_calendar_outage_reason(monkeypatch):
+    """P0-3: calendar-blocked universe → CALENDAR_UNAVAILABLE (not None)."""
+    sig = _rankable_row()["signal_data"]
+    row = _rankable_row(
+        news_risk="High", block_reason="CALENDAR_UNAVAILABLE", tradable=False,
+        score=90,
+        signal_data={**sig, "status": "NO_TRADE",
+                     "block_reason": "CALENDAR_UNAVAILABLE"},
+        diagnosis={"checks": {"NEWS_CLEAR": "FAIL"}},
+    )
+
+    async def fake_scan_all(*args, **kwargs):
+        return [row]
+
+    monkeypatch.setattr(idx.scanner_engine, "scan_all", fake_scan_all)
+    _arm_engine()
+    try:
+        await idx.tick_scanner(force=True)
+        assert idx.bot_state.get("last_block_reason") == "CALENDAR_UNAVAILABLE"
+    finally:
+        idx.bot_state["armed"] = False
+        idx.bot_state["is_running"] = False
+
+
+@pytest.mark.asyncio
+async def test_tick_scanner_scan_timeout_not_wiped_when_results_empty(monkeypatch):
+    """P0-3: after a scan_all timeout with empty results, keep SCAN_TIMEOUT."""
+    import asyncio
+
+    async def hanging_scan_all(*args, **kwargs):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(idx.scanner_engine, "scan_all", hanging_scan_all)
+    monkeypatch.setattr(idx, "SCAN_ALL_TIMEOUT_S", 0.05)
+    idx.bot_state["latest_scan"] = []
+    _arm_engine()
+    try:
+        await idx.tick_scanner(force=True)
+        assert idx.bot_state.get("last_block_reason") == "SCAN_TIMEOUT"
+    finally:
+        idx.bot_state["armed"] = False
+        idx.bot_state["is_running"] = False
+
+
+def test_status_and_opportunities_expose_last_block_reason():
+    from fastapi.testclient import TestClient
+    idx.bot_state["last_block_reason"] = "NO_RSI_SIGNAL"
+    client = TestClient(idx.app)
+    status = client.get("/api/status?market_id=btc_usdt").json()
+    opps = client.get("/api/opportunities").json()
+    assert status["last_block_reason"] == "NO_RSI_SIGNAL"
+    assert opps["last_block_reason"] == "NO_RSI_SIGNAL"
