@@ -99,14 +99,14 @@ BRACKETS: List[CapitalBracket] = [
         max_balance=float("inf"),
         risk_pct=2.0,
         risk_reward=3.0,
-        min_score=75,
+        min_score=80,
         max_positions=10,
         max_leverage=20,
         atr_stop_multiplier=1.5,
         min_trade_notional=10.0,
         max_cost_ratio=0.5,
         note="Capital standard et au-delà : diversification maximale, "
-             "RR plus ambitieux.",
+             "RR plus ambitieux, score plancher 80 inviolable.",
     ),
 ]
 

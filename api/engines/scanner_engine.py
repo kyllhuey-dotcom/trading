@@ -219,7 +219,8 @@ class ScannerEngine:
                     "news_risk": "High" if not news_status["news_ok"] else "Low",
                     "signal": signal.get("status"),
                     "score": int(raw_signal.get("score", 0)),
-                    "tradable": signal.get("status") == "SIGNAL_DETECTED",
+                    "tradable": (signal.get("status") == "SIGNAL_DETECTED"
+                                 and signal.get("tradable", True) is not False),
                     "reason": signal.get("reason", ltf_analysis.get("market_state")),
                     "signal_data": signal,
                     "diagnosis": diagnosis

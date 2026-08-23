@@ -46,6 +46,15 @@ from api.engines.settings_schema import validate_settings, ensure_defaults
 from api.engines.capital_profiles import resolve_bracket, profile_overrides
 from api.engines.institutional_executor import select_candidates, describe_intent
 from api.engines import market_tuning as market_tuning_engine
+from api.engines.constants import (
+    AUTO_EXECUTION_SCORE_FLOOR,
+    DEFAULT_MAX_NEW_POSITIONS_PER_SCAN,
+    DEFAULT_OPPORTUNITY_TTL_S,
+)
+from api.engines.opportunity_ranker import rank_opportunities
+from api.engines.opportunity_tracker import get_tracker
+from api.engines.cost_calculator import compute_trade_costs, costs_pass_gate
+from api.engines.quarantine import get_quarantine_manager
 
 # --------------------------------------------------------------------------- #
 # 1. Logging                                                                   #
@@ -84,7 +93,7 @@ HEARTBEAT_INTERVAL_S = float(os.getenv("HEARTBEAT_INTERVAL_S", "2.0" if TESTING 
 # --------------------------------------------------------------------------- #
 REAL_MODE_WARNING = "Live execution still experimental – use DEMO for strategies"
 
-app = FastAPI(title="Quantum Trade Pro", version="2.6.0", lifespan=None)
+app = FastAPI(title="Quantum Trade Pro", version="2.7.0", lifespan=None)
 
 # Basic reinforced rate limiting (LOT H): sliding window per client IP,
 # separate budgets for reads and mutations. Env-tunable.
@@ -451,6 +460,22 @@ async def tick_scanner(force: bool = False):
         min_score = float(settings.get("min_signal_score", 80))
     except ValueError:
         min_score = 80.0
+    # v2.7: enforce the inviolable floor
+    min_score = max(float(AUTO_EXECUTION_SCORE_FLOOR), min_score)
+    
+    # v2.7 P0-2: Use OpportunityRanker to select the single best opportunity
+    quarantine_mgr = get_quarantine_manager()
+    opportunity_result = rank_opportunities(
+        results,
+        active_symbols={p.get("symbol") for p in active},
+        max_new_positions=int(settings.get("max_new_positions_per_scan", DEFAULT_MAX_NEW_POSITIONS_PER_SCAN)),
+        fee_pct=float(settings.get("fee_pct", 0.05)),
+        slippage_pct=float(settings.get("sim_slippage_pct", 0.05)),
+        max_spread_pct=float(settings.get("max_spread_pct", 0.5)),
+        quarantined={f"{k[0]}:{k[1]}" for k in quarantine_mgr.get_quarantined()},
+    )
+    bot_state["opportunity_ranking"] = opportunity_result
+    
     candidates = select_candidates(results, min_score, {p.get("symbol") for p in active},
                                    risk_engine.max_open_positions)
     intent = describe_intent(running, bot_state["armed"], len(candidates), len(active),
@@ -470,72 +495,112 @@ async def tick_scanner(force: bool = False):
     if not armed:
         return
 
-    for res in candidates:
-        if not res.get("tradable"):
-            continue
-        if len(active) >= risk_engine.max_open_positions:
-            break
-        if any(p["symbol"] == res["symbol"] for p in active):
-            continue
+    # v2.7 P0-2: Execute only the primary opportunity by default
+    primary_opp = opportunity_result.get("primary_opportunity")
+    if not primary_opp:
+        return
+    
+    # v2.7 P0-3: Check opportunity TTL and idempotence
+    tracker = get_tracker()
+    opp_id = primary_opp.get("opportunity_id")
+    expires_at = primary_opp.get("expires_at", 0)
+    
+    if tracker.is_expired(expires_at):
+        logger.info(f"Opportunity {opp_id} expired — skipping execution")
+        return
+    
+    acquire_result = tracker.try_acquire(opp_id)
+    if not acquire_result.get("allowed"):
+        logger.info(f"Opportunity {opp_id} not acquired: {acquire_result.get('reason')}")
+        return
 
-        sig = res.get("signal_data") or {}
-        if not sig.get("market_id") or not sig.get("entry"):
-            continue
+    res = primary_opp
+    if not res.get("tradable"):
+        tracker.mark_failed(opp_id, "NOT_TRADABLE")
+        return
+    if len(active) >= risk_engine.max_open_positions:
+        tracker.mark_failed(opp_id, "SLOTS_FULL")
+        return
+    if any(p["symbol"] == res["symbol"] for p in active):
+        tracker.mark_failed(opp_id, "POSITION_ALREADY_OPEN")
+        return
 
-        info = data_engine.universe.get_info(res["symbol"]) or {}
-        ticker = await data_engine.fetch_ticker(res["symbol"])
-        if not ticker:
-            continue
-        if not data_engine.is_fresh(ticker, info.get("asset_class", "CRYPTO")):
-            logger.warning(f"Stale ticker for {res['symbol']} — order skipped")
-            continue
+    sig = res.get("signal_data") or {}
+    if not sig.get("market_id") or not sig.get("entry"):
+        tracker.mark_failed(opp_id, "MISSING_SIGNAL_DATA")
+        return
 
-        # LOT F: never scalp delayed (non-realtime) data. Yahoo-sourced
-        # instruments are blocked for automated execution unless explicitly
-        # allowed in settings (allow_delayed_data_trading=true).
-        allow_delayed = settings.get("allow_delayed_data_trading", "false").lower() == "true"
-        scalp_guard = data_engine.check_scalping_allowed(res["symbol"], allow_delayed)
-        if not scalp_guard["allowed"]:
-            db_manager.archive_signal(sig, "BLOCKED", scalp_guard["reason"])
-            metrics_engine.record_signal_blocked(sig.get("strategy", "structure"))
-            structured_log(logger, logging.WARNING, "SCALPING_BLOCKED_DELAYED_DATA",
-                           event="scalping_blocked_delayed_data", symbol=res["symbol"],
-                           strategy=sig.get("strategy", "structure"))
-            continue
+    # v2.7 P0-3: Revalidate signal before execution (re-fetch ticker/orderbook)
+    info = data_engine.universe.get_info(res["symbol"]) or {}
+    ticker = await data_engine.fetch_ticker(res["symbol"])
+    if not ticker:
+        tracker.mark_failed(opp_id, "NO_TICKER")
+        return
+    if not data_engine.is_fresh(ticker, info.get("asset_class", "CRYPTO")):
+        logger.warning(f"Stale ticker for {res['symbol']} — order skipped")
+        tracker.mark_failed(opp_id, "STALE_DATA")
+        return
 
-        risk_data = risk_engine.calculate_position_size(
-            balance, sig["entry"], sig["sl"], sig["direction"],
-            symbol=res["symbol"], active_positions=active,
-            market_info=info)
-        strat = sig.get("strategy", "structure")
-        if not risk_data.get("allowed"):
-            db_manager.archive_signal(sig, "BLOCKED", risk_data.get("reason") or "risk")
-            metrics_engine.record_signal_blocked(strat)
-            continue
+    # LOT F: never scalp delayed (non-realtime) data
+    allow_delayed = settings.get("allow_delayed_data_trading", "false").lower() == "true"
+    scalp_guard = data_engine.check_scalping_allowed(res["symbol"], allow_delayed)
+    if not scalp_guard["allowed"]:
+        db_manager.archive_signal(sig, "BLOCKED", scalp_guard["reason"])
+        metrics_engine.record_signal_blocked(sig.get("strategy", "structure"))
+        tracker.mark_failed(opp_id, scalp_guard["reason"])
+        return
 
-        exec_start = time.time()
-        exec_res = await execution_router.execute(mode, sig, risk_data, ticker)
-        exec_latency_ms = (time.time() - exec_start) * 1000.0
-        if exec_res.get("success"):
-            metrics_state["total_trades"] += 1
-            metrics_state["signals_by_strategy"][strat] = metrics_state["signals_by_strategy"].get(strat, 0) + 1
-            metrics_engine.record_execution(strat, mode, success=True, latency_ms=exec_latency_ms)
-            metrics_engine.record_institutional("EXECUTING", n_active=len(active) + 1, trades_above=1)
-            db_manager.archive_signal(sig, "EXECUTED", "")
-            structured_log(logger, logging.INFO, "ORDER_EXECUTED",
-                           event="order_executed", symbol=res["symbol"], mode=mode,
-                           strategy=strat, latency_ms=round(exec_latency_ms, 2))
-            if exec_res.get("position"):
-                active.append(exec_res["position"])
-            asyncio.create_task(notification_engine.notify("ORDER_OPEN", {
-                "symbol": res["symbol"],
-                "entry_price": sig["entry"],
-                "quantity": risk_data["quantity"],
-            }))
-        else:
-            metrics_engine.record_execution(strat, mode, success=False, latency_ms=exec_latency_ms)
-            db_manager.archive_signal(sig, "BLOCKED", exec_res.get("reason") or "execution")
-            logger.warning(f"Execution blocked for {res['symbol']}: {exec_res.get('reason')}")
+    # v2.7 P0-4: Compute and validate costs
+    costs = compute_trade_costs(
+        entry=sig["entry"], sl=sig["sl"], tp=sig["tp"],
+        fee_pct=float(settings.get("fee_pct", 0.05)),
+        slippage_pct=float(settings.get("sim_slippage_pct", 0.05)),
+        spread=float(ticker.get("spread", 0) or 0),
+    )
+    cost_gate = costs_pass_gate(costs)
+    if not cost_gate.get("allowed"):
+        db_manager.archive_signal(sig, "BLOCKED", cost_gate.get("reason", "cost"))
+        tracker.mark_failed(opp_id, cost_gate.get("reason"))
+        logger.warning(f"Cost gate failed for {res['symbol']}: {cost_gate.get('reason')}")
+        return
+
+    risk_data = risk_engine.calculate_position_size(
+        balance, sig["entry"], sig["sl"], sig["direction"],
+        symbol=res["symbol"], active_positions=active,
+        market_info=info)
+    strat = sig.get("strategy", "structure")
+    if not risk_data.get("allowed"):
+        db_manager.archive_signal(sig, "BLOCKED", risk_data.get("reason") or "risk")
+        metrics_engine.record_signal_blocked(strat)
+        tracker.mark_failed(opp_id, risk_data.get("reason"))
+        return
+
+    exec_start = time.time()
+    exec_res = await execution_router.execute(mode, sig, risk_data, ticker)
+    exec_latency_ms = (time.time() - exec_start) * 1000.0
+    if exec_res.get("success"):
+        metrics_state["total_trades"] += 1
+        metrics_state["signals_by_strategy"][strat] = metrics_state["signals_by_strategy"].get(strat, 0) + 1
+        metrics_engine.record_execution(strat, mode, success=True, latency_ms=exec_latency_ms)
+        metrics_engine.record_institutional("EXECUTING", n_active=len(active) + 1, trades_above=1)
+        db_manager.archive_signal(sig, "EXECUTED", "")
+        tracker.mark_executed(opp_id, exec_res)
+        structured_log(logger, logging.INFO, "ORDER_EXECUTED",
+                       event="order_executed", symbol=res["symbol"], mode=mode,
+                       strategy=strat, latency_ms=round(exec_latency_ms, 2),
+                       opportunity_id=opp_id)
+        if exec_res.get("position"):
+            active.append(exec_res["position"])
+        asyncio.create_task(notification_engine.notify("ORDER_OPEN", {
+            "symbol": res["symbol"],
+            "entry_price": sig["entry"],
+            "quantity": risk_data["quantity"],
+        }))
+    else:
+        metrics_engine.record_execution(strat, mode, success=False, latency_ms=exec_latency_ms)
+        db_manager.archive_signal(sig, "BLOCKED", exec_res.get("reason") or "execution")
+        tracker.mark_failed(opp_id, exec_res.get("reason"))
+        logger.warning(f"Execution blocked for {res['symbol']}: {exec_res.get('reason')}")
 
 
 async def tick_management():
@@ -808,6 +873,7 @@ async def get_status(market_id: str = "btc_usdt"):
         },
         "language": bot_state.get("language", "en"),
         "capital_profile": bot_state.get("capital_profile"),
+        "opportunity_ranking": bot_state.get("opportunity_ranking"),
     }
 
 
@@ -1159,26 +1225,60 @@ async def delete_broker_api(broker_id: str):
     return {"success": deleted, "broker_id": broker_id}
 
 
-# ---- Web3 wallets --------------------------------------------------------- #
+# ---- Web3 wallets (watch-only) -------------------------------------------- #
 @app.get("/api/wallets")
 async def get_wallets():
+    """v2.7 P1-10: Wallets are watch-only. Never presented as signing-capable."""
     wallets = db_manager.get_wallets()
-    return {"wallets": wallets}
+    # Ensure all wallets are marked as watch-only
+    for w in wallets:
+        w["type"] = "WATCH_ONLY"
+        w["signing_capable"] = False
+        w["can_execute"] = False
+        # Mask address by default (show first 6 + last 4)
+        addr = w.get("address", "")
+        if len(addr) > 10:
+            w["address_masked"] = f"{addr[:6]}...{addr[-4:]}"
+        else:
+            w["address_masked"] = addr
+    return {"wallets": wallets, "note": "All wallets are watch-only. No signing or execution capability."}
 
 
 @app.post("/api/wallets", dependencies=[Depends(require_admin)])
 async def add_wallet_api(body: Dict[str, Any] = Body(...)):
+    """v2.7 P1-10: Add a watch-only wallet address.
+    
+    Validates address format per chain type. Never stores private keys or seeds.
+    """
     wallet_id = str(body.get("wallet_id", "")).strip()
-    provider = str(body.get("provider", "METAMASK")).strip().upper()
+    provider = str(body.get("provider", "WATCH_ONLY")).strip().upper()
     address = str(body.get("address", "")).strip()
-    network = body.get("network")
+    network = body.get("network", "mainnet")
+    chain_type = str(body.get("chain_type", "ethereum")).strip().lower()
+    
     if not wallet_id or not address:
         raise HTTPException(400, "wallet_id and address are required")
+    
+    # Basic address validation per chain type
+    if chain_type == "ethereum":
+        if not (address.startswith("0x") and len(address) == 42):
+            raise HTTPException(400, "Invalid Ethereum address format (must be 0x + 40 hex chars)")
+    elif chain_type == "solana":
+        if not (32 <= len(address) <= 44 and address.isalnum()):
+            raise HTTPException(400, "Invalid Solana address format (base58, 32-44 chars)")
+    elif chain_type == "bitcoin":
+        if not (26 <= len(address) <= 62):
+            raise HTTPException(400, "Invalid Bitcoin address format")
+    
     db_manager.save_wallet(wallet_id, provider, address, network)
-    broker_connector.web3_wallets[wallet_id] = {"provider": provider, "address": address,
-                                                "network": network or "mainnet"}
-    db_manager.log_audit("INFO", "WALLET_ADDED", f"Web3 wallet '{wallet_id}' ({provider}) added")
-    return {"success": True, "wallet_id": wallet_id}
+    broker_connector.web3_wallets[wallet_id] = {
+        "provider": provider, "address": address,
+        "network": network, "chain_type": chain_type,
+        "type": "WATCH_ONLY",
+    }
+    db_manager.log_audit("INFO", "WALLET_ADDED",
+                         f"Watch-only wallet '{wallet_id}' ({chain_type}/{network}) added")
+    return {"success": True, "wallet_id": wallet_id, "type": "WATCH_ONLY"}
 
 
 @app.delete("/api/wallets/{wallet_id}", dependencies=[Depends(require_admin)])
@@ -1340,6 +1440,8 @@ async def _execute_signal_for_market(market_id: str) -> Dict[str, Any]:
         min_score = float(settings.get("min_signal_score", 80))
     except ValueError:
         min_score = 80.0
+    # v2.7: enforce the inviolable floor regardless of settings
+    min_score = max(float(AUTO_EXECUTION_SCORE_FLOOR), min_score)
     scan_hit = next((a for a in (bot_state.get("latest_scan") or []) if a.get("symbol") == market_id), None)
     sig = (scan_hit or {}).get("signal_data") if scan_hit else None
     if not sig:
@@ -1347,9 +1449,12 @@ async def _execute_signal_for_market(market_id: str) -> Dict[str, Any]:
         sig = snap.get("signal") or {}
     score = float((scan_hit or {}).get("score") or sig.get("score") or 0)
     if score < min_score:
-        return {"success": False, "reason": f"Score {score} below min_signal_score {min_score}"}
+        return {"success": False, "reason": f"Score {score} below min_signal_score {min_score} (floor {AUTO_EXECUTION_SCORE_FLOOR})"}
     if sig.get("status") != "SIGNAL_DETECTED" or not sig.get("entry"):
         return {"success": False, "reason": "No SIGNAL_DETECTED / missing data"}
+    # v2.7 P0-5: check tradable flag (arbitrage is not auto-executable)
+    if sig.get("tradable") is False:
+        return {"success": False, "reason": sig.get("main_reason", "NOT_AUTO_TRADABLE")}
     allow_delayed = settings.get("allow_delayed_data_trading", "false").lower() == "true"
     scalp = data_engine.check_scalping_allowed(market_id, allow_delayed)
     if not scalp["allowed"]:
@@ -1361,6 +1466,16 @@ async def _execute_signal_for_market(market_id: str) -> Dict[str, Any]:
     ticker = await data_engine.fetch_ticker(market_id)
     if not ticker:
         return {"success": False, "reason": "No market data available"}
+    # v2.7 P0-4: cost gate
+    costs = compute_trade_costs(
+        entry=sig["entry"], sl=sig["sl"], tp=sig["tp"],
+        fee_pct=float(settings.get("fee_pct", 0.05)),
+        slippage_pct=float(settings.get("sim_slippage_pct", 0.05)),
+        spread=float(ticker.get("spread", 0) or 0),
+    )
+    cost_gate = costs_pass_gate(costs)
+    if not cost_gate.get("allowed"):
+        return {"success": False, "reason": cost_gate.get("reason")}
     risk_data = risk_engine.calculate_position_size(
         bot_state["balance"], sig["entry"], sig["sl"], sig.get("direction", "BUY"),
         symbol=market_id, active_positions=active, market_info=info)
@@ -1375,6 +1490,62 @@ async def execute_signal_api(body: Dict[str, Any] = Body(...)):
     if not market_id:
         raise HTTPException(400, "market_id is required")
     return await _execute_signal_for_market(str(market_id))
+
+
+@app.get("/api/opportunities")
+async def get_opportunities():
+    """v2.7 P0-2: Returns the current opportunity ranking."""
+    ranking = bot_state.get("opportunity_ranking") or {}
+    tracker = get_tracker()
+    return {
+        **ranking,
+        "tracker_stats": tracker.get_stats(),
+        "floor": AUTO_EXECUTION_SCORE_FLOOR,
+    }
+
+
+@app.get("/api/broker-capabilities")
+async def get_broker_capabilities():
+    """v2.7 P1-9: Returns broker capabilities from the catalogue."""
+    status = broker_connector.get_status()
+    brokers = db_manager.get_broker_public_list()
+    capabilities = []
+    for broker in brokers:
+        cap = {
+            "broker_id": broker.get("broker_id"),
+            "exchange_id": broker.get("exchange_id"),
+            "is_active": broker.get("is_active"),
+            "passphrase_required": broker.get("exchange_id") in ("okx", "kucoin"),
+            "spot_supported": True,
+            "futures_supported": broker.get("exchange_id") in ("binance", "bybit", "okx", "gate", "bitget"),
+            "sandbox_supported": broker.get("exchange_id") in ("binance", "bybit", "okx", "bitget", "kucoin"),
+            "native_sl_tp": broker.get("exchange_id") in ("binance", "bybit", "okx"),
+            "reduce_only": True,
+            "fetch_positions": True,
+            "fetch_orders": True,
+            "fetch_fees": True,
+            "runtime_status": "UNKNOWN",
+            "sandbox": False,
+            "latency_ms": None,
+            "last_ok": None,
+            "last_error_code": None,
+            "balance": None,
+            "permissions": [],
+            "routable_markets_count": 0,
+            "open_positions_count": 0,
+            "open_orders_count": 0,
+        }
+        # Try to get runtime status from broker_connector
+        adapter = broker_connector._adapters.get(broker.get("broker_id"))
+        if adapter:
+            cap["runtime_status"] = "CONNECTED" if getattr(adapter, "_connected", False) else "DISCONNECTED"
+            cap["sandbox"] = getattr(adapter, "sandbox", False)
+        capabilities.append(cap)
+    return {
+        "capabilities": capabilities,
+        "total_brokers": len(brokers),
+        "connected_brokers": len([c for c in capabilities if c["runtime_status"] == "CONNECTED"]),
+    }
 
 
 @app.get("/api/orderbook")

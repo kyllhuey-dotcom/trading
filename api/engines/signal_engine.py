@@ -4,6 +4,7 @@ from datetime import datetime
 from .strategies.micro_arbitrage import MicroArbitrageStrategy
 from .strategies.tape_reading import TapeReadingStrategy
 from .strategies.liquidity_gap import LiquidityGapStrategy
+from .constants import AUTO_EXECUTION_SCORE_FLOOR
 
 
 class SignalEngine:
@@ -59,7 +60,13 @@ class SignalEngine:
         self.active_strategy_names = valid or ["structure"]
 
     def set_min_score(self, min_score: int) -> None:
-        self.min_score = min_score
+        """Set the global min_score, but never below AUTO_EXECUTION_SCORE_FLOOR."""
+        try:
+            value = int(min_score)
+            # Enforce the inviolable floor for automatic execution
+            self.min_score = max(AUTO_EXECUTION_SCORE_FLOOR, min(99, value))
+        except (TypeError, ValueError):
+            pass
 
     def set_risk_reward(self, risk_reward: float) -> None:
         """Wire the `risk_reward_ratio` setting into SL/TP computation (LOT P)."""
@@ -107,14 +114,17 @@ class SignalEngine:
         """Entry threshold actually applied for a market + regime (LOT R).
 
         Priority: regime adjustment (±) on top of the per-market tuning when
-        present, else on the global `min_score`. Always clamped to 50–99.
+        present, else on the global `min_score`. 
+        v2.7: Always clamped to AUTO_EXECUTION_SCORE_FLOOR–99 (inviolable).
         """
-        from .market_tuning import regime_adjustments, BOUNDS
+        from .market_tuning import regime_adjustments
         tuning = self.market_tuning.get(market_id or "", {}) or {}
         base = tuning.get("min_score", self.min_score)
         delta = regime_adjustments(regime)["min_score_delta"] if self.regime_adaptation_enabled else 0
-        lo, hi = BOUNDS["min_score"]
-        return int(max(lo, min(hi, int(base) + int(delta))))
+        # v2.7: the floor is inviolable — no regime, tuning, or setting can lower it
+        lo = AUTO_EXECUTION_SCORE_FLOOR
+        hi = 99
+        return int(max(lo, min(hi, max(lo, int(base)) + int(delta))))
 
     def effective_risk_reward(self, market_id: Optional[str]) -> float:
         """Take-profit target (R multiple) for a market, tuned per market."""

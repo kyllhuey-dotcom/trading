@@ -123,10 +123,25 @@ class ExecutionEngine:
             "open_time": datetime.now().isoformat(),
             "status": "OPEN",
             "pnl": -(risk["estimated_fees"] / 2),
+            # v2.7 P0-6: Full trade accounting fields
+            "initial_quantity": risk["quantity"],
+            "remaining_quantity": risk["quantity"],
+            "initial_risk_amount": abs(float(entry_price) - float(signal["sl"])) * risk["quantity"],
+            "entry_fees": risk["estimated_fees"] / 2,
+            "exit_fees": 0.0,
+            "slippage_cost": 0.0,
+            "funding_cost": 0.0,
+            "partial_realized_pnl": 0.0,
+            "gross_pnl": 0.0,
+            "net_pnl": -(risk["estimated_fees"] / 2),
+            "score_at_entry": signal.get("score", 0),
+            "rank_at_entry": signal.get("rank", None),
+            "opportunity_id": signal.get("opportunity_id", None),
             "metadata": {
                 "atr": signal.get("atr", 0),
                 "strategy": signal.get("strategy", "structure"),
-                "score": signal.get("score", 0)
+                "score": signal.get("score", 0),
+                "regime": signal.get("regime", "NORMAL"),
             }
         }
 
@@ -137,23 +152,63 @@ class ExecutionEngine:
         return {"success": True, "position": position}
 
     def _close_position(self, pos: Dict[str, Any], reason: str, exit_price: float) -> None:
-        """Common closing routine: recompute realized PnL, deduct fees, persist, notify risk."""
+        """Common closing routine: recompute realized PnL, deduct all fees, persist, notify risk.
+        
+        v2.7 P0-6: Proper accounting for partial exits and all costs.
+        - exit_fees calculated on remaining quantity
+        - net_pnl = gross_pnl - all fees - slippage - funding
+        - realized_r_multiple computed
+        - register_closed_trade only with final net result
+        """
         pos["status"] = "CLOSED"
         pos["exit_price"] = float(exit_price)
         pos["close_time"] = datetime.now().isoformat()
+        
+        # Compute exit fees on remaining quantity
+        remaining_qty = pos.get("remaining_quantity", pos.get("quantity", 0))
+        exit_notional = float(exit_price) * remaining_qty
+        exit_fees = exit_notional * 0.001  # approximate 0.1% exit fee
+        
+        # Gross PnL on remaining quantity
         if pos["direction"] == "BUY":
-            realized = (pos["exit_price"] - pos["entry_price"]) * pos["quantity"]
+            gross_pnl = (float(exit_price) - pos["entry_price"]) * remaining_qty
         else:
-            realized = (pos["entry_price"] - pos["exit_price"]) * pos["quantity"]
-        pos["pnl"] = float(realized) - float(pos.get("fees", 0.0) or 0.0)
+            gross_pnl = (pos["entry_price"] - float(exit_price)) * remaining_qty
+        
+        # Total costs
+        entry_fees = float(pos.get("entry_fees", pos.get("fees", 0.0) or 0.0))
+        slippage_cost = float(pos.get("slippage_cost", 0.0) or 0.0)
+        funding_cost = float(pos.get("funding_cost", 0.0) or 0.0)
+        partial_pnl = float(pos.get("partial_realized_pnl", 0.0) or 0.0)
+        
+        # Net PnL includes partial exits and all costs
+        final_leg_pnl = gross_pnl - exit_fees
+        total_net_pnl = partial_pnl + final_leg_pnl - entry_fees - slippage_cost - funding_cost
+        
+        # Update position fields
+        pos["exit_fees"] = exit_fees
+        pos["gross_pnl"] = gross_pnl + partial_pnl
+        pos["net_pnl"] = total_net_pnl
+        pos["pnl"] = total_net_pnl
+        pos["remaining_quantity"] = 0
+        
+        # Compute realized R-multiple
+        initial_risk = float(pos.get("initial_risk_amount", 0) or 0)
+        if initial_risk > 0:
+            pos["realized_r_multiple"] = round(total_net_pnl / initial_risk, 3)
+        else:
+            pos["realized_r_multiple"] = 0.0
+        
         pos["metadata"] = {**(pos.get("metadata") or {}), "close_reason": reason}
 
-        self.portfolio.update_balance(pos["mode"], pos["pnl"])
-        self.risk.register_closed_trade(pos["pnl"])
+        self.portfolio.update_balance(pos["mode"], total_net_pnl)
+        # v2.7 P0-6: Only register with the final net result (not partial legs)
+        self.risk.register_closed_trade(total_net_pnl)
         self.db.save_trade(pos)
         self.db.log_audit("INFO", "ORDER_CLOSE",
-                          f"Closed {pos['symbol']}: {reason} (PnL {pos['pnl']:.2f})",
-                          {"position_id": pos["id"], "reason": reason})
+                          f"Closed {pos['symbol']}: {reason} (Net PnL {total_net_pnl:.2f}, R={pos['realized_r_multiple']})",
+                          {"position_id": pos["id"], "reason": reason,
+                           "net_pnl": total_net_pnl, "r_multiple": pos["realized_r_multiple"]})
 
     async def update_active_positions(self, mode: str, tickers: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
@@ -215,6 +270,9 @@ class ExecutionEngine:
                         continue
 
             # 2. Partial TP at 1:1 RR → lock 50%, move SL to break-even
+            # v2.7 P0-6: Partial TP is NOT a full winning trade. Do NOT reset
+            # the circuit breaker. The partial PnL is accumulated and only
+            # registered with risk_engine when the position fully closes.
             risk_dist = abs(pos["entry_price"] - pos["sl"])
             if risk_dist > 0 and not metadata.get("partial_tp_hit"):
                 hit_partial = (pos["direction"] == "BUY" and current_exit_price >= pos["entry_price"] + (risk_dist * partial_tp_ratio)) or \
@@ -222,15 +280,21 @@ class ExecutionEngine:
                 if hit_partial:
                     close_qty = pos["quantity"] / 2
                     partial_pnl = (risk_dist * partial_tp_ratio) * close_qty
-                    self.portfolio.update_balance(mode, partial_pnl)
-                    self.risk.register_closed_trade(partial_pnl)
+                    # Deduct proportional entry fees
+                    entry_fee_portion = float(pos.get("entry_fees", 0) or 0) / 2
+                    net_partial_pnl = partial_pnl - entry_fee_portion
+                    self.portfolio.update_balance(mode, net_partial_pnl)
+                    # v2.7 P0-6: Do NOT call risk.register_closed_trade here
+                    # The partial exit is tracked but only registered at final close
                     pos["quantity"] -= close_qty
+                    pos["remaining_quantity"] = pos["quantity"]
+                    pos["partial_realized_pnl"] = float(pos.get("partial_realized_pnl", 0)) + net_partial_pnl
                     metadata["partial_tp_hit"] = True
-                    metadata["partial_pnl"] = partial_pnl
+                    metadata["partial_pnl"] = net_partial_pnl
                     pos["sl"] = pos["entry_price"]
                     metadata["break_even_active"] = True
                     self.db.log_audit("INFO", "PARTIAL_TP",
-                                      f"Partial TP on {pos['symbol']} (+{partial_pnl:.2f}), SL moved to break-even.")
+                                      f"Partial TP on {pos['symbol']} (+{net_partial_pnl:.2f}), SL moved to break-even.")
 
             # 3. Trailing stop
             if ts_active:
