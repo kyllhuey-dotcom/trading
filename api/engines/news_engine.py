@@ -289,8 +289,13 @@ class EventRiskEngine:
 
 
 class SessionFilter:
-    def __init__(self, timezone: str = "Europe/Paris"):
-        self.tz = pytz.timezone(timezone)
+    def __init__(self, timezone: str = "UTC"):
+        self.tz_name = timezone
+        try:
+            self.tz = pytz.timezone(timezone)
+        except Exception:
+            self.tz = pytz.UTC
+            self.tz_name = "UTC"
         self.allowed_days = [0, 1, 2, 3, 4, 5, 6]
 
     def is_trading_allowed(self, asset_class: str = "CRYPTO") -> Dict[str, Any]:
@@ -314,7 +319,7 @@ class SessionFilter:
             "current_time": now.strftime("%Y-%m-%d %H:%M:%S"),
             "day_name": now.strftime("%A"),
             "asset_class": asset_class,
-            "timezone": "Europe/Paris",
+            "timezone": getattr(self, "tz_name", "UTC"),
         }
 
 

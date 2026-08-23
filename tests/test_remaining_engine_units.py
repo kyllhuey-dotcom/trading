@@ -172,9 +172,10 @@ async def test_data_engine_broadcast_market_update_paths():
     engine.fetch_ticker = AsyncMock(return_value={
         "last": 100,
         "status": "LIVE",
-        "timestamp": None,
+        "timestamp": int(__import__("time").time() * 1000),
         "change_24h": 1,
         "volume": 10,
+        "source": "gate",
     })
     assert await engine.broadcast_market_update("unknown") is None
     await engine.broadcast_market_update("btc_usdt")

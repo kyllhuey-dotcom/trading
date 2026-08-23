@@ -115,6 +115,8 @@ def _passes_all_gates(
     min_net_rr: float = 1.5,
     max_cost_to_risk: float = 0.5,
     quarantined: set[str] | None = None,
+    fee_pct: float = 0.05,
+    slippage_pct: float = 0.05,
 ) -> dict[str, Any]:
     """Check all gates for a candidate. Returns {passes, reasons}.
     
@@ -170,7 +172,7 @@ def _passes_all_gates(
     if risk_distance > 0:
         costs = _compute_costs(
             entry=entry, sl=sl, tp=tp,
-            fee_pct=0.05, slippage_pct=0.05,
+            fee_pct=fee_pct, slippage_pct=slippage_pct,
             spread=spread_abs,
         )
         if costs.get("valid"):

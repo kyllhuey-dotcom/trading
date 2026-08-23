@@ -2,10 +2,10 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
-> **v2.9.1** — Stratégie automatique unique **RSI-14 Retournement** (BUY et
-> SELL, RR cible 1.5 borné 1.0–2.0). Scanner Railway persistant, Radar
-> univers-complet (`DATA_UNAVAILABLE` visible), APIs gratuites uniquement.
-> Le score n'est pas une probabilité. Aucune rentabilité n'est promise.
+> **v2.9.2** — Auto **RSI-14 only**, RR 1.5 (clamp 1.0–2.0). LIVE/DELAYED
+> basé sur le timestamp (jamais le nom du provider). Scan timeout 120s.
+> Corrélation par `underlying`. Objectifs réalistes : WR ≥45 %, RR net ≥1.5,
+> PF ≥1.3, espérance >0. Le score est un filtre de sélectivité.
 >
 > **v2.6** — Robustesse production : calendrier économique JSON → HTML → cache SQLite 7 jours avec politique de panne explicite, dashboard 100 % local (aucun CDN), scan immédiat et incrémental crypto-first, intention d'exécution visible, Yahoo batché/caché, six sources crypto sans clé, providers tradfi optionnels, déduplication par sous-jacent et i18n en/fr/es/de complet. Suite : **390 passés / 6 skips réseau / 0 échec**.
 >

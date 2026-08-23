@@ -340,6 +340,16 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     as_json = "--json" in args
     args = [a for a in args if a != "--json"]
+    fee_idx = next((i for i, a in enumerate(args) if a in ("--fee", "--fee-pct")), None)
+    if fee_idx is not None:
+        try:
+            fee_val = float(args[fee_idx + 1])
+        except (IndexError, TypeError, ValueError):
+            print("error: --fee requires a numeric percentage (e.g. 0.10)", file=sys.stderr)
+            return 2
+        global ASSUMED_ROUND_TRIP_COSTS_PCT
+        ASSUMED_ROUND_TRIP_COSTS_PCT = fee_val
+        del args[fee_idx:fee_idx + 2]
     db_path = args[0] if args else "data/quantum_trade.db"
     try:
         balance = float(args[1]) if len(args) > 1 else 0.0

@@ -28,6 +28,8 @@ class QuarantineManager:
             "wins": 0,
             "losses": 0,
             "total_pnl": 0.0,
+            "gross_win": 0.0,
+            "gross_loss": 0.0,
             "total_risk": 0.0,
             "trades": 0,
             "last_trade_ts": 0,
@@ -46,8 +48,10 @@ class QuarantineManager:
         
         if pnl > 0:
             perf["wins"] += 1
+            perf["gross_win"] += pnl
         else:
             perf["losses"] += 1
+            perf["gross_loss"] += abs(pnl)
         
         # Check quarantine criteria after min_trades
         if perf["trades"] >= self.min_trades:
@@ -66,11 +70,15 @@ class QuarantineManager:
         win_rate = perf["wins"] / trades
         expectancy = perf["total_pnl"] / trades
         
-        # Profit factor = gross_profit / gross_loss
-        # We approximate: wins contribute to profit, losses to loss
-        avg_win = perf["total_pnl"] / perf["wins"] if perf["wins"] > 0 else 0
-        avg_loss = abs(perf["total_pnl"]) / perf["losses"] if perf["losses"] > 0 else 0
-        profit_factor = (avg_win * win_rate) / (avg_loss * (1 - win_rate)) if avg_loss > 0 and win_rate < 1 else 0
+        # Profit factor = gross_win / gross_loss (true sums)
+        gross_win = float(perf.get("gross_win", 0.0) or 0.0)
+        gross_loss = float(perf.get("gross_loss", 0.0) or 0.0)
+        avg_win = gross_win / perf["wins"] if perf["wins"] > 0 else 0
+        avg_loss = gross_loss / perf["losses"] if perf["losses"] > 0 else 0
+        if gross_loss > 0:
+            profit_factor = gross_win / gross_loss
+        else:
+            profit_factor = float("inf") if gross_win > 0 else 0
         
         # Net RR approximation
         net_rr = avg_win / avg_loss if avg_loss > 0 else 0

@@ -278,7 +278,9 @@ class ExecutionEngine:
                 hit_partial = (pos["direction"] == "BUY" and current_exit_price >= pos["entry_price"] + (risk_dist * partial_tp_ratio)) or \
                               (pos["direction"] == "SELL" and current_exit_price <= pos["entry_price"] - (risk_dist * partial_tp_ratio))
                 if hit_partial:
-                    close_qty = pos["quantity"] / 2
+                    initial_qty = float(pos.get("initial_quantity") or pos.get("quantity") or 0)
+                    remaining_qty = float(pos.get("remaining_quantity", pos.get("quantity", 0)) or 0)
+                    close_qty = min(initial_qty / 2.0, remaining_qty)
                     partial_pnl = (risk_dist * partial_tp_ratio) * close_qty
                     # Deduct proportional entry fees
                     entry_fee_portion = float(pos.get("entry_fees", 0) or 0) / 2

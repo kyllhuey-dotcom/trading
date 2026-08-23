@@ -132,13 +132,15 @@ def recompute_after_fill(
     sl = float(original_sl)
     tp = float(original_tp)
 
-    # Adjust SL/TP relative to actual fill price
+    # Signed distances from the real fill (never mix abs() here).
     if direction == "BUY":
         risk_distance = fill_price - sl
-        tp - fill_price
+        tp_dist = tp - fill_price
     else:
         risk_distance = sl - fill_price
-        fill_price - tp
+        tp_dist = fill_price - tp
+    if tp_dist <= 0:
+        return {"valid": False, "reason": "Fill price invalidates TP", "action": "REFUSE"}
 
     if risk_distance <= 0:
         return {"valid": False, "reason": "Fill price invalidates SL", "action": "REFUSE"}
