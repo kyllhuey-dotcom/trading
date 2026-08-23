@@ -21,7 +21,8 @@ SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
     "news_unavailable_policy": {
         "type": "enum",
         "choices": ("block_all", "block_tradfi_only", "allow_all"),
-        "default": "block_all",
+        # P0-1: a calendar outage must not block 24/7 crypto; tradfi stays blocked.
+        "default": "block_tradfi_only",
     },
     "active_strategies": {"type": "str", "default": "rsi"},
     "scan_interval_seconds": {"type": "int", "min": 5, "max": 300, "default": "30"},

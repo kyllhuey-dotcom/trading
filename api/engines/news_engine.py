@@ -319,26 +319,33 @@ class SessionFilter:
 
 
 class NewsEngine:
-    """Orchestrate calendar, event risk and sessions with an explicit outage policy."""
+    """Orchestrate calendar, event risk and sessions with an explicit outage policy.
+
+    P0-1 (2026-08-23): the outage default is ``block_tradfi_only`` — a calendar
+    outage must never block CRYPTO (24/7 market, calendar-independent), while
+    tradfi classes stay fail-safe blocked. ``block_all`` and ``allow_all``
+    remain selectable explicit choices.
+    """
 
     VALID_UNAVAILABLE_POLICIES = ("block_all", "block_tradfi_only", "allow_all")
 
-    def __init__(self, db_manager: Any = None, unavailable_policy: str = "block_all"):
+    def __init__(self, db_manager: Any = None, unavailable_policy: str = "block_tradfi_only"):
         self.provider = EconomicCalendarProvider(db_manager=db_manager)
         self.filter = NewsFilter()
         self.risk_engine = EventRiskEngine(self.filter)
         self.session_filter = SessionFilter()
-        self.news_unavailable_policy = "block_all"
+        self.news_unavailable_policy = "block_tradfi_only"
         self.set_unavailable_policy(unavailable_policy)
 
     def set_unavailable_policy(self, policy: str) -> None:
-        normalized = str(policy or "block_all").lower()
+        normalized = str(policy or "block_tradfi_only").lower()
         self.news_unavailable_policy = (
-            normalized if normalized in self.VALID_UNAVAILABLE_POLICIES else "block_all"
+            normalized if normalized in self.VALID_UNAVAILABLE_POLICIES else "block_tradfi_only"
         )
 
     def apply_settings(self, settings: Dict[str, str]) -> None:
-        self.set_unavailable_policy(settings.get("news_unavailable_policy", "block_all"))
+        self.set_unavailable_policy(
+            settings.get("news_unavailable_policy", "block_tradfi_only"))
 
     def _outage_allows(self, asset_class: str) -> bool:
         if self.news_unavailable_policy == "allow_all":

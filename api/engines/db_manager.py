@@ -197,7 +197,7 @@ class DatabaseManager:
                     "emergency_stop_drawdown_pct": "10.0",
                     "auto_arm_on_startup": "false",
                     "auto_start_on_startup": "false",
-                    "news_unavailable_policy": "block_all",
+                    "news_unavailable_policy": "block_tradfi_only",
                     "slippage_tolerance_pct": "0.1",
                     "active_strategies": "rsi",
                     "sim_latency_ms": "100",
@@ -226,6 +226,16 @@ class DatabaseManager:
                 conn.execute(
                     """UPDATE settings SET value = '1.5'
                        WHERE key = 'risk_reward_ratio' AND value = '2.0'"""
+                )
+                # P0-1 (2026-08-23): the previous seed default `block_all` kept
+                # prod crypto blocked whenever FairEconomy/ForexFactory TLS
+                # failed. Migrate seeded values to `block_tradfi_only`; an
+                # operator who explicitly wants block_all can re-set it via
+                # POST /api/settings (the choice remains valid).
+                conn.execute(
+                    """UPDATE settings SET value = 'block_tradfi_only'
+                       WHERE key = 'news_unavailable_policy'
+                         AND value = 'block_all'"""
                 )
 
             # Seed default accounts

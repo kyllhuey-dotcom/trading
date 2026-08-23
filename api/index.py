@@ -505,7 +505,8 @@ def _scanner_payload(sort="score", order="desc", filter_mode="all", live_only=Fa
         "block_reason": bot_state.get("last_block_reason"),
         "last_block_reason": bot_state.get("last_block_reason"),
         "excluded": (bot_state.get("opportunity_ranking") or {}).get("excluded", []),
-        "news_unavailable_policy": settings_provider.get().get("news_unavailable_policy", "block_all"),
+        "news_unavailable_policy": settings_provider.get().get(
+            "news_unavailable_policy", "block_tradfi_only"),
         **summary,
     }
 

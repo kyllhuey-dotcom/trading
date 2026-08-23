@@ -234,7 +234,11 @@ def test_session_filter_forex_friday_close(monkeypatch):
 
 def test_news_engine_policy_and_apply():
     eng = NewsEngine(unavailable_policy="nope")
-    assert eng.news_unavailable_policy == "block_all"
+    # P0-1: the fail-open-crypto default is block_tradfi_only (crypto trades
+    # when the calendar is down; tradfi stays blocked).
+    assert eng.news_unavailable_policy == "block_tradfi_only"
+    eng.apply_settings({})
+    assert eng.news_unavailable_policy == "block_tradfi_only"
     eng.apply_settings({"news_unavailable_policy": "allow_all"})
     assert eng._outage_allows("FOREX") is True
     eng.apply_settings({"news_unavailable_policy": "block_tradfi_only"})

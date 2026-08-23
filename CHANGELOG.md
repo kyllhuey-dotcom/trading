@@ -1,5 +1,16 @@
 # Changelog - Quantum Trade Pro
 
+## [2.9.2] - 2026-08-23 — P0 prod : 0 trade + WS coupé
+
+### P0-1 — Calendrier HS ne bloque plus la crypto
+- `news_unavailable_policy` par défaut **`block_tradfi_only`** (settings
+  schema, seed SQLite, `NewsEngine`, `/api/status`) : si FairEconomy/
+  ForexFactory TLS échoue, CRYPTO (24/7) reste tradable ; FOREX/indices/
+  actions restent bloqués (fail-safe). `allow_all` et `block_all` (choix
+  explicite) inchangés. Migration automatique des bases existantes
+  seedées `block_all`.
+- Tests : calendrier HS + défaut → CRYPTO `news_ok=True`, FOREX `False`.
+
 ## [2.9.1] - 2026-08-23 — Scanner fiable, Radar complet, RR RSI 1.5
 
 ### Résumé
