@@ -41,9 +41,14 @@ class ScannerEngine:
         day_allowed = bool(news_status.get("day_ok"))
         session_allowed = bool(news_status.get("session_ok"))
         news_clear = bool(news_status.get("news_ok"))
-        not_range = ltf_analysis.get("market_state") != "RANGE"
-        trend_valid = ltf_analysis.get("trend") not in (None, "NEUTRAL")
-        structure_valid = bool(ltf_analysis.get("is_hh") or ltf_analysis.get("is_ll"))
+        strategy_name = str(signal.get("strategy") or "").lower()
+        is_rsi_strategy = strategy_name == "rsi"
+        # RSI is a reversal strategy, not a trend/structure strategy. Keep the
+        # execution and market-safety checks below, but do not make RSI fail
+        # merely because the market is ranging or lacks HH/HL structure.
+        not_range = True if is_rsi_strategy else ltf_analysis.get("market_state") != "RANGE"
+        trend_valid = True if is_rsi_strategy else ltf_analysis.get("trend") not in (None, "NEUTRAL")
+        structure_valid = True if is_rsi_strategy else bool(ltf_analysis.get("is_hh") or ltf_analysis.get("is_ll"))
         signal_valid = signal.get("status") == "SIGNAL_DETECTED"
         spread = float(ticker.get("spread", 0) or 0)
         last = float(ticker.get("last", 0) or 0)
@@ -97,7 +102,11 @@ class ScannerEngine:
 
     async def scan_asset(self, symbol: str, semaphore: asyncio.Semaphore,
                          strategy_mode: Optional[str] = None) -> Dict[str, Any]:
-        """Full analysis of a single asset with concurrency control."""
+        """Full analysis of one asset; automatic scans are RSI-only in v2.9."""
+        # A caller cannot opt the automatic scanner into a legacy strategy.
+        # Those strategy modules remain directly testable/backtestable.
+        del strategy_mode
+        strategy_mode = "rsi"
         async with semaphore:
             try:
                 info = self.data.universe.get_info(symbol)
@@ -233,10 +242,13 @@ class ScannerEngine:
                        progress_callback: Any = None) -> List[Dict[str, Any]]:
         """Scan incrementally, always completing realtime crypto before tradfi.
 
-        ``progress_callback`` receives ``(result, completed, total)`` after every
+        Automatic scanning is deliberately RSI-only; the argument is retained
+        for API compatibility with older callers. ``progress_callback`` receives ``(result, completed, total)`` after every
         symbol.  It may be synchronous or asynchronous; this keeps partial
         results visible while a slow Yahoo class is still being processed.
         """
+        del strategy_mode
+        strategy_mode = "rsi"
         start_time = datetime.now()
         symbols = self.data.universe.get_all_ids()
         crypto = [symbol for symbol in symbols

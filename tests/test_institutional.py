@@ -8,7 +8,7 @@ client = TestClient(app)
 
 def _row(sym, score, tradable=True, extra=None):
     r = {"symbol": sym, "score": score, "tradable": tradable,
-         "signal_data": {"market_id": sym, "entry": 1.0, "sl": 0.9}}
+         "signal_data": {"market_id": sym, "entry": 1.0, "sl": 0.9, "strategy": "rsi"}}
     if extra:
         r.update(extra)
     return r

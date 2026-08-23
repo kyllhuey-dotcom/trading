@@ -192,7 +192,7 @@ class DatabaseManager:
                     "auto_start_on_startup": "false",
                     "news_unavailable_policy": "block_all",
                     "slippage_tolerance_pct": "0.1",
-                    "active_strategies": "structure,arbitrage,tape,liquidity",
+                    "active_strategies": "rsi",
                     "sim_latency_ms": "100",
                     "sim_slippage_pct": "0.05",
                     "sim_rejection_prob": "0.01",
@@ -208,6 +208,14 @@ class DatabaseManager:
                 }
                 for k, v in defaults.items():
                     conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))
+            else:
+                # Migrate the previous untouched v2.8 seed while preserving an
+                # explicitly customized strategy setting.
+                conn.execute(
+                    """UPDATE settings SET value = 'rsi'
+                       WHERE key = 'active_strategies'
+                         AND value = 'structure,arbitrage,tape,liquidity'"""
+                )
 
             # Seed default accounts
             cursor = conn.execute("SELECT COUNT(*) FROM accounts")

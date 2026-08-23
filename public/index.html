@@ -982,6 +982,10 @@
                                 <i data-lucide="zap" class="text-yellow-500 w-5 h-5"></i>
                                 <h4 class="text-sm font-black uppercase tracking-widest" data-i18n="alphaStrategy">Execution & Alpha Strategy</h4>
                             </div>
+                            <div class="mb-6 px-4 py-3 rounded-xl bg-accent-blue/10 border border-accent-blue/20 text-xs font-bold">
+                                <span data-i18n="activeStrategy">Active strategy</span>:
+                                <strong data-i18n="strategyRsiName">RSI-14 Reversal</strong>
+                            </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
                                 <div class="space-y-2">
                                     <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="minConfidence">Min AI Confidence Score</label><span class="text-[10px] font-bold text-accent-green" id="val-min_signal_score">84</span></div>
@@ -1449,6 +1453,11 @@
             }
         }
 
+        function strategyLabel(strategy) {
+            const value = String(strategy || '').toLowerCase();
+            return value === 'rsi' ? t('strategyRsiName') : String(strategy || '--');
+        }
+
         function renderSignal(sig) {
             const box = document.getElementById('trading-signal-box');
             if (!box) return;
@@ -1461,7 +1470,7 @@
             }
             const isBuy = sig.direction === 'BUY';
             box.innerHTML = `<div class="text-center">
-                <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-1">${escapeHtml(sig.strategy || 'structure')} ${t('strategyWord')}</p>
+                <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-1">${escapeHtml(strategyLabel(sig.strategy))} ${t('strategyWord')}</p>
                 <p class="text-2xl font-black ${isBuy ? 'text-green-500' : 'text-red-500'}">${isBuy ? t('buy') + ' ▲' : t('sell') + ' ▼'}</p>
                 <p class="text-[10px] font-bold text-secondary mt-1">${t('entry')} ${fmtPrice(sig.entry)} • ${t('stopLoss')} ${fmtPrice(sig.sl)} • ${t('takeProfit')} ${fmtPrice(sig.tp)}</p>
                 <p class="text-[9px] font-black text-secondary uppercase tracking-widest mt-2">${t('score')} ${sig.score}/100 • ${escapeHtml(sig.confidence || 'HIGH')}</p>
@@ -1605,7 +1614,7 @@
                     <td class="py-4 text-right ${(a.change||0)>=0?'text-green-500':'text-red-500'}">${a.change != null ? ((a.change>=0?'+':'')+Number(a.change).toFixed(2)+'%') : '—'}</td>
                     <td class="py-4 text-center font-black">${escapeHtml(a.direction || a.trend || '--')}</td>
                     <td class="py-4 text-center ${hot?'radar-score-glow':'font-black'}">${a.score || 0}</td>
-                    <td class="py-4 text-center">${escapeHtml(a.strategy || '--')}</td>
+                    <td class="py-4 text-center">${escapeHtml(strategyLabel(a.strategy))}</td>
                     <td class="py-4 text-center">${sourceBadge}</td>
                     <td class="py-4 text-center text-secondary">${escapeHtml(a.data_age_label || '—')}</td>
                     <td class="py-4 pr-6 text-right"><button class="btn-premium ${canTrade?'bg-green-500 text-white':'bg-black/5'}" ${canTrade?'':'disabled'} onclick="event.stopPropagation();executeRadarTrade('${escapeHtml(a.symbol)}')">${t('trade')}</button></td>

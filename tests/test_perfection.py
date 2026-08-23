@@ -31,7 +31,8 @@ def test_strategy_logic():
     df = pd.DataFrame({'High': [110]*50, 'Low': [90]*50, 'Close': [100]*50,
                        'Open': [100]*50, 'Volume': [1000]*50})
     cross_quotes = [{"last": 100.0}, {"last": 100.5}]
-    res = signal.generate_signal({"market_id": "BTC", "status": "VALID"}, {}, df,
+    res = signal.generate_signal({"market_id": "BTC", "status": "VALID"},
+                                 {"trading_allowed": True}, df,
                                  strategy_mode="arbitrage", cross_quotes=cross_quotes)
     assert res["status"] == "SIGNAL_DETECTED"
     assert res["market_id"] == "BTC"

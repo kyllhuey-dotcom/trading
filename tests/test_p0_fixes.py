@@ -39,7 +39,8 @@ def test_structure_signal_carries_market_id():
         'Close': [100, 101, 102, 103, 104, 105] * 5,
         'Volume': [1000] * 30,
     })
-    res = signal.generate_signal(analysis, {"trading_allowed": True}, df, market_id="btc_usdt")
+    res = signal.generate_signal(analysis, {"trading_allowed": True}, df,
+                                 strategy_mode="structure", market_id="btc_usdt")
     assert res["market_id"] == "btc_usdt"
     if res["status"] == "SIGNAL_DETECTED":
         assert res["entry"] and res["sl"] and res["tp"]
@@ -50,7 +51,8 @@ def test_arbitrage_signal_carries_market_id():
     df = pd.DataFrame({'High': [110] * 50, 'Low': [90] * 50, 'Close': [100] * 50,
                        'Open': [100] * 50, 'Volume': [1000] * 50})
     cross_quotes = [{"last": 100.0}, {"last": 100.5}]
-    res = signal.generate_signal({"market_id": "btc_usdt", "status": "VALID"}, {}, df,
+    res = signal.generate_signal({"market_id": "btc_usdt", "status": "VALID"},
+                                 {"trading_allowed": True}, df,
                                  strategy_mode="arbitrage", cross_quotes=cross_quotes)
     assert res["market_id"] == "btc_usdt"
 

@@ -3,10 +3,11 @@ from typing import Dict, Any, Optional, List
 import pandas as pd
 from datetime import datetime
 
+# Note technique : le score mesure la sélectivité du setup ; aucune garantie de
+# résultat ni présentation en probabilité ne doit en être déduite.
 class TapeReadingStrategy(BaseStrategy):
     """
     Analyse le flux d'exécution pour détecter les pressions institutionnelles.
-    Taux de réussite cible : 75-85 %.
 
     LOT C hardening:
     - depth-weighted orderbook imbalance (nearby levels weigh more);

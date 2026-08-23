@@ -4,6 +4,7 @@ from datetime import datetime
 from .strategies.micro_arbitrage import MicroArbitrageStrategy
 from .strategies.tape_reading import TapeReadingStrategy
 from .strategies.liquidity_gap import LiquidityGapStrategy
+from .strategies.rsi_mean_reversion import RSIMeanReversionStrategy
 from .constants import AUTO_EXECUTION_SCORE_FLOOR
 
 
@@ -32,7 +33,7 @@ class SignalEngine:
                  fee_pct: float = 0.05,
                  slippage_pct: float = 0.05,
                  max_cost_ratio: float = 0.5,
-                 cost_filter_strategies: tuple = ("structure", "tape"),
+                 cost_filter_strategies: tuple = ("structure", "tape", "rsi"),
                  market_tuning: Optional[Dict[str, Dict[str, Any]]] = None,
                  regime_adaptation_enabled: bool = True):
         self.min_score = min_score
@@ -49,15 +50,23 @@ class SignalEngine:
         self.strategies = {
             "arbitrage": MicroArbitrageStrategy(),
             "tape": TapeReadingStrategy(),
-            "liquidity": LiquidityGapStrategy()
+            "liquidity": LiquidityGapStrategy(),
+            "rsi": RSIMeanReversionStrategy(),
         }
-        self.active_strategy_names = ["structure"]
+        # RSI is the sole automatic strategy in v2.9. The other strategies
+        # remain registered so their focused unit tests and explicit backtests
+        # keep working, but settings cannot enable them for live automation.
+        self.active_strategy_names = ["rsi"]
 
     def set_active_strategies(self, strategy_list: List[str]) -> None:
-        """Apply the configured strategy list (from bot settings)."""
-        known = list(self.strategies.keys()) + ["structure"]
-        valid = [s for s in strategy_list if s in known]
-        self.active_strategy_names = valid or ["structure"]
+        """Keep automatic execution exclusively on the RSI strategy.
+
+        ``strategy_list`` is intentionally ignored for the live path.  Custom
+        strategies remain callable with an explicit ``strategy_mode`` for
+        diagnostics/backtests and are not removed from the registry.
+        """
+        del strategy_list
+        self.active_strategy_names = ["rsi"]
 
     def set_min_score(self, min_score: int) -> None:
         """Set the global min_score, but never below AUTO_EXECUTION_SCORE_FLOOR."""
@@ -74,6 +83,9 @@ class SignalEngine:
             value = float(risk_reward)
             if 0.3 <= value <= 10.0:  # sanity bounds
                 self.risk_reward = value
+                rsi_strategy = self.strategies.get("rsi")
+                if rsi_strategy and hasattr(rsi_strategy, "set_risk_reward"):
+                    rsi_strategy.set_risk_reward(value)
         except (TypeError, ValueError):
             pass
 
@@ -156,6 +168,27 @@ class SignalEngine:
             self.max_cost_ratio = float(max_cost_ratio)
 
     # ------------------------------------------------------------------ #
+    # Safety gates                                                        #
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _apply_news_session_gate(res: Dict[str, Any],
+                                 news_status: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply the fail-safe calendar/session gate to every custom strategy.
+
+        Missing ``trading_allowed`` is treated as false. This is important for
+        RSI as well as for the legacy custom strategies: a calendar outage or
+        malformed status must never become an implicit allow.
+        """
+        if res.get("status") != "SIGNAL_DETECTED":
+            return res
+        if bool(news_status.get("trading_allowed", False)):
+            return res
+        res["status"] = "NO_TRADE"
+        res["news_blocked"] = True
+        res["reason"] = f"News/Session restricted — {res.get('reason', 'signal blocked')}"
+        return res
+
+    # ------------------------------------------------------------------ #
     # Quality gates (LOT P)                                               #
     # ------------------------------------------------------------------ #
     def _apply_quality_gates(self, res: Dict[str, Any], strategy: str,
@@ -209,7 +242,7 @@ class SignalEngine:
         if market_id is None:
             market_id = analysis.get("market_id")
 
-        # If strategy_mode is not specified, use the list of active strategies
+        # If strategy_mode is not specified, use the forced RSI-only list.
         if not strategy_mode:
             strategy_mode = "multi" if len(self.active_strategy_names) > 1 else self.active_strategy_names[0]
 
@@ -233,7 +266,12 @@ class SignalEngine:
 
         # Custom strategies (arbitrage / tape / liquidity)
         if strategy_mode in self.strategies:
-            res = self.strategies[strategy_mode].generate_signal(
+            strategy = self.strategies[strategy_mode]
+            if strategy_mode == "rsi" and hasattr(strategy, "set_risk_reward"):
+                # RSI owns the fixed 0.1 ATR stop buffer; only the effective
+                # market RR is passed through from the existing tuning plumbing.
+                strategy.set_risk_reward(self.effective_risk_reward(market_id))
+            res = strategy.generate_signal(
                 market_id=market_id or "unknown",
                 df=df,
                 cross_quotes=cross_quotes,
@@ -244,6 +282,9 @@ class SignalEngine:
             res["market_id"] = market_id
             regime = self._regime_of(analysis)
             res["regime"] = regime
+            # Custom strategies used to bypass the calendar/session gate. In
+            # v2.9 that gate is fail-safe and applies to RSI too.
+            res = self._apply_news_session_gate(res, news_status)
             return self._apply_quality_gates(res, strategy_mode, regime)
 
         # ------------------------------------------------------------------ #

@@ -92,7 +92,7 @@ HEARTBEAT_INTERVAL_S = float(os.getenv("HEARTBEAT_INTERVAL_S", "2.0" if TESTING 
 # --------------------------------------------------------------------------- #
 REAL_MODE_WARNING = "Live execution still experimental – use DEMO for strategies"
 
-app = FastAPI(title="Quantum Trade Pro", version="2.7.0", lifespan=None)
+app = FastAPI(title="Quantum Trade Pro", version="2.9.0", lifespan=None)
 
 # Basic reinforced rate limiting (LOT H): sliding window per client IP,
 # separate budgets for reads and mutations. Env-tunable.
@@ -155,7 +155,7 @@ bot_state: Dict[str, Any] = {
 
 metrics_state: Dict[str, Any] = {
     "total_scans": 0, "total_trades": 0, "total_errors": 0,
-    "signals_by_strategy": {"structure": 0, "arbitrage": 0, "tape": 0, "liquidity": 0},
+    "signals_by_strategy": {"rsi": 0, "structure": 0, "arbitrage": 0, "tape": 0, "liquidity": 0},
     "start_time": _started_at.isoformat(),
 }
 
@@ -435,6 +435,13 @@ async def tick_scanner(force: bool = False):
     finally:
         bot_state["scanning"] = False
 
+    # Defence in depth: even if a legacy/custom scanner is injected, only an
+    # explicit RSI signal may enter the automatic ranking/execution pipeline.
+    auto_results = [
+        result for result in (results or [])
+        if str((result.get("signal_data") or {}).get("strategy", "")).lower() == "rsi"
+    ]
+
     async with state_lock:
         metrics_state["total_scans"] += 1
         metrics_engine.record_scan(scanner_engine.last_scan_duration, results)
@@ -465,7 +472,7 @@ async def tick_scanner(force: bool = False):
     # v2.7 P0-2: Use OpportunityRanker to select the single best opportunity
     quarantine_mgr = get_quarantine_manager()
     opportunity_result = rank_opportunities(
-        results,
+        auto_results,
         active_symbols={p.get("symbol") for p in active},
         max_new_positions=int(settings.get("max_new_positions_per_scan", DEFAULT_MAX_NEW_POSITIONS_PER_SCAN)),
         fee_pct=float(settings.get("fee_pct", 0.05)),
@@ -475,7 +482,7 @@ async def tick_scanner(force: bool = False):
     )
     bot_state["opportunity_ranking"] = opportunity_result
     
-    candidates = select_candidates(results, min_score, {p.get("symbol") for p in active},
+    candidates = select_candidates(auto_results, min_score, {p.get("symbol") for p in active},
                                    risk_engine.max_open_positions)
     intent = describe_intent(running, bot_state["armed"], len(candidates), len(active),
                              risk_engine.max_open_positions, min_score)
@@ -514,7 +521,7 @@ async def tick_scanner(force: bool = False):
     # The ranked payload intentionally holds metrics, not every raw scan flag —
     # cross-check execution-critical flags (e.g. `tradable`) against the raw
     # scan rows the ranking was built from.
-    raw_by_symbol = {r.get("symbol"): r for r in (results or [])}
+    raw_by_symbol = {r.get("symbol"): r for r in (auto_results or [])}
 
     for res in candidates_to_execute:
         # Stop when the portfolio is full — each candidate is gated individually.
@@ -759,7 +766,8 @@ def _empty_snapshot(market_id: str, status_display: str) -> Dict[str, Any]:
         "news": {"trading_allowed": False, "news_ok": False, "session_ok": False, "day_ok": False,
                  "blocking_event": None, "next_events": [], "status": status_display},
         "analysis": None,
-        "signal": {"status": "NO_TRADE", "reason": status_display, "score": 0, "market_id": market_id},
+        "signal": {"status": "NO_TRADE", "reason": status_display, "score": 0,
+                   "market_id": market_id, "strategy": "rsi"},
         "diagnosis": {
             "main_blocker": "DATA_VALID",
             "main_reason": status_display,
@@ -772,9 +780,11 @@ def _empty_snapshot(market_id: str, status_display: str) -> Dict[str, Any]:
                 "SESSION_ALLOWED": "FAIL",
                 "NEWS_CLEAR": "FAIL",
                 "MARKET_OPEN": "FAIL",
-                "NOT_RANGE": "FAIL",
-                "TREND_VALID": "FAIL",
-                "STRUCTURE_VALID": "FAIL",
+                # RSI reversal does not require trend/structure/range checks;
+                # the data gate above is the meaningful blocker when offline.
+                "NOT_RANGE": "PASS",
+                "TREND_VALID": "PASS",
+                "STRUCTURE_VALID": "PASS",
                 "SIGNAL_VALID": "FAIL",
                 "SPREAD_VALID": "FAIL",
                 "LIQUIDITY_VALID": "FAIL",
@@ -818,7 +828,10 @@ async def _build_snapshot(market_id: str) -> Dict[str, Any]:
     ltf_analysis = analysis_engine.identify_structure(df_ltf, htf_bias=htf_analysis.get("trend"))
     ltf_analysis["market_id"] = market_id
 
-    signal = signal_engine.generate_signal(ltf_analysis, news_status, df_ltf, market_id=market_id)
+    # The public snapshot is also an automatic signal surface: never let a
+    # configured legacy strategy leak into Trade Terminal execution.
+    signal = signal_engine.generate_signal(
+        ltf_analysis, news_status, df_ltf, strategy_mode="rsi", market_id=market_id)
     signal["display_symbol"] = info.get("display_symbol")
 
     diagnosis = scanner_engine._build_diagnosis(market_id, info, ticker, df_ltf,
@@ -1610,7 +1623,7 @@ async def run_backtest(body: Dict[str, Any] = Body(...)):
         raise HTTPException(400, "limit must be between 50 and 5000")
     if not math.isfinite(initial_balance) or initial_balance <= 0:
         raise HTTPException(400, "initial_balance must be a positive finite number")
-    if strategy not in {"structure", "arbitrage", "tape", "liquidity"}:
+    if strategy not in {"rsi", "structure", "arbitrage", "tape", "liquidity"}:
         raise HTTPException(400, "Unknown backtest strategy")
 
     df = await data_engine.fetch_ohlcv(market_id, timeframe, limit)
@@ -1644,6 +1657,10 @@ async def _execute_signal_for_market(market_id: str) -> Dict[str, Any]:
     if not sig:
         snap = await get_market_snapshot(market_id)
         sig = snap.get("signal") or {}
+    # Automatic execution is RSI-only in v2.9. Manual orders use their
+    # dedicated endpoint and are intentionally not treated as signals.
+    if str(sig.get("strategy", "")).lower() != "rsi":
+        return {"success": False, "reason": "Only RSI strategy signals are auto-executable"}
     score = float((scan_hit or {}).get("score") or sig.get("score") or 0)
     if score < min_score:
         return {"success": False, "reason": f"Score {score} below min_signal_score {min_score} (floor {AUTO_EXECUTION_SCORE_FLOOR})"}

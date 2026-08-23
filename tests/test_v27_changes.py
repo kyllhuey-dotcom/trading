@@ -97,9 +97,9 @@ class TestScoreFloorInviolable:
     def test_select_candidates_enforces_floor(self):
         results = [
             {"symbol": "a", "score": 83, "tradable": True,
-             "signal_data": {"market_id": "a", "entry": 100, "status": "SIGNAL_DETECTED"}},
+             "signal_data": {"market_id": "a", "entry": 100, "strategy": "rsi", "status": "SIGNAL_DETECTED"}},
             {"symbol": "b", "score": 84, "tradable": True,
-             "signal_data": {"market_id": "b", "entry": 100, "status": "SIGNAL_DETECTED"}},
+             "signal_data": {"market_id": "b", "entry": 100, "strategy": "rsi", "status": "SIGNAL_DETECTED"}},
         ]
         cands = select_candidates(results, 50, set(), 10)  # malicious min_score=50
         assert len(cands) == 1
@@ -109,7 +109,7 @@ class TestScoreFloorInviolable:
         """Score 83 must be refused even with malicious config at 50."""
         results = [
             {"symbol": "a", "score": 83, "tradable": True,
-             "signal_data": {"market_id": "a", "entry": 100, "status": "SIGNAL_DETECTED"}},
+             "signal_data": {"market_id": "a", "entry": 100, "strategy": "rsi", "status": "SIGNAL_DETECTED"}},
         ]
         cands = select_candidates(results, 50, set(), 10)
         assert len(cands) == 0
@@ -454,11 +454,11 @@ class TestScoreFloorIntegration:
         """Even with min_score=50, candidates below 84 are excluded."""
         results = [
             {"symbol": "a", "score": 50, "tradable": True,
-             "signal_data": {"market_id": "a", "entry": 100, "status": "SIGNAL_DETECTED"}},
+             "signal_data": {"market_id": "a", "entry": 100, "strategy": "rsi", "status": "SIGNAL_DETECTED"}},
             {"symbol": "b", "score": 83, "tradable": True,
-             "signal_data": {"market_id": "b", "entry": 100, "status": "SIGNAL_DETECTED"}},
+             "signal_data": {"market_id": "b", "entry": 100, "strategy": "rsi", "status": "SIGNAL_DETECTED"}},
             {"symbol": "c", "score": 84, "tradable": True,
-             "signal_data": {"market_id": "c", "entry": 100, "status": "SIGNAL_DETECTED"}},
+             "signal_data": {"market_id": "c", "entry": 100, "strategy": "rsi", "status": "SIGNAL_DETECTED"}},
         ]
         cands = select_candidates(results, 50, set(), 10)
         assert len(cands) == 1

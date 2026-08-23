@@ -1,5 +1,30 @@
 # Changelog - Quantum Trade Pro
 
+## [2.9.0] - 2026-08-23 — Stratégie RSI-14 unique
+
+### Résumé
+- Stratégie automatique unique RSI(14) de retournement pour les scans et les
+  exécutions : sortie de survente/surachat, confirmation de bougie et de
+  structure de prix, volume ou repli MA sans volume, EMA21, et bonus EMA8/EMA21.
+- Stop sur l'extrême des cinq dernières bougies avec buffer 0,1 × ATR(14) et
+  take-profit à risque/rendement effectif borné de 1:1 à 1:2.
+- La porte news/session est appliquée de façon fail-safe aux stratégies custom,
+  y compris RSI ; les stratégies historiques restent importables et testables
+  mais ne sont plus exécutées automatiquement.
+- Backtest et métriques exposent désormais RSI ; l'API FastAPI passe en version
+  2.9.0.
+- Aucune promesse de rentabilité : le score est un filtre de sélectivité, pas
+  une probabilité. Les critères de santé restent win rate ≥ 45 %, RR net ≥ 1.5,
+  espérance > 0 et profit factor ≥ 1.3.
+
+### Protections conservées
+- Plancher d'exécution 84 inviolable, seuil VOLATILE +5, fraîcheur/spread/session/
+  liquidité, calendrier fail-safe et garde anti-données retardées.
+- Sizing à risque fixe via `risk_engine.calculate_position_size`, profils de
+  capital, anti-martingale, limites de perte/drawdown, circuit breaker,
+  corrélation, positions ouvertes et maximum de trois nouvelles positions par
+  cycle.
+
 ## [2.8.0] - 2026-08-23 — Sélectivité 84, trades simultanés, trading continu
 
 ### Résumé

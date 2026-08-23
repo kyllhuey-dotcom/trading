@@ -233,7 +233,7 @@ NEWS_OK = {"trading_allowed": True, "day_ok": True, "session_ok": True, "news_ok
 def test_structure_signal_uses_per_market_tp_and_stop():
     engine = SignalEngine(min_score=80, risk_reward=2.0, atr_stop_multiplier=1.5)
     engine.set_market_tuning({"btc_usdt": {"risk_reward": 3.0, "atr_stop_multiplier": 2.0}})
-    res = engine.generate_signal(_analysis(), NEWS_OK, _df(), market_id="btc_usdt")
+    res = engine.generate_signal(_analysis(), NEWS_OK, _df(), market_id="btc_usdt", strategy_mode="structure")
     assert res["status"] == "SIGNAL_DETECTED"
     entry, sl, tp = res["entry"], res["sl"], res["tp"]
     risk = entry - sl
@@ -243,19 +243,19 @@ def test_structure_signal_uses_per_market_tp_and_stop():
     assert res["market_tuning_applied"] is True
     # the tuned market uses a wider stop than the same setup untuned
     plain = SignalEngine(min_score=80, risk_reward=2.0, atr_stop_multiplier=1.5)
-    res_plain = plain.generate_signal(_analysis(), NEWS_OK, _df(), market_id="btc_usdt")
+    res_plain = plain.generate_signal(_analysis(), NEWS_OK, _df(), market_id="btc_usdt", strategy_mode="structure")
     assert (entry - sl) > (res_plain["entry"] - res_plain["sl"])
 
 
 def test_volatile_regime_blocks_marginal_signal_and_widens_stop():
     engine = SignalEngine(min_score=80, risk_reward=2.0, atr_stop_multiplier=1.5)
     # QUIET regime: same score passes with a slightly relaxed threshold
-    res_quiet = engine.generate_signal(_analysis(volatility="LOW"), NEWS_OK, _df(), market_id="btc_usdt")
+    res_quiet = engine.generate_signal(_analysis(volatility="LOW"), NEWS_OK, _df(), market_id="btc_usdt", strategy_mode="structure")
     assert res_quiet["status"] == "SIGNAL_DETECTED"
     assert res_quiet["regime"] == "QUIET"
 
     # VOLATILE regime raises the entry threshold (+5) and widens the stop
-    res_vol = engine.generate_signal(_analysis(volatility="HIGH"), NEWS_OK, _df(), market_id="btc_usdt")
+    res_vol = engine.generate_signal(_analysis(volatility="HIGH"), NEWS_OK, _df(), market_id="btc_usdt", strategy_mode="structure")
     assert res_vol["regime"] == "VOLATILE"
     if res_vol["status"] == "SIGNAL_DETECTED":
         assert res_vol["min_score_applied"] == 89   # 84 floor + 5 volatile
@@ -269,7 +269,7 @@ def test_volatile_regime_blocks_marginal_signal_and_widens_stop():
 def test_regime_adaptation_can_be_disabled():
     engine = SignalEngine(min_score=80)
     engine.set_regime_adaptation(False)
-    res = engine.generate_signal(_analysis(volatility="HIGH"), NEWS_OK, _df(), market_id="btc_usdt")
+    res = engine.generate_signal(_analysis(volatility="HIGH"), NEWS_OK, _df(), market_id="btc_usdt", strategy_mode="structure")
     assert res["regime"] == "NORMAL"   # adaptation off -> neutral label
     if res["status"] == "SIGNAL_DETECTED":
         assert res["min_score_applied"] == 84
@@ -279,11 +279,11 @@ def test_per_market_threshold_blocks_low_score_market_only():
     engine = SignalEngine(min_score=80)
     # doge requires 95 — a marginal 80-84 score setup must be rejected there
     engine.set_market_tuning({"doge_usdt": {"min_score": 95}})
-    res_doge = engine.generate_signal(_analysis(), NEWS_OK, _df(), market_id="doge_usdt")
+    res_doge = engine.generate_signal(_analysis(), NEWS_OK, _df(), market_id="doge_usdt", strategy_mode="structure")
     assert res_doge["status"] == "NO_TRADE"
     assert "95" in res_doge["reason"]
     # same setup stays valid on an untuned market
-    res_btc = engine.generate_signal(_analysis(), NEWS_OK, _df(), market_id="btc_usdt")
+    res_btc = engine.generate_signal(_analysis(), NEWS_OK, _df(), market_id="btc_usdt", strategy_mode="structure")
     assert res_btc["status"] == "SIGNAL_DETECTED"
 
 

@@ -23,7 +23,7 @@ SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
         "choices": ("block_all", "block_tradfi_only", "allow_all"),
         "default": "block_all",
     },
-    "active_strategies": {"type": "str", "default": "structure,arbitrage,tape,liquidity"},
+    "active_strategies": {"type": "str", "default": "rsi"},
     "scan_interval_seconds": {"type": "int", "min": 5, "max": 300, "default": "30"},
     "sim_latency_ms": {"type": "int", "min": 0, "max": 5000, "default": "100"},
     "sim_slippage_pct": {"type": "float", "min": 0.0, "max": 5.0, "default": "0.05"},
