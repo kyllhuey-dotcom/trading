@@ -411,14 +411,27 @@ async def tick_capital():
         if not safe:
             safety_reason = safety.get("reason", "Global risk limit")
             logger.error("GLOBAL RISK LIMIT: %s", safety_reason)
-    # Phase 4: emergency stop outside lock (it acquires its own lock)
+    # Phase 4: global risk trip pauses the bot (disarm) but NEVER stops it on
+    # its own — is_running stays True so the scanner loop keeps identifying
+    # opportunities. A real emergency stop is only reachable through
+    # POST /api/emergency-stop (see emergency_stop_logic).
     if not safe:
-        await emergency_stop_logic(safety_reason)
+        async with state_lock:
+            bot_state["armed"] = False
+            bot_state["last_block_reason"] = "RISK_PAUSE"
+        refresh_execution_intent()
+        logger.warning(
+            "GLOBAL RISK PAUSE: %s — disarmed but scanner keeps running "
+            "(is_running=%s)", safety_reason, bot_state["is_running"],
+        )
 
 
 _scan_counter = {"n": 0}
-SCAN_LOCK_STALE_S = 90.0
-SCAN_ALL_TIMEOUT_S = 120.0
+# P0 (2026-08-23): lock stale (180s) must stay ABOVE a single scan_all budget
+# so a legitimately long scan is never treated as stuck/re-entered, while the
+# scan itself is bounded by a generous 600s timeout over the full universe.
+SCAN_LOCK_STALE_S = 180.0
+SCAN_ALL_TIMEOUT_S = 600.0
 
 
 def is_serverless_runtime() -> bool:
@@ -469,6 +482,30 @@ def restore_latest_scan() -> None:
         bot_state["scan_progress_total"] = cached.get("scan_progress_total") or len(rows)
         bot_state["last_scan_completed_at"] = cached.get("last_scan_completed_at")
         bot_state["last_block_reason"] = cached.get("last_block_reason")
+
+
+def _compute_best_setups(rows) -> list:
+    """Pick the 5 best setups for the radar strip.
+
+    Audit (2026-08-23): never use ``prepare_radar(univers)[:5]`` — that slices
+    the raw universe by score and surfaces non-signal rows as "setups". A real
+    setup is a RSI ``SIGNAL_DETECTED`` row; only when none exists do we fall
+    back to score >= 50 (still RSI rows) so the strip is never empty while a
+    signal forms. Rows are enriched exactly like the radar table.
+    """
+    out = list(rows or [])
+    signals = [
+        r for r in out
+        if str(((r.get("signal_data") or {}).get("strategy", "")).lower()) == "rsi"
+        and (r.get("signal_data") or {}).get("status") == "SIGNAL_DETECTED"
+    ]
+    pool = signals if signals else [
+        r for r in out
+        if str(((r.get("signal_data") or {}).get("strategy", "")).lower()) == "rsi"
+        and int(r.get("score") or 0) >= 50
+    ]
+    pool.sort(key=lambda r: int(r.get("score") or 0), reverse=True)
+    return prepare_radar(pool)[:5]
 
 
 def _scanner_payload(sort="score", order="desc", filter_mode="all", live_only=False):
@@ -594,19 +631,14 @@ def _publish_no_execution_reason(auto_results: list,
 
 
 async def tick_scanner(force: bool = False):
-    """Rescan immediately at boot, publishing each completed symbol."""
-    _scan_counter["n"] += 1
-    settings = settings_provider.get()
-    try:
-        interval = max(5, int(float(settings.get("scan_interval_seconds", "30"))))
-    except ValueError:
-        # Preserve the historical invalid-value fallback for compatibility.
-        interval = 20
+    """Run one full scan cycle, publishing each completed symbol.
 
-    every = max(1, interval // 5) if bot_state["is_running"] else 12
-    if not force and _scan_counter["n"] % every != 0:
-        return
-    if bot_state.get("scanning") and not _scan_is_stuck():
+    ``force`` is retained for the on-demand ``POST /api/scanner/trigger``
+    endpoint; the persistent ``scanner_loop`` always invokes this with
+    ``force=True`` and paces itself by ``scan_interval_seconds``.
+    """
+    settings = settings_provider.get()
+    if bot_state.get("scanning") and not _scan_is_stuck() and not force:
         return
     if _scan_is_stuck():
         logger.warning("SCAN_TIMEOUT — resetting stuck scanner lock")
@@ -637,7 +669,7 @@ async def tick_scanner(force: bool = False):
             bot_state["latest_scan"] = current
             bot_state["scan_progress_count"] = completed
             bot_state["scan_progress_total"] = progress_total
-            bot_state["best_setups"] = prepare_radar(current)[:5]
+            bot_state["best_setups"] = _compute_best_setups(current)
 
     results = []
     try:
@@ -688,7 +720,7 @@ async def tick_scanner(force: bool = False):
             "errors": summary["markets_error"],
         })
         persist_latest_scan()
-        bot_state["best_setups"] = prepare_radar(merged)[:5]
+        bot_state["best_setups"] = _compute_best_setups(merged)
         armed = bot_state["armed"] and bot_state["is_running"]
         active = list(bot_state["active_trades"])
         mode = bot_state["mode"]
@@ -1006,6 +1038,31 @@ async def loop_wrapper(func, interval: float, name: str):
             metrics_engine.record_error()
             structured_log(logger, logging.ERROR, "LOOP_ERROR",
                            event="loop_error", loop=name, error=str(e))
+        await asyncio.sleep(interval)
+
+
+async def scanner_loop():
+    """Single persistent scanner loop.
+
+    Runs one full scan immediately at boot (``force=True`` so no counter
+    gating), then sleeps for the configured ``scan_interval_seconds`` before
+    the next cycle. One task only — never a 5s poller plus a boot scan, which
+    could re-enter a scan mid-flight. The loop never stops itself; only
+    ``is_running``/``armed`` state gates execution inside ``tick_scanner``.
+    """
+    while True:
+        try:
+            await tick_scanner(force=True)
+        except Exception as e:
+            metrics_state["total_errors"] += 1
+            metrics_engine.record_error()
+            structured_log(logger, logging.ERROR, "LOOP_ERROR",
+                           event="loop_error", loop="scanner_loop", error=str(e))
+        try:
+            settings = settings_provider.get()
+            interval = max(5, int(float(settings.get("scan_interval_seconds", "30"))))
+        except (TypeError, ValueError):
+            interval = 30
         await asyncio.sleep(interval)
 
 
@@ -2257,11 +2314,11 @@ async def lifespan(app: FastAPI):
         tasks = []
     else:
         tasks = [
-            # Do not await the whole universe: expose progress while startup stays
-            # responsive. Crypto rows are emitted first by ScannerEngine.
-            asyncio.create_task(tick_scanner(force=True)),
+            # One persistent scanner loop: full scan at boot (force=True) then
+            # sleep(scan_interval_seconds). No separate 5s poller — that pairing
+            # could re-enter a scan mid-flight and silently stop the bot.
+            asyncio.create_task(scanner_loop()),
             asyncio.create_task(loop_wrapper(tick_capital, 1.0, "tick_capital")),
-            asyncio.create_task(loop_wrapper(tick_scanner, 5.0, "tick_scanner")),
             asyncio.create_task(loop_wrapper(tick_management, 1.0, "tick_management")),
             asyncio.create_task(loop_wrapper(tick_broadcaster, 1.0, "tick_broadcaster")),
             asyncio.create_task(loop_wrapper(tick_heartbeat, HEARTBEAT_INTERVAL_S, "tick_heartbeat")),

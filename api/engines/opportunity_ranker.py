@@ -239,8 +239,40 @@ def rank_opportunities(
     # Phase 1: Filter through all gates
     passing: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
+    # Audit (2026-08-23): watchlist surfaces EVERY RSI SIGNAL_DETECTED row,
+    # even those that fail a tradability/realtime gate, so /api/opportunities
+    # shows opportunities the RSI-14 bot has actually identified.
+    watchlist: list[dict[str, Any]] = []
+    seen_watch: set[str] = set()
 
     for candidate in (results or []):
+        sig = candidate.get("signal_data") or {}
+        is_rsi_signal = (
+            str(sig.get("strategy", "")).lower() == "rsi"
+            and sig.get("status") == "SIGNAL_DETECTED"
+        )
+        if is_rsi_signal:
+            sym = candidate.get("symbol", "")
+            if sym not in seen_watch:
+                seen_watch.add(sym)
+                watchlist.append({
+                    "symbol": sym,
+                    "display_symbol": candidate.get("display_symbol"),
+                    "direction": sig.get("direction"),
+                    "strategy": sig.get("strategy", "rsi"),
+                    "entry": sig.get("entry"),
+                    "sl": sig.get("sl"),
+                    "tp": sig.get("tp"),
+                    "score": int(candidate.get("score", 0) or 0),
+                    "tradable": bool(candidate.get("tradable")),
+                    "realtime_source": bool(candidate.get("realtime_source")),
+                    "asset_class": candidate.get("asset_class"),
+                    "underlying": candidate.get("underlying"),
+                    "market_status": candidate.get("market_status"),
+                    "block_reason": candidate.get("block_reason"),
+                    "status": candidate.get("status"),
+                })
+
         gate_result = _passes_all_gates(
             candidate, active_symbols,
             max_spread_pct=max_spread_pct,
@@ -277,7 +309,7 @@ def rank_opportunities(
             reliability * 10.0          # 10% weight on reliability
         )
 
-        sig = candidate.get("signal_data") or {}
+        sig = candidate.get("signal_data") or {}  # noqa: F811 (re-use candidate signal)
         opp_id = _stable_opportunity_id(
             candidate.get("symbol", ""),
             sig.get("strategy", "structure"),
@@ -333,14 +365,19 @@ def rank_opportunities(
     primary = passing[0] if passing else None
     secondary = passing[1:] if len(passing) > 1 else []
 
+    # Watchlist ordered by score (already insertion-ordered; enforce explicitly).
+    watchlist.sort(key=lambda w: int(w.get("score") or 0), reverse=True)
+
     return {
         "primary_opportunity": primary,
         "secondary_opportunities": secondary,
         "excluded": excluded[:10],  # top 10 exclusions for visibility
         "all_candidates": passing,
+        "watchlist": watchlist,
         "cycle_ts": cycle_ts,
         "max_new_positions_per_scan": max_new_positions,
         "total_evaluated": len(results or []),
         "total_passing": len(passing),
         "total_excluded": len(excluded),
+        "total_watchlist": len(watchlist),
     }

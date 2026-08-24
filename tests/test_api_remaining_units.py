@@ -525,10 +525,13 @@ async def test_read_index_and_lifespan_cleanup_even_on_body_error(monkeypatch):
     monkeypatch.setattr(idx.data_engine, "shutdown", shutdown_data)
     monkeypatch.setattr(idx.settings_provider, "apply", MagicMock())
 
-    async def forever(*args):
+    async def forever(*args, **kwargs):
         await asyncio.Event().wait()
 
     monkeypatch.setattr(idx, "loop_wrapper", forever)
+    # The persistent scanner_loop is now its own task (not via loop_wrapper);
+    # pin it so the lifespan test does not kick off a real scan loop.
+    monkeypatch.setattr(idx, "scanner_loop", forever)
     with pytest.raises(RuntimeError, match="body failure"):
         async with idx.lifespan(idx.app):
             raise RuntimeError("body failure")

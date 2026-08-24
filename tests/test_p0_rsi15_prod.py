@@ -73,9 +73,9 @@ def test_correlation_uses_underlying_not_split():
     assert risk.check_correlation("eth_usdt", active)["allowed"] is True
 
 
-def test_scan_timeout_is_120():
-    assert idx.SCAN_ALL_TIMEOUT_S == 120.0
-    assert idx.SCAN_LOCK_STALE_S == 90.0
+def test_scan_timeout_is_600():
+    assert idx.SCAN_ALL_TIMEOUT_S == 600.0
+    assert idx.SCAN_LOCK_STALE_S == 180.0
 
 
 def test_compute_trade_costs_bid_ask():
