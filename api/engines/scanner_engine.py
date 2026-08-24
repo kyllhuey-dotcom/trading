@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import inspect
 import pandas as pd
 import logging
@@ -10,6 +11,8 @@ from .provider_capabilities import classify_quote_status, looks_like_quota_error
 from .scan_contract import placeholder_row
 
 logger = logging.getLogger("ScannerEngine")
+
+SCAN_BATCH_SIZE = 30
 
 
 class ScannerEngine:
@@ -320,11 +323,6 @@ class ScannerEngine:
             nonlocal completed
             if not phase:
                 return
-            if hasattr(self.data, "prepare_scan_cycle"):
-                try:
-                    await asyncio.wait_for(self.data.prepare_scan_cycle(phase), timeout=25.0)
-                except Exception as exc:
-                    logger.warning("prepare_scan_cycle failed: %s", exc)
             async def _one(symbol: str) -> Dict[str, Any]:
                 try:
                     return await self.scan_asset(symbol, semaphore, strategy_mode=strategy_mode)
@@ -336,28 +334,32 @@ class ScannerEngine:
                         block_reason="PROVIDER_ERROR",
                     )
 
-            pending = {asyncio.create_task(_one(symbol)): symbol for symbol in phase}
-            done_set, _ = await asyncio.wait(pending.keys())
-            # Preserve crypto-first phase order while remaining resilient.
-            by_symbol = {}
-            for task in done_set:
-                symbol = pending[task]
-                try:
-                    by_symbol[symbol] = task.result()
-                except Exception as exc:
-                    info = self.data.universe.get_info(symbol) or {}
-                    by_symbol[symbol] = placeholder_row(
-                        symbol, info, status="ERROR", reason=str(exc),
-                        block_reason="PROVIDER_ERROR",
-                    )
-            for symbol in phase:
-                result = by_symbol[symbol]
-                results.append(result)
-                completed += 1
-                if progress_callback:
-                    callback_result = progress_callback(result, completed, len(symbols))
-                    if inspect.isawaitable(callback_result):
-                        await callback_result
+            # Memory-bounded batches: peak RSS stays independent of universe size.
+            for offset in range(0, len(phase), SCAN_BATCH_SIZE):
+                batch = phase[offset:offset + SCAN_BATCH_SIZE]
+                if hasattr(self.data, "prepare_scan_cycle"):
+                    try:
+                        await asyncio.wait_for(
+                            self.data.prepare_scan_cycle(batch), timeout=25.0)
+                    except Exception as exc:
+                        logger.warning("prepare_scan_cycle failed: %s", exc)
+                gathered = await asyncio.gather(
+                    *(_one(symbol) for symbol in batch), return_exceptions=True)
+                for symbol, item in zip(batch, gathered):
+                    if isinstance(item, Exception):
+                        info = self.data.universe.get_info(symbol) or {}
+                        item = placeholder_row(
+                            symbol, info, status="ERROR", reason=str(item),
+                            block_reason="PROVIDER_ERROR",
+                        )
+                    results.append(item)
+                    completed += 1
+                    if progress_callback:
+                        callback_result = progress_callback(
+                            item, completed, len(symbols))
+                        if inspect.isawaitable(callback_result):
+                            await callback_result
+                gc.collect()
 
         await scan_phase(crypto)
         await scan_phase(tradfi)

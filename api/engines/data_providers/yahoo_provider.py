@@ -165,7 +165,7 @@ class YahooProvider(MarketDataProvider):
                     period="5d",
                     interval="1m",
                     group_by="ticker",
-                    threads=True,
+                    threads=False,
                     progress=False,
                     auto_adjust=False,
                 )

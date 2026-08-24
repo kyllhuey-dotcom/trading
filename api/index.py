@@ -17,6 +17,7 @@ import json
 import logging
 import math
 import time
+import traceback
 from datetime import datetime
 
 from api.json_logging import setup_json_file_handler, structured_log
@@ -59,6 +60,8 @@ from api.engines.opportunity_ranker import rank_opportunities
 from api.engines.opportunity_tracker import get_tracker
 from api.engines.cost_calculator import compute_trade_costs, costs_pass_gate
 from api.engines.quarantine import get_quarantine_manager
+
+_IMPORT_T0 = time.time()
 
 # --------------------------------------------------------------------------- #
 # 1. Logging                                                                   #
@@ -139,7 +142,10 @@ broker_connector = BrokerConnector(db_manager=db_manager)
 broker_connector.universe = data_engine.universe
 execution_router = ExecutionRouter(demo_adapter=demo_execution, broker_connector=broker_connector)
 state_machine = StateMachine()
-scanner_engine = ScannerEngine(data_engine, analysis_engine, signal_engine, news_engine)
+scanner_engine = ScannerEngine(
+    data_engine, analysis_engine, signal_engine, news_engine,
+    max_concurrent=int(os.getenv("SCAN_MAX_CONCURRENT", "4")),
+)
 diagnostic_engine = DiagnosticEngine()
 backtest_engine = BacktestEngine(analysis_engine, signal_engine, risk_engine)
 
@@ -1040,6 +1046,21 @@ async def loop_wrapper(func, interval: float, name: str):
         await asyncio.sleep(interval)
 
 
+MEMORY_GUARD_RSS_MB = 420.0
+
+
+def _read_vmrss_mb() -> float:
+    """Linux VmRSS in MiB; 0.0 when /proc is unavailable."""
+    try:
+        with open("/proc/self/status", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024.0
+    except (OSError, ValueError, IndexError):
+        return 0.0
+    return 0.0
+
+
 async def scanner_loop():
     """Single persistent scanner loop.
 
@@ -1050,6 +1071,15 @@ async def scanner_loop():
     ``is_running``/``armed`` state gates execution inside ``tick_scanner``.
     """
     while True:
+        rss_mb = _read_vmrss_mb()
+        logger.info("SCAN_CYCLE_START rss_mb=%.1f", rss_mb)
+        if rss_mb > MEMORY_GUARD_RSS_MB:
+            logger.warning(
+                "MEMORY_PRESSURE rss_mb=%.1f threshold=%.1f — skipping cycle",
+                rss_mb, MEMORY_GUARD_RSS_MB,
+            )
+            await asyncio.sleep(60)
+            continue
         try:
             await tick_scanner(force=True)
         except Exception as e:
@@ -1206,6 +1236,7 @@ async def healthz():
         "status": "OK",
         "state": state_machine.current_state.value,
         "uptime_s": int((datetime.now() - _started_at).total_seconds()),
+        "scanning": bool(bot_state.get("scanning")),
     }
 
 
@@ -2290,8 +2321,7 @@ def apply_startup_automation(settings: Dict[str, str]) -> None:
     )
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _lifespan_boot() -> None:
     logger.info("QUANTUM TRADE PRO STARTING...")
     if not ADMIN_API_KEY:
         logger.warning("ADMIN_API_KEY not set: mutating endpoints are UNPROTECTED. "
@@ -2305,23 +2335,32 @@ async def lifespan(app: FastAPI):
     apply_startup_automation(settings_provider.get())
     restore_latest_scan()
 
-    if is_serverless_runtime():
-        logger.warning(
-            "Serverless runtime detected — background scanner loops are disabled. "
-            "Use Railway (python3 -m api.index) or POST /api/scanner/trigger."
-        )
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    tasks = []
+    try:
+        await _lifespan_boot()
+        if is_serverless_runtime():
+            logger.warning(
+                "Serverless runtime detected — background scanner loops are disabled. "
+                "Use Railway (python3 -m api.index) or POST /api/scanner/trigger."
+            )
+            tasks = []
+        else:
+            tasks = [
+                asyncio.create_task(scanner_loop()),
+                asyncio.create_task(loop_wrapper(tick_capital, 1.0, "tick_capital")),
+                asyncio.create_task(loop_wrapper(tick_management, 1.0, "tick_management")),
+                asyncio.create_task(loop_wrapper(tick_broadcaster, 1.0, "tick_broadcaster")),
+                asyncio.create_task(loop_wrapper(tick_heartbeat, HEARTBEAT_INTERVAL_S, "tick_heartbeat")),
+            ]
+        logger.info("BOOT_READY duration_ms=%s", int((time.time() - _IMPORT_T0) * 1000))
+    except Exception:
+        logger.error("BOOT_FAILED — serving API without background tasks\n%s",
+                     traceback.format_exc())
         tasks = []
-    else:
-        tasks = [
-            # One persistent scanner loop: full scan at boot (force=True) then
-            # sleep(scan_interval_seconds). No separate 5s poller — that pairing
-            # could re-enter a scan mid-flight and silently stop the bot.
-            asyncio.create_task(scanner_loop()),
-            asyncio.create_task(loop_wrapper(tick_capital, 1.0, "tick_capital")),
-            asyncio.create_task(loop_wrapper(tick_management, 1.0, "tick_management")),
-            asyncio.create_task(loop_wrapper(tick_broadcaster, 1.0, "tick_broadcaster")),
-            asyncio.create_task(loop_wrapper(tick_heartbeat, HEARTBEAT_INTERVAL_S, "tick_heartbeat")),
-        ]
+        logger.info("BOOT_READY duration_ms=%s", int((time.time() - _IMPORT_T0) * 1000))
     try:
         yield
     finally:
