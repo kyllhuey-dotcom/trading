@@ -426,7 +426,6 @@ async def tick_capital():
         )
 
 
-_scan_counter = {"n": 0}
 # P0 (2026-08-23): lock stale (180s) must stay ABOVE a single scan_all budget
 # so a legitimately long scan is never treated as stuck/re-entered, while the
 # scan itself is bounded by a generous 600s timeout over the full universe.
