@@ -17,7 +17,6 @@ def restore_global_state():
     bot_state = copy.deepcopy(idx.bot_state)
     metrics_state = copy.deepcopy(idx.metrics_state)
     news_cache = copy.deepcopy(idx._news_cache)
-    scan_count = idx._scan_counter["n"]
     machine_state = idx.state_machine.current_state
     risk_state = {
         name: copy.deepcopy(getattr(idx.risk_engine, name))
@@ -37,7 +36,6 @@ def restore_global_state():
     idx.metrics_state.update(metrics_state)
     idx._news_cache.clear()
     idx._news_cache.update(news_cache)
-    idx._scan_counter["n"] = scan_count
     idx.state_machine.current_state = machine_state
     for name, value in risk_state.items():
         setattr(idx.risk_engine, name, value)
@@ -449,8 +447,6 @@ async def test_tick_scanner_executes_eligible_candidate(monkeypatch):
         mode="DEMO",
         balance=10_000,
     )
-    # v2.7: set counter to trigger scan (every=4, counter increments first, so n=3 -> 4 triggers)
-    idx._scan_counter["n"] = 3
     monkeypatch.setattr(idx.settings_provider, "get", MagicMock(return_value={
         "scan_interval_seconds": "bad",
         "min_signal_score": "bad",

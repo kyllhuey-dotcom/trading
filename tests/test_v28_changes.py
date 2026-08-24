@@ -65,7 +65,6 @@ def _patch_scan_env(monkeypatch, results, execute_side_effect, max_new="3"):
         is_running=True, armed=True, active_trades=[], mode="DEMO",
         balance=10_000, scanning=False,
     )
-    idx._scan_counter["n"] = 3  # -> 4 after increment, triggers the scan
     monkeypatch.setattr(idx.settings_provider, "get", MagicMock(return_value={
         "scan_interval_seconds": "bad",
         "min_signal_score": "84",

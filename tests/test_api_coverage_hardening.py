@@ -17,11 +17,9 @@ from api.engines.opportunity_tracker import get_tracker
 @pytest.fixture(autouse=True)
 def restore_global_state():
     bot_state = copy.deepcopy(idx.bot_state)
-    scan_n = idx._scan_counter["n"]
     yield
     idx.bot_state.clear()
     idx.bot_state.update(bot_state)
-    idx._scan_counter["n"] = scan_n
     get_tracker().reset()
 
 
@@ -67,7 +65,6 @@ def test_settings_provider_auto_profile_and_invalid_tuning(monkeypatch):
 async def test_tick_scanner_resets_stuck_lock(monkeypatch):
     idx.bot_state.update(scanning=True, scan_started_at=time.time() - 1000,
                          is_running=False, armed=False, latest_scan=[], last_scan_completed_at=1)
-    idx._scan_counter["n"] = 11
     monkeypatch.setattr(idx.settings_provider, "get", MagicMock(return_value={
         "scan_interval_seconds": "30",
     }))
@@ -121,7 +118,6 @@ def _arm_scan(monkeypatch, results, **kw):
         is_running=True, armed=True, active_trades=[], mode="DEMO",
         balance=10_000, scanning=False,
     )
-    idx._scan_counter["n"] = 3
     monkeypatch.setattr(idx.settings_provider, "get", MagicMock(return_value={
         "scan_interval_seconds": "20",
         "min_signal_score": "84",
@@ -364,7 +360,6 @@ async def test_tick_scanner_already_open_and_broadcast_fail(monkeypatch):
 
 async def test_tick_scanner_early_return_when_already_scanning(monkeypatch):
     idx.bot_state.update(scanning=True, scan_started_at=time.time(), is_running=True)
-    idx._scan_counter["n"] = 0
     monkeypatch.setattr(idx.settings_provider, "get", MagicMock(return_value={
         "scan_interval_seconds": "5",
     }))
