@@ -208,6 +208,12 @@ def classify_quote_status(
     elif looks_like_quota_error(ticker.get("reason") or ticker.get("error")):
         status = "ERROR"
         declared = "PROVIDER_QUOTA_EXCEEDED"
+    elif declared == "STALE":
+        # v3.3.2 (D3): a quote restored from the persisted last-good cache is
+        # REAL data — but cached. It is ALWAYS presented as STALE, never
+        # downgraded to LIVE/DELAYED by the age fallback below (a cached
+        # quote younger than 15 min used to slip through as LIVE).
+        status = "STALE"
     elif "yahoo" in source or declared == "DELAYED":
         status = "DELAYED"
     elif declared == "LIVE":

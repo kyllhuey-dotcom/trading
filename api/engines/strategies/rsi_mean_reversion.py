@@ -186,6 +186,20 @@ class RSIMeanReversionStrategy(BaseStrategy):
     ) -> Dict[str, Any]:
         del orderbook, trades, cross_quotes  # OHLCV-only by design.
 
+        # v3.3.2 (D3): RSI is REFUSED on stale (persisted/cached) real data.
+        # The candles are genuine — but they describe a market state that no
+        # longer exists. Acting on them would be trading yesterday's news.
+        # Defense in depth: the scanner marks the row STALE too, but the
+        # strategy must stand alone even when called directly.
+        if isinstance(df, pd.DataFrame) and df.attrs.get("stale"):
+            return self._no_trade(
+                "RSI refused on stale persisted OHLCV (real data, cached) — "
+                "waiting for a fresh provider feed",
+                market_id,
+                block_reason="STALE_DATA",
+                stale_age_s=df.attrs.get("candles_age_s"),
+            )
+
         if not isinstance(df, pd.DataFrame) or len(df) < self.MIN_BARS:
             return self._no_trade(
                 f"Insufficient OHLCV data for RSI strategy ({len(df) if isinstance(df, pd.DataFrame) else 0} < {self.MIN_BARS})",

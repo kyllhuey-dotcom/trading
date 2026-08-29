@@ -48,7 +48,7 @@ from api.engines.capital_profiles import (
     _expectancy_pct,
 )
 from api.engines.market_hub import (
-    synthetic_sparkline,
+    _real_sparkline,
     enrich_market_item,
     sort_hub_items,
     enrich_overview,
@@ -347,25 +347,35 @@ class TestCapitalProfiles:
 # market_hub                                                                  #
 # --------------------------------------------------------------------------- #
 class TestMarketHub:
-    def test_sparkline_deterministic_endpoints(self):
-        a = synthetic_sparkline(100, 10)
-        b = synthetic_sparkline(100, 10)
-        assert a == b
-        assert len(a) == 12
-        assert a[-1] == 100
+    def test_sparkline_real_only(self):
+        # v3.3.2 (D1): no synthetic sparkline — real closes pass through,
+        # garbage is dropped, nothing is invented.
+        assert _real_sparkline([100.0, 101.0, 99.0]) == [100.0, 101.0, 99.0]
+        assert _real_sparkline([100.0, "x", None, 0.0, 101.0]) == [100.0, 101.0]
+        assert _real_sparkline(None) == []
+        assert _real_sparkline([]) == []
 
-    def test_sparkline_zero_price_safe(self):
-        assert synthetic_sparkline(0, 5) == [0.0] * 12
-        assert synthetic_sparkline("x", 5) == [0.0] * 12
+    def test_enrich_never_fabricates_price_or_sparkline(self):
+        # v3.3.2 (D1/D2): no price → None (not 0.0); no real sparkline → [].
+        item = enrich_market_item(
+            {"market_id": "btc_usdt", "last": None},
+            {"btc_usdt": {"score": 88, "trend": "BULLISH", "strategy": "rsi"}})
+        assert item["price"] is None
+        assert item["sparkline"] == []
+        item2 = enrich_market_item(
+            {"market_id": "btc_usdt", "last": 10},
+            {"btc_usdt": {"sparkline": [9.0, 10.0], "sparkline_stale": False}})
+        assert item2["price"] == 10
+        assert item2["sparkline"] == [9.0, 10.0]
+        assert item2["sparkline_stale"] is False
 
     def test_enrich_uses_scan_data(self):
         item = enrich_market_item(
             {"market_id": "btc_usdt", "last": 10},
-            {"btc_usdt": {"score": 88, "trend": "BULLISH", "strategy": "tape"}})
+            {"btc_usdt": {"score": 88, "trend": "BULLISH", "strategy": "rsi"}})
         assert item["score"] == 88
         assert item["trend"] == "BULLISH"
-        assert item["strategy"] == "tape"
-        assert item["sparkline"]
+        assert item["strategy"] == "rsi"
 
     def test_sort_hub_items(self):
         items = [{"score": 1, "volume": 9, "display_symbol": "a"},

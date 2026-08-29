@@ -11,23 +11,77 @@ from ..exchange_constraints import parse_ccxt_market_constraints
 logger = logging.getLogger("CCXTAdapter")
 
 
-# v3.3.1 — read retry with FULL JITTER (AWS-style): transient network/5xx
-# errors on IDEMPOTENT READS (balance, positions, order status) are retried
-# a bounded number of times with an exponentially growing, fully randomized
-# delay. ORDER MUTATIONS (create/cancel/close) are NEVER retried here: a
-# failed send may still have reached the exchange (ambiguous outcome) and a
-# blind retry could duplicate a real order — the connector handles that case
-# with durable order intents + reconciliation instead.
+# v3.3.1 — read retry with FULL JITTER (AWS-style); v3.3.2 — TRANSIENT ONLY.
+# Transient network/5xx errors on IDEMPOTENT READS (balance, positions,
+# order status) are retried a bounded number of times with an exponentially
+# growing, fully randomized delay. Non-transient errors (auth, permission,
+# invalid symbol, rejected request…) are raised IMMEDIATELY: retrying them
+# cannot succeed, it only delays the real diagnosis. ORDER MUTATIONS
+# (create/cancel/close) are NEVER retried here: a failed send may still have
+# reached the exchange (ambiguous outcome) and a blind retry could duplicate
+# a real order — the connector handles that case with durable order intents +
+# reconciliation instead.
 READ_RETRIES = 2
 READ_BASE_DELAY_S = 0.15
 READ_MAX_DELAY_S = 1.0
+
+
+def _is_transient_read_error(exc: BaseException) -> bool:
+    """v3.3.2: decide whether a read failure is worth one more attempt.
+
+    Transient = the network/link layer failed, the peer is temporarily
+    unavailable, or the request was rate-limited:
+    - ccxt.NetworkError and its subclasses (RequestTimeout,
+      ExchangeNotAvailable, DDoSProtection, RateLimitExceeded…);
+    - asyncio.TimeoutError / ConnectionError / OSError / TimeoutError;
+    - transport-level errors from the HTTP stack (httpx/aiohttp);
+    - any exchange error carrying an HTTP status of 429 or 5xx.
+
+    Anything else (AuthenticationError, PermissionDenied, InvalidNonce,
+    bad symbol, ValueError…) is NOT transient.
+    """
+    try:
+        import ccxt.async_support as ccxt_lib
+        network_types: tuple = (ccxt_lib.NetworkError,)
+    except Exception:  # pragma: no cover - ccxt is a hard dependency
+        network_types = ()
+    transport_types: tuple = ()
+    try:
+        import httpx
+        transport_types = (httpx.TransportError,)
+    except Exception:  # pragma: no cover
+        pass
+    try:
+        import aiohttp
+        transport_types = transport_types + (aiohttp.ClientConnectionError,)
+    except Exception:  # pragma: no cover
+        pass
+    import asyncio
+    base_types = network_types + transport_types + (
+        asyncio.TimeoutError, ConnectionError, TimeoutError, OSError,
+    )
+    if isinstance(exc, base_types):
+        return True
+    # Exchange errors with an HTTP status: 429 / 5xx are transient.
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(exc, "http_status", None)
+    try:
+        code = int(status) if status is not None else None
+    except (TypeError, ValueError):
+        code = None
+    return bool(code is not None and (code == 429 or code >= 500))
 
 
 async def read_with_retry(op, *args, retries: int = READ_RETRIES,
                           base_delay_s: float = READ_BASE_DELAY_S,
                           max_delay_s: float = READ_MAX_DELAY_S,
                           **kwargs):
-    """Await ``op(*args, **kwargs)`` retrying transient failures (reads only).
+    """Await ``op(*args, **kwargs)`` retrying TRANSIENT failures (reads only).
+
+    v3.3.2: only transient network/rate-limit/5xx errors are retried
+    (see ``_is_transient_read_error``); every other exception is re-raised
+    on the first attempt.
 
     Backoff = random(0, min(max_delay, base * 2**attempt)) — full jitter.
     The LAST exception is re-raised to the caller (no swallowed outcome).
@@ -39,9 +93,13 @@ async def read_with_retry(op, *args, retries: int = READ_RETRIES,
     for attempt in range(retries + 1):
         try:
             return await op(*args, **kwargs)
-        except Exception as exc:  # noqa: BLE001 — the point is to retry any
+        except Exception as exc:
             last_exc = exc
             if attempt >= retries:
+                break
+            if not _is_transient_read_error(exc):
+                # Non-transient (auth, permission, invalid input…): one more
+                # attempt cannot succeed — surface the real error at once.
                 break
             cap = min(max_delay_s, base_delay_s * (2 ** attempt))
             await asyncio.sleep(random.uniform(0.0, cap))

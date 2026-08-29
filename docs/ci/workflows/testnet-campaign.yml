@@ -1,0 +1,71 @@
+# v3.3.2 — Testnet broker matrix campaign (OPT-IN, manual ONLY).
+#
+# This workflow NEVER runs automatically. It is triggered manually from
+# Actions → "Testnet campaign" → Run workflow, and the campaign script
+# itself enforces every guarantee (sandbox-only, no live fallback,
+# credentials from environment only, cleanup at the end, scrubbed report).
+#
+# Before the first run, add the TESTNET credentials of YOUR accounts as
+# repository secrets (Settings → Secrets and variables → Actions). Keys
+# must be created by you on the official testnet portals with
+# read + trading permissions ONLY (never withdrawal):
+#   BINANCE_API_KEY / BINANCE_API_SECRET      (testnet.binance.vision)
+#   BYBIT_API_KEY   / BYBIT_API_SECRET        (testnet.bybit.com)
+#   OKX_API_KEY     / OKX_API_SECRET / OKX_API_PASSPHRASE (OKX demo trading)
+#   GATE_API_KEY    / GATE_API_SECRET         (gate.io testnet)
+#
+# A report with overall_status PASS is the documented precondition before
+# REAL leaves the "experimental" status.
+name: Testnet campaign (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      exchanges:
+        description: "Comma-separated subset of: binance,bybit,okx,gate"
+        required: false
+        default: "binance,bybit,okx,gate"
+        type: string
+
+jobs:
+  testnet:
+    name: Testnet broker matrix (sandbox enforced)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python3 -m pip install -r requirements.txt
+
+      - name: Run testnet campaign
+        env:
+          CONFIRM_TESTNET: "true"
+          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
+          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
+          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
+          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
+          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
+          OKX_API_PASSPHRASE: ${{ secrets.OKX_API_PASSPHRASE }}
+          GATE_API_KEY: ${{ secrets.GATE_API_KEY }}
+          GATE_API_SECRET: ${{ secrets.GATE_API_SECRET }}
+        run: |
+          python3 scripts/testnet_broker_matrix.py \
+            --exchanges "${{ github.event.inputs.exchanges || 'binance,bybit,okx,gate' }}" \
+            --report-dir data
+
+      - name: Upload testnet report (secrets scrubbed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testnet-matrix-report
+          path: data/testnet_matrix_*.json
+          if-no-files-found: ignore

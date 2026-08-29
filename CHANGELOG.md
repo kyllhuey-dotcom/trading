@@ -1,5 +1,94 @@
 # Changelog
 
+## [3.3.2] - 2026-08-29 — Données 100 % réelles + CI GitHub + campagnes d'audit
+
+> REAL is experimental. A successful testnet campaign is required before any
+> real ARM. No profitability guarantee.
+
+### Données 100 % réelles (D1→D4)
+
+- **D1 — Sparkline synthétique supprimée** : `synthetic_sparkline` (courbe
+  inventée à partir du dernier prix) est retiré de `market_hub.py`. Le hub ne
+  dessine que les **vraies clôtures OHLCV 1h** : le scanner fetch désormais
+  les 24 dernières bougies 1h par marché et stocke `sparkline` /
+  `sparkline_stale` sur la ligne. Pas de bougies → liste vide → l'UI ne
+  dessine rien (honnête).
+- **D2 — Plus jamais de `price=0.0` fabriqué** : prix absent → `null`
+  (l'UI affiche « — ») dans `enrich_market_item` ET dans la ligne scanner ;
+  une variation sans prix n'est plus affichée non plus (0,0 % serait faux).
+- **D3 — Marqueur `stale` sur les bougies persistées** : `DataLayer` marque
+  `stale=True` (+ `stale_reason`, `restored_at`, `candles_age_s`) sur toute
+  frame restaurée du cache offline SQLite, et `stale=False` sur toute frame
+  live ; helper `ohlcv_is_stale()`. Le **RSI est refusé sur les données
+  réelles en cache** (`block_reason=STALE_DATA`) — dans la stratégie elle-même
+  (défense en profondeur, appel direct inclus) ET dans le scanner (ligne
+  `STALE`, jamais tradable). Trous de classification corrigés : un quote
+  persisté < 15 min n'est plus jamais re-classé `LIVE` par
+  `classify_quote_status` (toujours `STALE`).
+- **D4 — UI** : badge **STALE** (violet) distinct de **DIFFÉRÉ** (orange) sur
+  le radar ET le hub ; bandeau global « STALE — données en cache, signaux RSI
+  refusés » (radar : lignes STALE ; terminal : ticker/signal stale) ;
+  compteur « Stale (cached) » dans l'en-tête du radar ; sparkline stale
+  désaturée + libellée ; clés i18n `stale`/`staleData`/`staleMarkets` dans
+  les 4 langues (parité stricte testée).
+
+### Campagne live — données vs marchés réels
+
+- **`scripts/realtime_data_audit.py`** (nouveau) : 10 endpoints publics sans
+  clé — Binance, Gate, Bybit, OKX, Kraken, Coinbase, CoinGecko, Yahoo,
+  Stooq, Frankfurter. Tolérances chiffrées et verrouillées par test :
+  **≤ 0,10 %** par pool crypto (médiane), **≤ 1 %** référence croisée
+  (CoinGecko vs médiane exchange ; pools USD vs USDT), **≤ 0,7 %** tradfi
+  (Yahoo vs Stooq AAPL), **≤ 0,7 %** FX de référence (Frankfurter/ECB vs
+  CoinGecko), **fraîcheur ≤ 10 s** sur les 6 flux exchange (timestamp de
+  marché). Sortie 0 uniquement si `overall_status: PASS` ; rapport horodaté
+  `data/realtime_audit_*.json`. Aucune valeur fabriquée : endpoint
+  injoignable = ERROR, jamais de PASS par omission.
+- **Workflow GitHub `Realtime data audit`** : exécution sur push/main +
+  manuel, rapport publié en artefact. *(Campagne non exécutable dans le
+  sandbox Arena — pas de sortie réseau vers les endpoints marchés, HTTP 000 ;
+  le PASS réel s'obtient dans le run CI, rien n'est simulé.)*
+
+### CI GitHub
+
+> Les 3 workflows sont livrés prêts dans `docs/ci/workflows/` avec le guide
+> de dépose `docs/CI_SETUP.md` : le compte agent qui pousse
+> (`arena-ai-coding-agent[bot]`) n'a pas la permission `workflows` — GitHub
+> refuse tout commit dans `.github/workflows/` sans elle. L'owner dépose les
+> fichiers (2 minutes) ou donne la permission à l'app.
+
+- **`ci.yml`** → `.github/workflows/ci.yml` : Python 3.11, dépendances, puis
+  `scripts/validate.sh` (6 portes : déps+import+pip check, compileall+ruff,
+  secrets, **suite complète avec couverture branches ≥ 85 %** `api`+`scripts`,
+  couverture `api/engines` ≥ 80 %, import du point d'entrée). Badges CI +
+  audit à ré-ajouter dans le README après le dépose (lignes fournies dans
+  `docs/CI_SETUP.md`).
+- **`realtime-data-audit.yml`** → `.github/workflows/...` : la campagne live
+  10 endpoints s'exécute en continu (push/main + manuel), rapport JSON en
+  artefact — le PASS réel de la campagne données s'obtient là (le sandbox de
+  l'agent n'a pas de sortie réseau vers les endpoints marchés, HTTP 000).
+- **`testnet-campaign.yml`** → `.github/workflows/...` : OPT-IN manuel
+  uniquement (workflow_dispatch), sandbox forcé, clés via secrets GitHub
+  (`BINANCE_API_KEY/SECRET`, `BYBIT_API_KEY/SECRET`, `OKX_API_KEY/SECRET/
+  PASSPHRASE`, `GATE_API_KEY/SECRET`), rapport scrubé en artefact. Ce PASS
+  testnet est la précondition documentée avant de sortir REAL de
+  l'expérimental — **il n'a PAS encore été obtenu** (pas de clés dans le
+  sandbox ; la campagne doit tourner avec les clés testnet officielles du
+  propriétaire, jamais de clés tierces).
+
+### Autres
+
+- **Retry lecture broker transitoire-only** : `read_with_retry` ne réessaie
+  plus que les erreurs transitoires (ccxt `NetworkError`, timeouts,
+  `ConnectionError`/`OSError`, erreurs HTTP 429/5xx). Le non-transitoire
+  (auth, permission, input invalide…) remonte **immédiatement** — un 2e essai
+  ne pouvait pas réussir, il ne retardait que le diagnostic. Mutations
+  d'ordres toujours sans retry (inchangé, testé).
+- **Ménage** : fichier parasite `op` supprimé.
+- Tests : suite ≥ 792 → **811 passés / 6 skips** (nouveaux tests D1–D4,
+  retry transitoire, math de l'audit). Couverture branches globale ≥ 85 %
+  maintenue (85,7 %). `ruff` propre. `validate.sh` verte.
+
 ## [3.3.1] - 2026-08-29 — Finalisation : fixes points aveugles v3.3 + Google Translate
 
 > REAL is experimental. A successful testnet campaign is required before any
