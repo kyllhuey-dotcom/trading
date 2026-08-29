@@ -15,6 +15,7 @@ are preserved; this module is purely additive.
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Any, Dict
@@ -30,14 +31,49 @@ _RESERVED = frozenset({
 
 _STANDARD_KEYS = ("module", "funcName", "lineno", "process", "threadName", "pathname")
 
+# v3.3: structured fields whose VALUES must never reach the log file.
+_SENSITIVE_KEYS = re.compile(
+    r"(api_?key|api_?secret|secret|token|passphrase|password|"
+    r"authorization|authorization_key|fernet|cookie)", re.IGNORECASE)
+
+# Credential-looking values embedded in free text ("Bearer abc...", "key=...").
+_SENSITIVE_TEXT = re.compile(
+    r"(?i)\b(bearer\s+[a-z0-9._\-]{8,}|api[_-]?key\s*[=:]\s*\S+|"
+    r"api[_-]?secret\s*[=:]\s*\S+|x-api-key\s*[=:]\s*\S+|"
+    r"password\s*[=:]\s*\S+|passphrase\s*[=:]\s*\S+)\b")
+
+REDACTED = "***REDACTED***"
+
+
+def redact_sensitive(value: Any) -> Any:
+    """Redact a field value considered sensitive (keys/tokens/secrets)."""
+    if isinstance(value, str):
+        return _SENSITIVE_TEXT.sub(REDACTED, value) if _SENSITIVE_TEXT.search(value) else value
+    return value
+
+
+def redact_field(name: str, value: Any) -> Any:
+    """Redact the whole value of a sensitive field name."""
+    if _SENSITIVE_KEYS.search(str(name or "")):
+        return REDACTED
+    if isinstance(value, str):
+        return redact_sensitive(value)
+    return value
+
 
 class JsonFormatter(logging.Formatter):
-    """Formats log records as single-line JSON documents."""
+    """Formats log records as single-line JSON documents.
 
-    def __init__(self, include_exc: bool = True, ensure_ascii: bool = False):
+    v3.3: every emitted payload is passed through the secret redactor so
+    credentials never reach the rotating log file.
+    """
+
+    def __init__(self, include_exc: bool = True, ensure_ascii: bool = False,
+                 redact: bool = True):
         super().__init__()
         self.include_exc = include_exc
         self.ensure_ascii = ensure_ascii
+        self.redact = redact
 
     def format(self, record: logging.LogRecord) -> str:
         payload: Dict[str, Any] = {
@@ -60,7 +96,19 @@ class JsonFormatter(logging.Formatter):
                 continue
             payload[key] = value
 
+        if self.redact:
+            payload = self._redact_payload(payload)
         return json.dumps(payload, ensure_ascii=self.ensure_ascii, default=_json_default)
+
+    @classmethod
+    def _redact_payload(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        for key, value in payload.items():
+            if key in ("message",) and isinstance(value, str):
+                out[key] = _SENSITIVE_TEXT.sub(REDACTED, value) if _SENSITIVE_TEXT.search(value) else value
+                continue
+            out[key] = redact_field(key, value)
+        return out
 
 
 def _json_default(value: Any) -> Any:

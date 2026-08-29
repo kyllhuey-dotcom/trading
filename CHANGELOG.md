@@ -1,5 +1,74 @@
 # Changelog
 
+## [3.3.0] - 2026-08-29 — Finalisation REAL : state machine, idempotence, fills partiels, exploitabilité
+
+> REAL is experimental. A successful testnet campaign is required before any
+> real ARM. No profitability guarantee.
+
+- **Démarrage FastAPI 0.141.x réparé** : `Depends(require_admin)` levait
+  `FastAPIError` sur `Optional[Request]` ; les routes câblent désormais
+  `require_admin_dependency` (wrapper FastAPI-safe). Le contrat unitaire
+  `await require_admin(x_api_key=...)` est conservé et testé.
+- **Toutes les mutations protégées** : inspection des routes en test ;
+  seules exceptions assumées : `/api/login` et `/api/logout`.
+- **Machine d'état des protections** (`api/engines/protection_state.py`) :
+  un ID d'ordre seul ne prouve plus la survie d'une protection. Statuts
+  normalisés `OPEN / PARTIALLY_FILLED / FILLED / CANCELED / EXPIRED /
+  REJECTED / UNKNOWN / NAKED` + métadonnées complètes
+  (`protection_status`, `protection_checked_at`, `protection_error_count`,
+  `sl/tp_order_status`, `filled_protection`, `sibling_order_id`,
+  `sibling_cancel_status`, `last_accounted_filled`, `sl_tp_failed`,
+  `protection_uncertain`, `protection_cancelled_before_close`).
+  CANCELED/EXPIRED/REJECTED → NAKED (jamais de close DB) + alerte.
+  Erreurs répétées (≥3) → UNKNOWN + audit CRITICAL + notification.
+  OPEN non confirmé récemment → le backstop reduce-only peut agir (jamais de
+  double hedge : l'ordre est reduceOnly).
+- **Fenêtre NAKED après close échoué** : protections annulées puis hedge en
+  échec → trade OPEN, `sl_tp_failed=true`, `protection_status=NAKED`,
+  `protection_cancelled_before_close=true`, audit CRITICAL
+  `REAL_CLOSE_NAKED` + notification `HEDGE_FAILED_AFTER_CANCEL`.
+- **Idempotence durable** : table `order_intents` (migration rétrocompatible),
+  intention persistée **avant** chaque ordre REAL, `clientOrderId` au format
+  `QTP-{ms}-{uuid6}`. Après exception d'envoi, recherche de l'ordre :
+  fetch par client ID → open orders → closed orders → trades → API CCXT.
+  Ordre retrouvé → réconcilié, **jamais de second ordre**. État indéterminé
+  → `ORDER_STATE_UNKNOWN` : audit CRITICAL, notification, **aucun retry
+  automatique**.
+- **Fills partiels** (`api/engines/pnl_engine.py`) : jamais de close complet
+  si `filled < quantity` ; seul le delta positif
+  (`broker_filled - last_accounted_filled`) est comptabilisé ; réconciliation
+  **idempotente** ; quantité résiduelle réduite ; PnL partiel BUY/SELL
+  symétrique ; frais partiels au prorata, jamais double comptés.
+- **PnL & frais** : `net_pnl = gross_pnl - fees` avec cumul de tous les frais
+  (entrée, SL, TP, fills partiels, close manuel). Close authoritatif sans
+  prix confirmé → `CLOSED_PRICE_PENDING` (jamais de prix inventé).
+- **Emergency stop honnête** : `emergency_close_all()` — clôture **unitaire**
+  par trade REAL OPEN en DB, confirmation broker avant close DB, verdicts
+  `CLOSED_CONFIRMED / FAILED / ORDER_STATE_UNKNOWN / MANUAL_ACTION_REQUIRED`,
+  réconciliation ensuite (spot `[]` ne prouve rien).
+- **Sécurité production** : `APP_ENV=development|test|production` ;
+  fail-fast au démarrage en production si `ADMIN_API_KEY`/`FERNET_KEY`
+  manquants ou faibles ; comparaison constant-time ; redaction des secrets
+  dans les logs NDJSON ; cookies Secure/HttpOnly/SameSite ; sessions TTL ;
+  rate limiting ; auth WebSocket ; CSV `uploads/` générés (logs Railway)
+  retirés du suivi Git (fichiers conservés).
+- **Exploitabilité** : `/readyz` (503 si DB HS ou config production invalide),
+  `scripts/backup_db.py` (backup WAL-checkpoint + sha256, verify, restore sur
+  copie), arrêt gracieux (CCXT/HTTP/DB fermés), métriques REAL
+  (`ORDER_STATE_UNKNOWN`, NAKED, reconcile lag, latence broker, échecs
+  notifications) dans `/api/metrics`, reprise après redémarrage testée.
+- **Multi-exchange** : mocks contractuels offline Binance/Bybit/OKX/Gate
+  (`tests/exchange_matrix.py`) ; `scripts/testnet_broker_matrix.py`
+  (opt-in `CONFIRM_TESTNET=true`, sandbox only, jamais de fallback live,
+  credentials env-only, taille minimale, cleanup, rapport JSON horodaté
+  secrets-épurés) ; `docs/TESTNET_MATRIX.md`.
+- **Tests** : `tests/test_v32.py` (21 cas) + `tests/test_v33.py` (27 cas) +
+  matrice multi-exchange ; suite standard 100 % hors réseau.
+- **Docs** : README v3.3.0, `docs/AUDIT_V33.md`, `docs/RUNBOOK_PRODUCTION.md`,
+  `docs/TESTNET_MATRIX.md`, contrat API à jour.
+- **Statut testnet** : campagne externe **non exécutée** (aucun credential
+  testnet dans le sandbox) — elle reste requise avant tout ARM REAL.
+
 ## [3.2.0] - 2026-08-29 — Durcissement REAL
 
 - Annulation des protections jumelles et détection des fills spot.

@@ -15,6 +15,9 @@ dist/
 data/*
 !data/.gitkeep
 
+# Generated Railway deploy logs (audited 2026-08-29: generated, no user data)
+uploads/
+
 # Tests & tooling
 .pytest_cache/
 .coverage
@@ -32,3 +35,4 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
+coverage.json
