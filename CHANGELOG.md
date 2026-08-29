@@ -1,5 +1,40 @@
 # Changelog
 
+## [3.3.1] - 2026-08-29 — Finalisation : fixes points aveugles v3.3 + Google Translate
+
+> REAL is experimental. A successful testnet campaign is required before any
+> real ARM. No profitability guarantee.
+
+- **Retry + full jitter sur les lectures idempotentes** (`read_with_retry` :
+  fetch_balance / fetch_positions / fetch_order, backoff exponentiel borné,
+  jitter complet, dernière exception re-propagée). Les mutations d'ordres
+  (create/cancel/close) ne sont JAMAIS retry-ées (risque ORDER_STATE_UNKNOWN :
+  le connecteur réconcilie par clientOrderId au lieu de renvoyer).
+- **Correlation IDs** : middleware `X-Correlation-ID` (fourni → assaini ;
+  sinon généré `qtp-<32hex>`), écho sur toutes les réponses, injection dans
+  les métadonnées d'audit (`audit_details`). Injections (sauts de ligne,
+  sur-longueur, caractères interdits) remplacées par un ID sûr.
+- **Collision de backup corrigée** : `backup_db.py` n'écrase plus un backup
+  antérieur lors de deux exécutions à la même seconde (suffixes `_1`, `_2`),
+  sha256 sidecar par fichier — testé.
+- **Bandeau « no market data »** : affiché uniquement quand un scan terminé
+  rapporte zéro ligne exploitable (toutes lignes `DATA_UNAVAILABLE`, ou
+  progression complète + marchés indisponibles/erreur) ; clé i18n
+  `noMarketData` dans les 4 langues, parité fr/en/es/de intacte (284×4).
+- **Import standalone du script testnet** réparé (bootstrap `sys.path`
+  depuis `__file__`) ; guide des clés testnet officielles
+  (`docs/TESTNET_KEYS_GUIDE.md`).
+- **Bug Google Translate corrigé** : flicker/valeurs corrompues quand la
+  traduction navigateur était active (conflit re-render 2 s ↔ mapping de
+  nœuds du traducteur). `notranslate` sur toutes les zones dynamiques
+  (statiques, conteneurs réécrits, réécritures `className` préservées),
+  rendus = réécritures complètes (jamais `+=`/`insertAdjacentHTML`),
+  `documentElement.lang` synchronisé au chargement et à chaque changement
+  de langue. Tests de régression statiques dédiés.
+- Campagne testnet : NON exécutée dans le sandbox (HTTP 000 — pas de sortie
+  réseau). Aucun résultat simulé. Procédure exacte :
+  `docs/TESTNET_KEYS_GUIDE.md`.
+
 ## [3.3.0] - 2026-08-29 — Finalisation REAL : state machine, idempotence, fills partiels, exploitabilité
 
 > REAL is experimental. A successful testnet campaign is required before any
