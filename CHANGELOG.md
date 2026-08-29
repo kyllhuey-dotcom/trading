@@ -1,5 +1,36 @@
 # Changelog - Quantum Trade Pro
 
+## [3.1.0] - 2026-08-29 — P0 REAL : fail-close SL/TP, réconciliation honnête, sandbox réel
+
+- **P0-1 fail-close** : si l'attache TP/SL natif échoue après le market fill,
+  la position est immédiatement **flattened** (market hedge reduceOnly sur la
+  quantité réellement `filled`). Flatten OK → `SL_TP_ATTACH_FAILED_FLATTENED`,
+  rien d'OPEN en DB. Flatten KO → `SL_TP_ATTACH_FAILED_NAKED`, OPEN persisté
+  avec `metadata.sl_tp_failed=true` (succès reste False, log CRITICAL).
+  Fill nul/absurde → `INVALID_FILL`.
+- **P0-2 réconciliation spot honnête** : `get_positions()==[]` n'est une preuve
+  de close que si l'adapter est `positions_authoritative`
+  (`client.has.fetchPositions`/`fetchPosition`). Sinon, aucune clôture DB.
+  Une panne provider omet toujours le broker (inchangé).
+- **P0-3** : la position REAL persiste `filled` réel, `average` et **frais**
+  broker + `requested_quantity` en metadata.
+- **P0-4 sandbox réel** : `sandbox` est passé au constructeur CCXT et
+  `set_sandbox_mode(True)` est appelé **avant** `load_markets()` ; setter
+  absent/en échec → `connect()` refuse (jamais LIVE par accident). Plus de
+  mutation `os.environ["BROKER_SANDBOX"]` dans les endpoints.
+- **P0-5 close unitaire REAL** : `POST /api/positions/{id}/close` en REAL route
+  vers `BrokerConnector.close_position` (ordre broker reduceOnly confirmé avant
+  CLOSED en DB). Le tick REAL ferme via le broker quand le prix touche SL/TP.
+  Jamais de fake-close local.
+- **P0-6** : `execute-signal` exige START **et** ARM → `SYSTEM_NOT_ARMED` sinon.
+- **P1** : version API `3.1.0` ; `require_admin` sur GET `/api/settings`,
+  `/api/brokers`, `/api/history`, `/api/wallets`, `/api/metrics`,
+  `/api/optimization` (clé vide = ouvert, dev/tests). `/healthz`, `/api/health`,
+  `/api/status`, `/api/scanner`, `/api/markets`, `/api/news` restent publics.
+- Protections conservées : cascade crypto non réordonnée, plancher 84, blocage
+  Yahoo/DELAYED, fail-safe tradfi, news `trade`, RR 2.0 clamp 1.0–2.0,
+  pas d'auto-arm REAL, bannière REAL experimental. Aucun win rate 99 % promis.
+
 ## [3.0.0] - 2026-08-29 — Données fiables, mémoire, RR 1:2, news tradable, auth
 
 - RSI cible **RR 2.0** (clamp 1.0–2.0). Seed SQLite et migration `1.5 → 2.0`.

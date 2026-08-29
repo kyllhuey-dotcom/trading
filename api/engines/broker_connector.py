@@ -109,12 +109,17 @@ class BrokerConnector:
                 }
 
     async def add_broker(self, broker_id: str, exchange_id: str, api_key: str,
-                         api_secret: str, passphrase: Optional[str] = None) -> bool:
+                         api_secret: str, passphrase: Optional[str] = None,
+                         sandbox: Optional[bool] = None) -> bool:
         """Create the right adapter, connect it and keep it live."""
         if exchange_id.upper() == "PRIMEXBT":
             adapter = PrimeXBTAdapter(api_key, api_secret, passphrase)
-        else:
+        elif sandbox is None:
+            # Legacy signature kept for fake adapters in the test suite.
             adapter = CCXTAdapter(exchange_id, api_key, api_secret, passphrase)
+        else:
+            adapter = CCXTAdapter(exchange_id, api_key, api_secret, passphrase,
+                                  sandbox=sandbox)
 
         success = await adapter.connect()
         if success:
@@ -221,39 +226,62 @@ class BrokerConnector:
             tp=signal.get("tp"),
         )
 
-        if res.get("success") and self.db is not None:
+        # v3.1 P0-3: persist what actually happened on the broker —
+        # the real filled quantity, average entry and fees.
+        # - success            → OPEN position with honest fill data
+        # - ...FAILED_NAKED    → position exists on the broker without SL/TP:
+        #                        persist OPEN with sl_tp_failed=true so the
+        #                        operator/reconciliation can manage it. The
+        #                        result stays success=False.
+        # - ...FAILED_FLATTENED→ position was closed immediately: nothing OPEN.
+        naked = res.get("reason") == "SL_TP_ATTACH_FAILED_NAKED"
+        if (res.get("success") or naked) and self.db is not None:
+            quantity = float(res.get("filled") or risk["quantity"])
+            entry_price = float(res.get("average") or signal.get("entry") or 0)
+            fees = float(res.get("fees") or 0)
+            metadata = {
+                "strategy": signal.get("strategy", "structure"),
+                "broker_id": bid,
+                "broker_symbol": broker_symbol,
+                "broker_order_id": res.get("broker_order_id"),
+                "requested_quantity": risk["quantity"],
+                "tp_order_id": res.get("tp_order_id"),
+                "sl_order_id": res.get("sl_order_id"),
+                "sl_tp_warning": res.get("sl_tp_warning"),
+            }
+            if naked:
+                metadata["sl_tp_failed"] = True
             position = {
                 "id": f"REAL-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}",
                 "mode": "REAL",
                 "symbol": market_id,
                 "display_symbol": signal.get("display_symbol") or market_id,
                 "direction": signal["direction"],
-                "entry_price": float(res.get("average") or signal.get("entry") or 0),
+                "entry_price": entry_price,
                 "exit_price": None,
-                "quantity": risk["quantity"],
+                "quantity": quantity,
                 "sl": signal.get("sl"),
                 "tp": signal.get("tp"),
                 "leverage": risk["leverage"],
-                "fees": 0.0,
+                "fees": fees,
                 "pnl": 0.0,
                 "open_time": datetime.now().isoformat(),
                 "close_time": None,
                 "status": "OPEN",
-                "metadata": {
-                    "strategy": signal.get("strategy", "structure"),
-                    "broker_id": bid,
-                    "broker_symbol": broker_symbol,
-                    "broker_order_id": res.get("broker_order_id"),
-                    "tp_order_id": res.get("tp_order_id"),
-                    "sl_order_id": res.get("sl_order_id"),
-                    "sl_tp_warning": res.get("sl_tp_warning"),
-                },
+                "metadata": metadata,
             }
             self.db.save_trade(position)
-            self.db.log_audit("INFO", "REAL_ORDER_OPEN",
-                              f"REAL {signal['direction']} {broker_symbol} qty={risk['quantity']} via {bid}",
+            level = "CRITICAL" if naked else "INFO"
+            self.db.log_audit(level, "REAL_ORDER_OPEN",
+                              f"REAL {signal['direction']} {broker_symbol} qty={quantity} via {bid}"
+                              + (" [NAKED: SL/TP attach failed]" if naked else ""),
                               {"position_id": position["id"], "broker_order_id": res.get("broker_order_id")})
             res["position"] = position
+        elif res.get("reason") == "SL_TP_ATTACH_FAILED_FLATTENED" and self.db is not None:
+            self.db.log_audit("WARNING", "REAL_ORDER_FLATTENED",
+                              f"REAL {signal['direction']} {broker_symbol}: SL/TP attach failed, "
+                              f"position flattened immediately — nothing persisted OPEN",
+                              {"broker_order_id": res.get("broker_order_id")})
         return res
 
     # ------------------------------------------------------------------ #
@@ -282,6 +310,14 @@ class BrokerConnector:
 
         live_symbols: Dict[str, set] = {}  # broker_id -> {normalized broker symbols}
         for bid, adapter in self.active_adapters.items():
+            # v3.1 P0-2: an empty position list is only a proof of closure
+            # when the adapter can actually enumerate positions (derivatives
+            # with fetchPositions). On spot-only setups get_positions() is
+            # always [] — closing DB trades on that would be dishonest.
+            if not bool(getattr(adapter, "positions_authoritative", False)):
+                logger.debug("Reconciliation: broker '%s' is not authoritative "
+                             "for positions — skipping close decisions", bid)
+                continue
             try:
                 positions = await adapter.get_positions()
                 live_symbols[bid] = set()
@@ -293,6 +329,7 @@ class BrokerConnector:
                 # A broker/API outage is not evidence that every position was
                 # closed. Omit this broker from reconciliation and retry later.
                 logger.warning("Position reconciliation skipped for '%s': %s", bid, exc)
+                live_symbols.pop(bid, None)
 
         closed = []
         for trade in db_open:
@@ -308,6 +345,54 @@ class BrokerConnector:
                                   f"Position {trade['symbol']} no longer on broker — closed in DB")
                 closed.append(trade)
         return closed
+
+    async def close_position(self, market_id: str) -> Dict[str, Any]:
+        """v3.1 P0-5: close ONE REAL open position through its broker.
+
+        The DB is only marked CLOSED after the broker confirmed the reduce-only
+        market order. An adapter failure leaves the DB untouched (still OPEN).
+        """
+        if self.db is None:
+            return {"success": False, "reason": "NO_DB"}
+        trade = next(
+            (t for t in self.db.get_active_positions(mode="REAL")
+             if market_id in (t.get("symbol"), t.get("display_symbol"))),
+            None)
+        if trade is None:
+            return {"success": False, "reason": f"No open REAL position for {market_id}"}
+
+        meta = trade.get("metadata") or {}
+        bid = meta.get("broker_id")
+        broker_symbol = meta.get("broker_symbol")
+        adapter = self.active_adapters.get(bid) if bid else None
+        if adapter is None or not broker_symbol:
+            route = self._find_route(trade.get("symbol"))
+            if not route:
+                return {"success": False, "reason": "NO_BROKER_ROUTE"}
+            bid, adapter, broker_symbol = route
+
+        res = await adapter.close_position(
+            broker_symbol, str(trade.get("direction", "BUY")).lower(),
+            float(trade.get("quantity") or 0))
+        if not res.get("success"):
+            # Fail-honest: no broker confirmation → the DB stays OPEN.
+            return {"success": False,
+                    "reason": res.get("reason") or "BROKER_CLOSE_FAILED"}
+
+        trade["status"] = "CLOSED"
+        trade["close_time"] = datetime.now().isoformat()
+        if res.get("average"):
+            trade["exit_price"] = float(res["average"])
+        trade["metadata"] = {**meta, "close_reason": "MANUAL_CLOSE",
+                             "close_order_id": res.get("broker_order_id")}
+        self.db.save_trade(trade)
+        self.db.log_audit("INFO", "REAL_MANUAL_CLOSE",
+                          f"REAL position {trade['symbol']} closed on broker '{bid}'",
+                          {"position_id": trade.get("id"),
+                           "close_order_id": res.get("broker_order_id")})
+        return {"success": True, "position": trade,
+                "exit_price": trade.get("exit_price"),
+                "broker_order_id": res.get("broker_order_id")}
 
     def trigger_emergency_stop(self) -> bool:
         self.emergency_stop_active = True

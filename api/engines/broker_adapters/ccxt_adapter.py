@@ -21,12 +21,17 @@ class CCXTAdapter(BrokerAdapter):
     def __init__(self, exchange_id: str = "gate",
                  api_key: Optional[str] = None,
                  api_secret: Optional[str] = None,
-                 passphrase: Optional[str] = None):
+                 passphrase: Optional[str] = None,
+                 sandbox: Optional[bool] = None):
         self.exchange_id = exchange_id.lower()
         self.api_key = api_key or os.getenv("BROKER_API_KEY")
         self.api_secret = api_secret or os.getenv("BROKER_API_SECRET")
         self.passphrase = passphrase or os.getenv("BROKER_API_PASSPHRASE")
-        self.sandbox = os.getenv("BROKER_SANDBOX", "false").lower() == "true"
+        # v3.1 P0-4: explicit sandbox flag wins; env is only a legacy fallback.
+        if sandbox is None:
+            self.sandbox = os.getenv("BROKER_SANDBOX", "false").lower() == "true"
+        else:
+            self.sandbox = bool(sandbox)
         self.client: Optional[ccxt.Exchange] = None
 
     # ------------------------------------------------------------------ #
@@ -48,6 +53,30 @@ class CCXTAdapter(BrokerAdapter):
             if self.passphrase:
                 config['password'] = self.passphrase
             self.client = exchange_class(config)
+            # v3.1 P0-4: a REAL sandbox request must actually reach the
+            # exchange testnet — silently trading live funds is fail-open.
+            if self.sandbox:
+                setter = getattr(self.client, "set_sandbox_mode", None)
+                if not callable(setter):
+                    logger.error("CCXT %s: sandbox requested but set_sandbox_mode "
+                                 "is unavailable — refusing to connect", self.exchange_id)
+                    try:
+                        await self.client.close()
+                    except Exception as close_exc:
+                        logger.warning("CCXT %s cleanup failed: %s", self.exchange_id, close_exc)
+                    self.client = None
+                    return False
+                try:
+                    setter(True)
+                except Exception as exc:
+                    logger.error("CCXT %s: set_sandbox_mode(True) failed: %s",
+                                 self.exchange_id, exc)
+                    try:
+                        await self.client.close()
+                    except Exception as close_exc:
+                        logger.warning("CCXT %s cleanup failed: %s", self.exchange_id, close_exc)
+                    self.client = None
+                    return False
             await self.client.load_markets()  # real connectivity + credential check
             logger.info(f"CCXT {self.exchange_id}: connected ({len(self.client.markets)} markets)")
             return True
@@ -122,42 +151,133 @@ class CCXTAdapter(BrokerAdapter):
             return {"success": False, "reason": "INVALID_QUANTITY"}
         try:
             order = await self.client.create_order(symbol, 'market', normalized_side, quantity)
-            result = {
-                "success": True,
-                "broker_order_id": order.get("id"),
-                "status": order.get("status", "FILLED"),
-                "filled": order.get("filled"),
-                "average": order.get("average"),
-                "side": normalized_side,
-                "symbol": symbol,
-                "timestamp": datetime.now().isoformat(),
-            }
-
-            # Attach SL/TP protection orders (best-effort, exchange dependent).
-            # `reduceOnly` is essential: without it, a protection order can open
-            # a reverse position after the original position has already closed.
-            hedge_side = 'sell' if normalized_side == 'buy' else 'buy'
-            try:
-                if tp is not None:
-                    tp_order = await self.client.create_order(
-                        symbol, 'limit', hedge_side, quantity, float(tp),
-                        {'reduceOnly': True},
-                    )
-                    result["tp_order_id"] = tp_order.get("id")
-                if sl is not None:
-                    sl_order = await self.client.create_order(
-                        symbol, 'stop_loss', hedge_side, quantity, None,
-                        {'stopPrice': float(sl), 'triggerPrice': float(sl), 'reduceOnly': True},
-                    )
-                    result["sl_order_id"] = sl_order.get("id")
-            except Exception as exc:
-                logger.warning("SL/TP attachment failed (%s): %s", self.exchange_id, exc)
-                result["sl_tp_warning"] = str(exc)
-
-            return result
         except Exception as e:
             logger.error(f"Broker execution error ({self.exchange_id}): {e}")
             return {"success": False, "reason": f"BROKER_EXECUTION_ERROR: {str(e)}"}
+
+        # v3.1 P0-1: honest fill accounting — protection orders and DB
+        # persistence must use the ACTUAL filled quantity, not the request.
+        try:
+            filled = float(order.get("filled") or quantity)
+        except (TypeError, ValueError):
+            filled = 0.0
+        if not math.isfinite(filled) or filled <= 0:
+            return {"success": False, "reason": "INVALID_FILL",
+                    "broker_order_id": order.get("id")}
+        average = order.get("average") or order.get("price")
+        fee = order.get("fee") or {}
+        try:
+            fees = float(fee.get("cost") or 0) if isinstance(fee, dict) else 0.0
+        except (TypeError, ValueError):
+            fees = 0.0
+
+        result = {
+            "success": True,
+            "broker_order_id": order.get("id"),
+            "status": order.get("status", "FILLED"),
+            "filled": filled,
+            "average": average,
+            "fees": fees,
+            "side": normalized_side,
+            "symbol": symbol,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        # Attach SL/TP protection orders on the FILLED quantity.
+        # `reduceOnly` is essential: without it, a protection order can open
+        # a reverse position after the original position has already closed.
+        # v3.1 P0-1 fail-close: if a protection order cannot be attached the
+        # position is immediately flattened — never left naked and reported
+        # as a success.
+        hedge_side = 'sell' if normalized_side == 'buy' else 'buy'
+        try:
+            if tp is not None:
+                tp_order = await self.client.create_order(
+                    symbol, 'limit', hedge_side, filled, float(tp),
+                    {'reduceOnly': True},
+                )
+                result["tp_order_id"] = tp_order.get("id")
+            if sl is not None:
+                sl_order = await self.client.create_order(
+                    symbol, 'stop_loss', hedge_side, filled, None,
+                    {'stopPrice': float(sl), 'triggerPrice': float(sl), 'reduceOnly': True},
+                )
+                result["sl_order_id"] = sl_order.get("id")
+        except Exception as exc:
+            logger.error("SL/TP attachment failed (%s): %s — flattening position",
+                         self.exchange_id, exc)
+            try:
+                await self.client.create_order(
+                    symbol, 'market', hedge_side, filled, None,
+                    {'reduceOnly': True},
+                )
+            except Exception as flatten_exc:
+                logger.critical(
+                    "NAKED POSITION on %s %s: flatten failed after SL/TP error "
+                    "(%s / %s) — manual intervention required",
+                    self.exchange_id, symbol, exc, flatten_exc)
+                return {**result, "success": False,
+                        "reason": "SL_TP_ATTACH_FAILED_NAKED",
+                        "flattened": False,
+                        "sl_tp_warning": str(exc),
+                        "flatten_error": str(flatten_exc)}
+            return {**result, "success": False,
+                    "reason": "SL_TP_ATTACH_FAILED_FLATTENED",
+                    "flattened": True,
+                    "sl_tp_warning": str(exc)}
+
+        return result
+
+    async def close_position(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]:
+        """Close ONE position with a market reduce-only hedge order.
+
+        `side` is the ORIGINAL position side (buy/long or sell/short); the
+        hedge order takes the opposite side. Same input guards as
+        execute_order — never a fake success.
+        """
+        if not self.client:
+            return {"success": False, "reason": "BROKER_DISCONNECTED"}
+        normalized_side = str(side).lower()
+        if normalized_side in {"long", "buy"}:
+            normalized_side = "buy"
+        elif normalized_side in {"short", "sell"}:
+            normalized_side = "sell"
+        else:
+            return {"success": False, "reason": "INVALID_SIDE"}
+        try:
+            quantity = float(quantity)
+        except (TypeError, ValueError):
+            return {"success": False, "reason": "INVALID_QUANTITY"}
+        if not math.isfinite(quantity) or quantity <= 0:
+            return {"success": False, "reason": "INVALID_QUANTITY"}
+        hedge_side = 'sell' if normalized_side == 'buy' else 'buy'
+        try:
+            order = await self.client.create_order(
+                symbol, 'market', hedge_side, quantity, None,
+                {'reduceOnly': True},
+            )
+            return {"success": True, "broker_order_id": order.get("id"),
+                    "filled": order.get("filled"), "average": order.get("average"),
+                    "symbol": symbol, "timestamp": datetime.now().isoformat()}
+        except Exception as e:
+            logger.error(f"Broker close error ({self.exchange_id}): {e}")
+            return {"success": False, "reason": f"BROKER_CLOSE_ERROR: {str(e)}"}
+
+    @property
+    def positions_authoritative(self) -> bool:
+        """True only when the exchange can actually enumerate positions.
+
+        On spot-only setups fetch_positions is unsupported and get_positions()
+        returns [] — that empty list is NOT evidence that positions were
+        closed. Reconciliation must never close DB trades in that case.
+        """
+        if self.client is None:
+            return False
+        has = getattr(self.client, "has", None) or {}
+        try:
+            return bool(has.get("fetchPositions") or has.get("fetchPosition"))
+        except AttributeError:
+            return False
 
     async def close_all_positions(self) -> Dict[str, Any]:
         """Emergency exit: close all open positions + cancel open orders."""
