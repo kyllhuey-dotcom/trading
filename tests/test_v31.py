@@ -296,7 +296,7 @@ async def test_execute_signal_requires_start_and_arm():
 # 9/10. Version + docs                                                         #
 # --------------------------------------------------------------------------- #
 def test_app_version_is_3_1_0():
-    assert idx.app.version == "3.1.0"
+    assert idx.app.version == "3.2.0"
 
 
 def test_v31_docs_exist():
