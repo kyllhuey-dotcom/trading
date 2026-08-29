@@ -131,15 +131,15 @@ def test_stops_use_five_bar_extreme_and_atr_buffer():
     assert sell["sl"] == pytest.approx(expected_sell_sl)
 
 
-def test_take_profit_is_symmetric_rr_1_5_and_clamped():
+def test_take_profit_is_symmetric_rr_2_0_and_clamped():
     strategy = RSIMeanReversionStrategy()
     buy = strategy.generate_signal("btc_usdt", _reversal_frame("BUY"))
-    assert buy["risk_reward"] == pytest.approx(1.5)
-    assert buy["tp"] == pytest.approx(buy["entry"] + 1.5 * (buy["entry"] - buy["sl"]))
+    assert buy["risk_reward"] == pytest.approx(2.0)
+    assert buy["tp"] == pytest.approx(buy["entry"] + 2.0 * (buy["entry"] - buy["sl"]))
 
     sell = strategy.generate_signal("btc_usdt", _reversal_frame("SELL"))
-    assert sell["risk_reward"] == pytest.approx(1.5)
-    assert sell["tp"] == pytest.approx(sell["entry"] - 1.5 * (sell["sl"] - sell["entry"]))
+    assert sell["risk_reward"] == pytest.approx(2.0)
+    assert sell["tp"] == pytest.approx(sell["entry"] - 2.0 * (sell["sl"] - sell["entry"]))
 
     strategy = RSIMeanReversionStrategy(risk_reward_ratio=5.0)
     result = strategy.generate_signal("btc_usdt", _reversal_frame("BUY"))

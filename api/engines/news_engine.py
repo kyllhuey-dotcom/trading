@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -18,6 +19,23 @@ import pytz
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger("NewsEngine")
+
+# High-impact events the operator asked to trade around (30m/1h windows).
+IMPORTANT_EVENT_RE = re.compile(
+    r"nfp|non[- ]?farm|payroll|cpi|ppi|pce|fomc|gdp|unemployment|"
+    r"interest rate|rate decision|fed\b|ecb|boe|boj|retail sales|"
+    r"ism|powell|core inflation",
+    re.I,
+)
+
+
+def is_important_event(event: Dict[str, Any]) -> bool:
+    if str(event.get("impact") or "") != "High":
+        return False
+    title = str(event.get("title") or event.get("event") or "").strip()
+    if not title:
+        return True
+    return bool(IMPORTANT_EVENT_RE.search(title))
 
 
 class EconomicCalendarProvider:
@@ -254,12 +272,15 @@ class EventRiskEngine:
     def __init__(self, news_filter: NewsFilter):
         self.filter = news_filter
 
-    def check_risk(self, high_impact_events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def check_risk(self, high_impact_events: List[Dict[str, Any]],
+                   important_only: bool = False) -> Dict[str, Any]:
         now = datetime.now(pytz.UTC)
         blocking_event = None
         current_year = now.year
 
         for event in high_impact_events:
+            if important_only and not is_important_event(event):
+                continue
             try:
                 if event.get("timestamp_utc"):
                     event_time = datetime.fromisoformat(
@@ -283,6 +304,7 @@ class EventRiskEngine:
 
         return {
             "is_blocked": blocking_event is not None,
+            "in_news_window": blocking_event is not None,
             "blocking_event": blocking_event,
             "next_events": high_impact_events[:5],
         }
@@ -333,6 +355,7 @@ class NewsEngine:
     """
 
     VALID_UNAVAILABLE_POLICIES = ("block_all", "block_tradfi_only", "allow_all")
+    VALID_WINDOW_MODES = ("avoid", "trade", "ignore")
 
     def __init__(self, db_manager: Any = None, unavailable_policy: str = "block_tradfi_only"):
         self.provider = EconomicCalendarProvider(db_manager=db_manager)
@@ -340,6 +363,7 @@ class NewsEngine:
         self.risk_engine = EventRiskEngine(self.filter)
         self.session_filter = SessionFilter()
         self.news_unavailable_policy = "block_tradfi_only"
+        self.news_window_mode = "trade"
         self.set_unavailable_policy(unavailable_policy)
 
     def set_unavailable_policy(self, policy: str) -> None:
@@ -348,9 +372,31 @@ class NewsEngine:
             normalized if normalized in self.VALID_UNAVAILABLE_POLICIES else "block_tradfi_only"
         )
 
+    def set_window_mode(self, mode: str) -> None:
+        normalized = str(mode or "trade").lower()
+        self.news_window_mode = (
+            normalized if normalized in self.VALID_WINDOW_MODES else "trade"
+        )
+
     def apply_settings(self, settings: Dict[str, str]) -> None:
         self.set_unavailable_policy(
             settings.get("news_unavailable_policy", "block_tradfi_only"))
+        self.set_window_mode(settings.get("news_window_mode", "trade"))
+        try:
+            before = int(float(settings.get("news_window_before_mins", 30)))
+        except (TypeError, ValueError):
+            before = 30
+        try:
+            after = int(float(settings.get("news_window_after_mins", 60)))
+        except (TypeError, ValueError):
+            after = 60
+        self.filter.safety_before = 60 if before >= 45 else 30
+        self.filter.safety_after = 60 if after >= 45 else 30
+        tz_name = str(settings.get("timezone") or "UTC")
+        try:
+            self.session_filter = SessionFilter(timezone=tz_name)
+        except Exception:
+            pass
 
     def _outage_allows(self, asset_class: str) -> bool:
         if self.news_unavailable_policy == "allow_all":
@@ -377,6 +423,8 @@ class NewsEngine:
             "source": self.provider.source,
             "calendar": self.provider.get_state(),
             "unavailable_policy": self.news_unavailable_policy,
+            "news_window_mode": self.news_window_mode,
+            "in_news_window": False,
             "timestamp": int(datetime.now().timestamp() * 1000),
         }
 
@@ -388,8 +436,15 @@ class NewsEngine:
             return self.unavailable_status(asset_class=asset_class)
 
         high_impact = self.filter.filter_high_impact(all_events, asset_currency)
-        risk_status = self.risk_engine.check_risk(high_impact)
-        news_ok = not risk_status["is_blocked"]
+        important_only = self.news_window_mode == "trade"
+        risk_status = self.risk_engine.check_risk(
+            high_impact, important_only=important_only)
+        in_window = bool(risk_status.get("in_news_window") or risk_status.get("is_blocked"))
+        if self.news_window_mode == "avoid":
+            news_ok = not in_window
+        else:
+            # trade: take positions in the 30m/1h window; ignore: never block.
+            news_ok = True
         next_events = [
             {
                 "time": event.get("time"),
@@ -411,11 +466,14 @@ class NewsEngine:
             "day_ok": session_status["day_ok"],
             "news_ok": news_ok,
             "session_ok": session_status["session_ok"],
-            "blocking_event": risk_status["blocking_event"],
+            "blocking_event": None if news_ok else risk_status["blocking_event"],
+            "window_event": risk_status["blocking_event"],
+            "in_news_window": in_window,
             "next_events": next_events,
             "status": self.provider.status,
             "source": self.provider.source,
             "calendar": self.provider.get_state(),
             "unavailable_policy": self.news_unavailable_policy,
+            "news_window_mode": self.news_window_mode,
             "timestamp": int(datetime.now().timestamp() * 1000),
         }

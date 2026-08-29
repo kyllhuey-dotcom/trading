@@ -147,10 +147,16 @@ async def test_news_engine_check_trading_allowed(monkeypatch, fixed_clock):
         return [{"impact": "High", "country": "USD", "date": "Thu Aug 20", "time": "10:15am"}]
 
     monkeypatch.setattr(engine.provider, "fetch_events", fake_fetch)
+    engine.set_window_mode("avoid")
     res = await engine.check_trading_allowed(asset_currency="EUR", asset_class="CRYPTO")
     assert res["trading_allowed"] is False  # blocking event in the window
     assert res["news_ok"] is False
     assert res["blocking_event"] is not None
+
+    engine.set_window_mode("trade")
+    res_trade = await engine.check_trading_allowed(asset_currency="EUR", asset_class="CRYPTO")
+    assert res_trade["news_ok"] is True
+    assert res_trade["trading_allowed"] is True
 
     async def fake_fetch_empty():
         return []

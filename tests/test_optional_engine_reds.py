@@ -28,7 +28,7 @@ def test_signal_setters_and_effective_rr_fallbacks():
     eng.set_risk_reward("bad")
     eng.set_atr_stop_multiplier("bad")
     eng.set_market_tuning({"btc_usdt": {"risk_reward": "not-a-float"}})
-    assert eng.effective_risk_reward("btc_usdt", "rsi") == 1.5
+    assert eng.effective_risk_reward("btc_usdt", "rsi") == 2.0
     eng.set_market_tuning({"btc_usdt": {"risk_reward": -1}})
     assert 1.0 <= eng.effective_risk_reward("btc_usdt", "rsi") <= 2.0
     eng.set_regime_adaptation(False)

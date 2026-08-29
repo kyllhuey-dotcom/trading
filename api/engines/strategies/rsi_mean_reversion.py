@@ -34,7 +34,7 @@ class RSIMeanReversionStrategy(BaseStrategy):
     Scores are selectivity scores from 0 to 100, not probabilities.  Stops are
     placed beyond the latest five-bar extreme by 0.1 ATR(14), and the effective
     risk/reward is always clamped to the inclusive range 1:1–1:2. The default
-    RSI target RR is 1.5 and is strictly symmetric for BUY and SELL.
+    RSI target RR is 2.0 (risk 1 : reward 2) and is strictly symmetric for BUY and SELL.
     """
 
     RSI_PERIOD = 14

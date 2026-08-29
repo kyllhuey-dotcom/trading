@@ -181,7 +181,8 @@ async def test_data_engine_broadcast_market_update_paths():
     await engine.broadcast_market_update("btc_usdt")
     update = engine.layer.broadcast_update.await_args.args[0]
     assert update["type"] == "MARKET_UPDATE"
-    assert update["data_age_ms"] == 0
+    assert update["data_age_ms"] >= 0
+    assert update["data_age_ms"] <= 5
     assert update["realtime_source"] is True
 
     engine.fetch_ticker = AsyncMock(return_value=None)

@@ -11,7 +11,7 @@ SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
     "cool_down_mins": {"type": "int", "min": 0, "max": 240, "default": "30"},
     "max_open_positions": {"type": "int", "min": 1, "max": 20, "default": "10"},
     "min_signal_score": {"type": "int", "min": 84, "max": 99, "default": "84"},
-    "risk_reward_ratio": {"type": "float", "min": 1.0, "max": 2.0, "default": "1.5"},
+    "risk_reward_ratio": {"type": "float", "min": 1.0, "max": 2.0, "default": "2.0"},
     "atr_stop_multiplier": {"type": "float", "min": 0.1, "max": 10.0, "default": "1.5"},
     "max_spread_pct": {"type": "float", "min": 0.01, "max": 5.0, "default": "0.5"},
     "trailing_stop_active": {"type": "bool", "default": "true"},
@@ -47,6 +47,19 @@ SETTINGS_SPEC: Dict[str, Dict[str, Any]] = {
     "timezone": {"type": "str", "default": "UTC"},
     "max_new_positions_per_scan": {"type": "int", "min": 1, "max": 3, "default": "3"},
     "opportunity_ttl_s": {"type": "float", "min": 5.0, "max": 120.0, "default": "30.0"},
+    # v3.0 — trade around high-impact events instead of blocking them.
+    "news_window_mode": {
+        "type": "enum",
+        "choices": ("avoid", "trade", "ignore"),
+        "default": "trade",
+    },
+    "news_window_before_mins": {"type": "int", "min": 30, "max": 60, "default": "30"},
+    "news_window_after_mins": {"type": "int", "min": 30, "max": 60, "default": "60"},
+    "persist_runtime_state": {"type": "bool", "default": "true"},
+    "runtime_intent_saved": {"type": "bool", "default": "false"},
+    "runtime_is_running": {"type": "bool", "default": "false"},
+    "runtime_armed": {"type": "bool", "default": "false"},
+    "runtime_mode": {"type": "str", "default": "DEMO"},
 }
 
 

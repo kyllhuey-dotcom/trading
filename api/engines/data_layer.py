@@ -37,6 +37,12 @@ class DataLayer:
         self._quote_cache_ttl = 0.25
         # Last successful source and provider timestamp for /api/health.
         self.market_source_state: Dict[str, Dict[str, Any]] = {}
+        self.db_manager: Optional[Any] = None
+        self._persist_max_age_s = 7 * 24 * 3600
+
+    def attach_persistence(self, db_manager: Any) -> None:
+        """SQLite last-good quotes/OHLCV so the bot keeps memory offline."""
+        self.db_manager = db_manager
 
     # ------------------------------------------------------------------ #
     # Failure tracking (escalating cooldown)                             #
@@ -72,6 +78,65 @@ class DataLayer:
                                   if now - v < self.max_failure_cooldown}
             self.failure_counts = {k: v for k, v in self.failure_counts.items()
                                    if k in self.failure_cache}
+
+    def _persist_quote(self, market_id: str, quote: TickerModel) -> None:
+        db = self.db_manager
+        if db is None or not hasattr(db, "save_last_quote"):
+            return
+        try:
+            payload = quote.model_dump() if hasattr(quote, "model_dump") else dict(quote)
+            db.save_last_quote(market_id, payload)
+        except Exception as exc:
+            logger.debug("Quote persist failed (%s): %s", market_id, exc)
+
+    def _load_persisted_quote(self, market_id: str) -> Optional[TickerModel]:
+        db = self.db_manager
+        if db is None or not hasattr(db, "load_last_quote"):
+            return None
+        try:
+            payload = db.load_last_quote(market_id, self._persist_max_age_s)
+        except Exception as exc:
+            logger.debug("Quote restore failed (%s): %s", market_id, exc)
+            return None
+        if not payload:
+            return None
+        payload.pop("_cached_at", None)
+        payload["status"] = "STALE"
+        src = str(payload.get("source") or "cache")
+        if "(cached)" not in src:
+            payload["source"] = f"{src} (cached)"
+        try:
+            fields = getattr(TickerModel, "model_fields", None) or getattr(
+                TickerModel, "__fields__", {})
+            return TickerModel(**{k: v for k, v in payload.items() if k in fields})
+        except Exception:
+            return None
+
+    def _persist_ohlcv(self, market_id: str, timeframe: str, df: pd.DataFrame) -> None:
+        db = self.db_manager
+        if db is None or not hasattr(db, "save_last_ohlcv") or df is None or df.empty:
+            return
+        try:
+            rows = df.tail(300).to_dict(orient="records")
+            db.save_last_ohlcv(market_id, timeframe, rows)
+        except Exception as exc:
+            logger.debug("OHLCV persist failed (%s): %s", market_id, exc)
+
+    def _load_persisted_ohlcv(self, market_id: str, timeframe: str) -> Optional[pd.DataFrame]:
+        db = self.db_manager
+        if db is None or not hasattr(db, "load_last_ohlcv"):
+            return None
+        try:
+            rows = db.load_last_ohlcv(market_id, timeframe, self._persist_max_age_s)
+        except Exception as exc:
+            logger.debug("OHLCV restore failed (%s): %s", market_id, exc)
+            return None
+        if not rows:
+            return None
+        try:
+            return pd.DataFrame(rows)
+        except Exception:
+            return None
 
     def register_provider(self, provider_id: str, provider: MarketDataProvider):
         self.providers[provider_id] = provider
@@ -127,6 +192,7 @@ class DataLayer:
                             "timestamp": quote_ts,
                             "received_at": int(time.time() * 1000),
                         }
+                        self._persist_quote(mid, quote)
                         return quote
                     self._record_failure(cache_key)
                 except Exception as e:
@@ -134,6 +200,10 @@ class DataLayer:
                     if "possibly delisted" not in str(e) and "No data found" not in str(e):
                         logger.debug(f"Provider {pid} failed for {psymbol}: {e}")
                     self._record_failure(cache_key)
+            cached = self._load_persisted_quote(mid)
+            if cached:
+                self._quote_cache[mid] = (now, cached)
+                return cached
             return None
 
         # Keep the input order (useful to callers and tests) while allowing
@@ -165,12 +235,16 @@ class DataLayer:
                         timeout=self.provider_timeout_s * 2)
                     if not df.empty:
                         self._record_success(cache_key)
+                        self._persist_ohlcv(symbol_id, timeframe, df)
                         return df
                     else:
                         self._record_failure(cache_key)
                 except Exception:
                     self._record_failure(cache_key)
-        
+
+        cached = self._load_persisted_ohlcv(symbol_id, timeframe)
+        if cached is not None and not cached.empty:
+            return cached
         return pd.DataFrame()
 
     async def get_order_book(self, market_id: str, catalog: Any) -> Optional[Dict[str, Any]]:

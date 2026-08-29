@@ -16,7 +16,8 @@ AUTO_EXECUTION_SCORE_FLOOR: int = 84
 
 # Default RSI take-profit multiple. BUY and SELL are strictly symmetric.
 # The effective RR is always clamped to the inclusive range 1.0–2.0.
-DEFAULT_RSI_RISK_REWARD: float = 1.5
+# v3.0: operator target is risk 1 : reward 2.
+DEFAULT_RSI_RISK_REWARD: float = 2.0
 RSI_RISK_REWARD_BOUNDS = (1.0, 2.0)
 
 # Realistic health targets (NOT a 99% win rate).
