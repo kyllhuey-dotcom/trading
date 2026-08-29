@@ -11,6 +11,45 @@ from ..exchange_constraints import parse_ccxt_market_constraints
 logger = logging.getLogger("CCXTAdapter")
 
 
+# v3.3.1 — read retry with FULL JITTER (AWS-style): transient network/5xx
+# errors on IDEMPOTENT READS (balance, positions, order status) are retried
+# a bounded number of times with an exponentially growing, fully randomized
+# delay. ORDER MUTATIONS (create/cancel/close) are NEVER retried here: a
+# failed send may still have reached the exchange (ambiguous outcome) and a
+# blind retry could duplicate a real order — the connector handles that case
+# with durable order intents + reconciliation instead.
+READ_RETRIES = 2
+READ_BASE_DELAY_S = 0.15
+READ_MAX_DELAY_S = 1.0
+
+
+async def read_with_retry(op, *args, retries: int = READ_RETRIES,
+                          base_delay_s: float = READ_BASE_DELAY_S,
+                          max_delay_s: float = READ_MAX_DELAY_S,
+                          **kwargs):
+    """Await ``op(*args, **kwargs)`` retrying transient failures (reads only).
+
+    Backoff = random(0, min(max_delay, base * 2**attempt)) — full jitter.
+    The LAST exception is re-raised to the caller (no swallowed outcome).
+    """
+    import asyncio
+    import random
+
+    last_exc: Optional[BaseException] = None
+    for attempt in range(retries + 1):
+        try:
+            return await op(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001 — the point is to retry any
+            last_exc = exc
+            if attempt >= retries:
+                break
+            cap = min(max_delay_s, base_delay_s * (2 ** attempt))
+            await asyncio.sleep(random.uniform(0.0, cap))
+    assert last_exc is not None
+    raise last_exc
+
+
+
 def _stop_order_args(exchange_id: str, sl: float, hedge_side: str):
     """Return the exchange-specific CCXT stop order type and parameters."""
     sl = float(sl)
@@ -129,7 +168,7 @@ class CCXTAdapter(BrokerAdapter):
         if not self.client:
             return 0.0
         try:
-            balance = await self.client.fetch_balance()
+            balance = await read_with_retry(self.client.fetch_balance)
             return float(balance.get('total', {}).get(asset, 0.0) or 0.0)
         except Exception as e:
             logger.warning(f"Fetch Balance Error ({self.exchange_id}): {e}")
@@ -141,7 +180,7 @@ class CCXTAdapter(BrokerAdapter):
             return []
         try:
             if hasattr(self.client, 'fetch_positions'):
-                return await self.client.fetch_positions() or []
+                return await read_with_retry(self.client.fetch_positions) or []
             return []
         except Exception as e:
             logger.warning(f"Fetch Positions Error ({self.exchange_id}): {e}")
@@ -318,7 +357,7 @@ class CCXTAdapter(BrokerAdapter):
         if not self.client or not order_id:
             return None
         try:
-            order = await self.client.fetch_order(order_id, symbol)
+            order = await read_with_retry(self.client.fetch_order, order_id, symbol)
             fee = order.get("fee") or {}
             try:
                 fees = float(fee.get("cost") or 0.0) if isinstance(fee, dict) else float(fee or 0.0)

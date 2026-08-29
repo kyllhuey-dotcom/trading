@@ -25,13 +25,20 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-import logging
+# v3.3.1: standalone-entry fix — running `python3 scripts/testnet_broker_matrix.py`
+# puts scripts/ (not the repo root) on sys.path, so `from api...` failed when
+# the script was launched outside the repo root or via an absolute path.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
