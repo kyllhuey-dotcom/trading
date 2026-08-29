@@ -8,6 +8,17 @@ v2.0 — Full API contract, authentication, live settings, real broker execution
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, Depends, Body, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
+from api.security import (
+    SESSION_COOKIE,
+    SESSION_TTL_S,
+    SECURITY_HEADERS,
+    AuthGuard,
+    api_key_matches,
+    client_id_from_request,
+    credential_is_valid,
+    extract_credential,
+    issue_session_token,
+)
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
 
@@ -100,7 +111,15 @@ HEARTBEAT_INTERVAL_S = float(os.getenv("HEARTBEAT_INTERVAL_S", "2.0" if TESTING 
 # --------------------------------------------------------------------------- #
 REAL_MODE_WARNING = "Live execution still experimental – use DEMO for strategies"
 
-app = FastAPI(title="Quantum Trade Pro", version="2.9.1", lifespan=None)
+app = FastAPI(
+    title="Quantum Trade Pro",
+    version="3.0.0",
+    lifespan=None,
+    docs_url="/docs" if TESTING else None,
+    redoc_url="/redoc" if TESTING else None,
+    openapi_url="/openapi.json" if TESTING else None,
+)
+auth_guard = AuthGuard()
 
 # Basic reinforced rate limiting (LOT H): sliding window per client IP,
 # separate budgets for reads and mutations. Env-tunable.
@@ -111,22 +130,41 @@ rate_limiter = SlidingWindowRateLimiter(
 )
 
 
+def _apply_security_headers(response, request=None):
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return response
+    for key, value in SECURITY_HEADERS.items():
+        try:
+            headers.setdefault(key, value)
+        except Exception:
+            break
+    try:
+        if request is not None and getattr(request.url, "scheme", "") == "https":
+            headers.setdefault(
+                "Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+    except Exception:
+        pass
+    return response
+
+
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     if request.method == "OPTIONS" or request.url.path == "/healthz":
-        return await call_next(request)
-    client_id = request.client.host if request.client else "unknown"
+        return _apply_security_headers(await call_next(request), request)
+    client_id = client_id_from_request(request)
     is_mutation = request.method in ("POST", "PUT", "PATCH", "DELETE")
     if not rate_limiter.allow(client_id, is_mutation):
-        return JSONResponse(
+        return _apply_security_headers(JSONResponse(
             status_code=429,
             content={"detail": "Rate limit exceeded — slow down",
                      "retry_after_s": int(rate_limiter.window_s)},
-        )
-    return await call_next(request)
+        ), request)
+    return _apply_security_headers(await call_next(request), request)
 
 db_manager = DatabaseManager()
 data_engine = DataEngine()
+data_engine.layer.attach_persistence(db_manager)
 analysis_engine = AnalysisEngine()
 news_engine = NewsEngine(db_manager=db_manager)
 news_aggregator = NewsAggregator()
@@ -360,15 +398,36 @@ data_engine.set_ws_manager(manager)  # wire the market-data bus to the WS layer
 # --------------------------------------------------------------------------- #
 # 6. Authentication                                                            #
 # --------------------------------------------------------------------------- #
-async def require_admin(x_api_key: Optional[str] = Header(default=None)) -> None:
-    """
-    Protects all mutating endpoints. If ADMIN_API_KEY is unset (dev/demo),
-    access is open but a warning is logged at startup.
+async def require_admin(
+    request: Request = None,  # default None: tests call require_admin(x_api_key=...)
+    x_api_key: Optional[str] = Header(default=None),
+) -> None:
+    """Protect mutating endpoints with a timing-safe key or signed session cookie.
+
+    If ADMIN_API_KEY is unset (dev/demo/TESTING), access stays open so the
+    existing test suite keeps working. Production must set the key.
     """
     if not ADMIN_API_KEY:
         return
-    if x_api_key != ADMIN_API_KEY:
-        raise HTTPException(status_code=401, detail="Missing or invalid X-API-Key header")
+    cookie = None
+    client_id = "unknown"
+    if request is not None:
+        cookie = request.cookies.get(SESSION_COOKIE)
+        client_id = client_id_from_request(request)
+        if auth_guard.is_locked(client_id):
+            raise HTTPException(
+                status_code=429, detail="Too many failed authentications")
+    provided = extract_credential(x_api_key, cookie)
+    if credential_is_valid(provided, ADMIN_API_KEY):
+        if request is not None:
+            auth_guard.note_success(client_id)
+        return
+    if request is not None:
+        locked, _remaining = auth_guard.note_failure(client_id)
+        if locked:
+            raise HTTPException(
+                status_code=429, detail="Too many failed authentications")
+    raise HTTPException(status_code=401, detail="Missing or invalid X-API-Key header")
 
 
 # --------------------------------------------------------------------------- #
@@ -550,6 +609,7 @@ def _scanner_payload(sort="score", order="desc", filter_mode="all", live_only=Fa
         "excluded": (bot_state.get("opportunity_ranking") or {}).get("excluded", []),
         "news_unavailable_policy": settings_provider.get().get(
             "news_unavailable_policy", "block_tradfi_only"),
+        "news_window_mode": settings_provider.get().get("news_window_mode", "trade"),
         **summary,
     }
 
@@ -1230,6 +1290,44 @@ async def get_market_snapshot(market_id: str) -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # 9. API endpoints                                                            #
 # --------------------------------------------------------------------------- #
+@app.post("/api/login")
+async def login(request: Request, body: Dict[str, Any] = Body(default=None)):
+    """Issue an HttpOnly session cookie after a timing-safe key check."""
+    payload = body or {}
+    if not ADMIN_API_KEY:
+        return {"success": True, "auth_required": False}
+    client_id = client_id_from_request(request)
+    if auth_guard.is_locked(client_id):
+        raise HTTPException(status_code=429, detail="Too many failed authentications")
+    provided = str(payload.get("api_key") or payload.get("password") or "")
+    if not api_key_matches(provided, ADMIN_API_KEY):
+        locked, _remaining = auth_guard.note_failure(client_id)
+        if locked:
+            raise HTTPException(
+                status_code=429, detail="Too many failed authentications")
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    auth_guard.note_success(client_id)
+    token = issue_session_token(ADMIN_API_KEY)
+    response = JSONResponse({"success": True, "auth_required": True})
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        httponly=True,
+        samesite="lax",
+        secure=not TESTING,
+        max_age=SESSION_TTL_S,
+        path="/",
+    )
+    return response
+
+
+@app.post("/api/logout")
+async def logout():
+    response = JSONResponse({"success": True})
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
+
+
 @app.get("/healthz")
 async def healthz():
     return {
@@ -1321,6 +1419,7 @@ async def get_status(market_id: str = "btc_usdt"):
         "strategy_name": "RSI-14 Reversal",
         "risk_reward_rsi": DEFAULT_RSI_RISK_REWARD,
         "news_unavailable_policy": news_engine.news_unavailable_policy,
+        "news_window_mode": getattr(news_engine, "news_window_mode", "trade"),
         "block_reason": classify_block_reason(
             running=bot_state["is_running"],
             armed=bot_state["armed"],
@@ -1411,6 +1510,23 @@ def refresh_execution_intent(n_candidates: int = 0) -> Dict[str, Any]:
     return intent
 
 
+def persist_runtime_intent() -> None:
+    """Remember START/ARM/mode so a restart keeps running until the user stops."""
+    settings = settings_provider.get()
+    if str(settings.get("persist_runtime_state", "true")).lower() != "true":
+        return
+    try:
+        db_manager.save_settings({
+            "runtime_intent_saved": "true",
+            "runtime_is_running": "true" if bot_state.get("is_running") else "false",
+            "runtime_armed": "true" if bot_state.get("armed") else "false",
+            "runtime_mode": str(bot_state.get("mode") or "DEMO"),
+        })
+        settings_provider.invalidate()
+    except Exception as exc:
+        logger.debug("Runtime intent persist failed: %s", exc)
+
+
 @app.post("/api/start", dependencies=[Depends(require_admin)])
 async def start_bot():
     settings = settings_provider.get()
@@ -1425,6 +1541,7 @@ async def start_bot():
             bot_state["armed"] = True
     state_machine.transition_to(BotState.RUNNING)
     refresh_execution_intent()
+    persist_runtime_intent()
     if arm_demo and bot_state["mode"] == "DEMO" and bot_state["armed"]:
         db_manager.log_audit("INFO", "SYSTEM_START",
                              "Bot started — DEMO auto-armed (arm_on_start_demo)")
@@ -1443,6 +1560,7 @@ async def stop_bot():
         bot_state["is_running"] = False
     state_machine.transition_to(BotState.STOPPED)
     refresh_execution_intent()
+    persist_runtime_intent()
     db_manager.log_audit("INFO", "SYSTEM_STOP", "Bot stopped")
     return {"success": True, "state": state_machine.current_state.value}
 
@@ -1453,6 +1571,7 @@ async def arm_bot():
         bot_state["armed"] = not bot_state["armed"]
         armed = bot_state["armed"]
     refresh_execution_intent()
+    persist_runtime_intent()
     db_manager.log_audit("INFO", "SYSTEM_ARM", f"System armed state: {armed}")
     # P0: arming while running triggers an immediate scan
     if armed and bot_state.get("is_running") and not bot_state.get("scanning"):
@@ -1468,6 +1587,7 @@ async def toggle_mode():
         return {"success": False, "mode": bot_state["mode"], "message": msg}
     async with state_lock:
         bot_state["mode"] = target
+    persist_runtime_intent()
     db_manager.log_audit("WARNING" if target == "REAL" else "INFO", "MODE_CHANGE",
                          f"Mode switched to {target}: {msg}")
     if target == "REAL":
@@ -1482,6 +1602,7 @@ async def toggle_mode():
 @app.post("/api/emergency-stop", dependencies=[Depends(require_admin)])
 async def emergency_stop_api():
     await emergency_stop_logic("Manual emergency stop from UI")
+    persist_runtime_intent()
     return {"success": True, "state": state_machine.current_state.value}
 
 
@@ -1492,6 +1613,7 @@ async def emergency_reset():
         bot_state["armed"] = False
         bot_state["is_running"] = False
     state_machine.transition_to(BotState.STOPPED)
+    persist_runtime_intent()
     db_manager.log_audit("INFO", "EMERGENCY_RESET", "Emergency stop reset — system idle")
     return {"success": True, "state": state_machine.current_state.value}
 
@@ -2011,6 +2133,7 @@ async def get_health():
         "calendar": news_engine.provider.get_state(),
         "provider_capabilities": PROVIDER_CAPABILITIES,
         "news_unavailable_policy": news_engine.news_unavailable_policy,
+        "news_window_mode": getattr(news_engine, "news_window_mode", "trade"),
     }
 
 
@@ -2255,6 +2378,20 @@ _serverless_ws_warned = {"done": False}
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    if ADMIN_API_KEY and not TESTING:
+        token = None
+        try:
+            token = ws.query_params.get("token") or ws.cookies.get(SESSION_COOKIE)
+        except Exception:
+            token = None
+        header_key = None
+        try:
+            header_key = ws.headers.get("x-api-key")
+        except Exception:
+            header_key = None
+        if not credential_is_valid(extract_credential(header_key, token), ADMIN_API_KEY):
+            await ws.close(code=4401)
+            return
     if is_serverless_runtime():
         # P0-4 (2026-08-23): on a serverless runtime the heartbeat/broadcast
         # loops are disabled — a connected WS client will never receive
@@ -2303,13 +2440,31 @@ app.mount("/", StaticFiles(directory="public"), name="public")
 # 10. Lifespan + entry point                                                  #
 # --------------------------------------------------------------------------- #
 def apply_startup_automation(settings: Dict[str, str]) -> None:
-    """Apply persisted startup intent without ever enabling REAL mode."""
-    auto_arm = str(settings.get("auto_arm_on_startup", "false")).lower() == "true"
-    auto_start = str(settings.get("auto_start_on_startup", "false")).lower() == "true"
-    # Arming implies starting: an armed-but-stopped process was the original
-    # production ambiguity. auto_start alone intentionally remains unarmed.
-    bot_state["armed"] = auto_arm
-    bot_state["is_running"] = auto_arm or auto_start
+    """Restore START/ARM/mode so the bot keeps running until the operator stops it.
+
+    Fresh installs still honour auto_start_on_startup / auto_arm_on_startup
+    (auto_arm never arms REAL by itself). A persisted REAL mode is restored
+    as operator intent; execution still requires a connected broker.
+    """
+    persist = str(settings.get("persist_runtime_state", "true")).lower() == "true"
+    saved = str(settings.get("runtime_intent_saved", "false")).lower() == "true"
+    if persist and saved:
+        # Operator already started/stopped/armed this install: restore that
+        # intent so the bot keeps running until they disable it.
+        bot_state["is_running"] = str(
+            settings.get("runtime_is_running", "false")).lower() == "true"
+        bot_state["armed"] = str(
+            settings.get("runtime_armed", "false")).lower() == "true"
+        mode = str(settings.get("runtime_mode") or bot_state.get("mode") or "DEMO").upper()
+        if mode in ("DEMO", "REAL"):
+            bot_state["mode"] = mode
+    else:
+        auto_arm = str(settings.get("auto_arm_on_startup", "false")).lower() == "true"
+        auto_start = str(settings.get("auto_start_on_startup", "false")).lower() == "true"
+        # Arming implies starting: an armed-but-stopped process was the original
+        # production ambiguity. auto_start alone intentionally remains unarmed.
+        bot_state["armed"] = auto_arm
+        bot_state["is_running"] = auto_arm or auto_start
     if bot_state["is_running"]:
         state_machine.transition_to(BotState.RUNNING)
     else:

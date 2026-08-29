@@ -28,11 +28,11 @@ def test_active_strategy_is_always_rsi_for_automation():
     assert "rsi" in engine.cost_filter_strategies
 
 
-def test_rsi_default_rr_is_1_5():
-    assert DEFAULT_RSI_RISK_REWARD == 1.5
-    assert SETTINGS_SPEC["risk_reward_ratio"]["default"] == "1.5"
+def test_rsi_default_rr_is_2_0():
+    assert DEFAULT_RSI_RISK_REWARD == 2.0
+    assert SETTINGS_SPEC["risk_reward_ratio"]["default"] == "2.0"
     engine = SignalEngine()
-    assert engine.effective_risk_reward("btc_usdt", "rsi") == 1.5
+    assert engine.effective_risk_reward("btc_usdt", "rsi") == 2.0
 
 
 def test_radar_disables_legacy_strategy_execution():

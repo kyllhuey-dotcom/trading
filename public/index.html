@@ -489,7 +489,7 @@
                         <p class="text-xs text-secondary font-medium" data-i18n="radarSub">Unified scanning of all tracked instruments.</p>
                         <div class="flex flex-wrap gap-3 mt-2 text-[10px] font-bold text-secondary">
                             <span><span data-i18n="activeStrategy">Active strategy</span>: <strong data-i18n="strategyRsiName">RSI-14 Reversal</strong></span>
-                            <span><span data-i18n="riskRewardRsi">RSI target RR</span>: <strong>1.5</strong></span>
+                            <span><span data-i18n="riskRewardRsi">RSI target RR</span>: <strong>2.0</strong></span>
                             <span><span data-i18n="scannerProgress">Scanner progress</span>: <strong id="radar-progress">0/127</strong></span>
                             <span><span data-i18n="marketsUnavailable">Markets unavailable</span>: <strong id="radar-unavailable">0</strong></span>
                             <span><span data-i18n="scannerError">Scanner error</span>: <strong id="radar-error">—</strong></span>
@@ -1000,8 +1000,8 @@
                                     <input type="range" id="set-min_signal_score" min="84" max="99" step="1" value="84" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-min_signal_score').innerText=this.value">
                                 </div>
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="riskRewardRsi">RSI target RR</label><span class="text-[10px] font-bold text-accent-green" id="val-risk_reward_ratio">1.5</span></div>
-                                    <input type="range" id="set-risk_reward_ratio" min="1.0" max="5.0" step="0.1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-risk_reward_ratio').innerText=this.value">
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="riskRewardRsi">RSI target RR</label><span class="text-[10px] font-bold text-accent-green" id="val-risk_reward_ratio">2.0</span></div>
+                                    <input type="range" id="set-risk_reward_ratio" min="1.0" max="2.0" step="0.1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-risk_reward_ratio').innerText=this.value">
                                 </div>
                                 <div class="flex items-center justify-between p-3 bg-black/[0.02] rounded-xl">
                                     <div>
@@ -1018,6 +1018,40 @@
                                 <div class="space-y-2">
                                     <label class="text-[10px] font-black text-secondary uppercase" data-i18n="maxSpread">Max Allowed Spread (%)</label>
                                     <input type="number" id="set-max_spread_pct" step="0.01" class="w-full bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-bold">
+                                </div>
+                            </div>
+                            <button onclick="saveBotSettings()" class="w-full btn-premium bg-black text-white dark:bg-white dark:text-black py-4 mt-8 font-black uppercase tracking-widest text-xs shadow-xl" data-i18n="deploy">Deploy Neural Parameters</button>
+                        </div>
+
+                        <div class="card-premium">
+                            <div class="flex items-center gap-3 mb-8 border-b border-black/5 dark:border-white/5 pb-4">
+                                <i data-lucide="newspaper" class="text-accent-orange w-5 h-5"></i>
+                                <h4 class="text-sm font-black uppercase tracking-widest" data-i18n="newsWindowMode">News window</h4>
+                            </div>
+                            <p class="text-[10px] text-secondary font-medium mb-6" data-i18n="newsWindowHelp">Trade 30 minutes before and 1 hour after important high-impact events (CPI, NFP, FOMC…). Avoid still blocks. Calendar outages still fail-safe for tradfi.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
+                                <div class="space-y-2">
+                                    <label class="text-[10px] font-black text-secondary uppercase" data-i18n="newsWindowMode">News window</label>
+                                    <select id="set-news_window_mode" class="w-full bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2 outline-none text-xs font-bold">
+                                        <option value="trade" data-i18n="newsWindowTrade">Trade around important events</option>
+                                        <option value="avoid" data-i18n="newsWindowAvoid">Avoid (block) high-impact windows</option>
+                                        <option value="ignore" data-i18n="newsWindowIgnore">Ignore calendar windows</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center justify-between p-3 bg-black/[0.02] rounded-xl">
+                                    <div>
+                                        <p class="text-[10px] font-black uppercase" data-i18n="persistRuntime">Keep running after restart</p>
+                                        <p class="text-[8px] text-secondary" data-i18n="persistRuntimeHelp">Remember START / ARM until you stop the bot.</p>
+                                    </div>
+                                    <input type="checkbox" id="set-persist_runtime_state" class="w-10 h-5 bg-gray-200 rounded-full appearance-none checked:bg-accent-blue relative transition-colors cursor-pointer before:content-[''] before:absolute before:w-4 before:h-4 before:bg-white before:rounded-full before:top-0.5 before:left-0.5 checked:before:left-5 before:transition-all">
+                                </div>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Before (min)</label><span class="text-[10px] font-bold text-accent-blue" id="val-news_window_before_mins">30</span></div>
+                                    <input type="range" id="set-news_window_before_mins" min="30" max="60" step="30" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="document.getElementById('val-news_window_before_mins').innerText=this.value">
+                                </div>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">After (min)</label><span class="text-[10px] font-bold text-accent-blue" id="val-news_window_after_mins">60</span></div>
+                                    <input type="range" id="set-news_window_after_mins" min="30" max="60" step="30" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="document.getElementById('val-news_window_after_mins').innerText=this.value">
                                 </div>
                             </div>
                             <button onclick="saveBotSettings()" class="w-full btn-premium bg-black text-white dark:bg-white dark:text-black py-4 mt-8 font-black uppercase tracking-widest text-xs shadow-xl" data-i18n="deploy">Deploy Neural Parameters</button>
@@ -1230,7 +1264,18 @@
         /* ------------------------------------------------------------------ *
          *  API layer (with optional admin key + retry on 401/403)            *
          * ------------------------------------------------------------------ */
-        let apiKey = localStorage.getItem('qtp-api-key') || '';
+        let apiKey = '';
+        try {
+            apiKey = sessionStorage.getItem('qtp-api-key') || '';
+            if (!apiKey) {
+                const legacy = localStorage.getItem('qtp-api-key') || '';
+                if (legacy) {
+                    apiKey = legacy;
+                    sessionStorage.setItem('qtp-api-key', legacy);
+                    localStorage.removeItem('qtp-api-key');
+                }
+            }
+        } catch (error) {}
         let askingForKey = false;
         let consecutiveApiFailures = 0;
 
@@ -1246,10 +1291,22 @@
             if (banner && consecutiveApiFailures >= 3) banner.classList.remove('hidden');
         }
 
+        async function establishSession(key) {
+            if (!key) return;
+            try {
+                await fetch('/api/login', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: key }),
+                });
+            } catch (error) {}
+        }
+
         async function fetchAPI(endpoint, method = 'GET', body = null, _retried = false) {
             try {
                 const url = `/api${endpoint}`;
-                const options = { method };
+                const options = { method, credentials: 'include' };
                 const headers = {};
                 if (apiKey) headers['X-API-Key'] = apiKey;
                 if (body) { headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
@@ -1259,7 +1316,8 @@
                     const key = await askForApiKey();
                     if (key) {
                         apiKey = key;
-                        localStorage.setItem('qtp-api-key', key);
+                        try { sessionStorage.setItem('qtp-api-key', key); } catch (error) {}
+                        await establishSession(key);
                         return await fetchAPI(endpoint, method, body, true);
                     }
                     noteApiFailure();
@@ -1284,6 +1342,7 @@
                 resolve(key ? key.trim() : null);
             });
         }
+        if (apiKey) establishSession(apiKey);
 
         /* ------------------------------------------------------------------ *
          *  Theme                                                             *
@@ -2107,6 +2166,13 @@
                     if (el) {
                         if (el.type === 'checkbox') el.checked = s[k] === 'true';
                         else el.value = s[k];
+                        const val = document.getElementById(`val-${k}`);
+                        if (val && el.type === 'range') {
+                            if (k === 'max_risk_pct' || k === 'max_daily_loss_pct') val.innerText = el.value + '%';
+                            else if (k === 'max_leverage') val.innerText = el.value + 'x';
+                            else if (k === 'cool_down_mins') val.innerText = el.value + 'm';
+                            else val.innerText = el.value;
+                        }
                     }
                 });
             }

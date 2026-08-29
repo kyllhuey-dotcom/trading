@@ -273,7 +273,15 @@
             scannerProgress: "Scanner progress",
             marketsUnavailable: "Markets unavailable",
             scannerError: "Scanner error",
-            lastScan: "Last scan"
+            lastScan: "Last scan",
+            newsWindowMode: "News window",
+            newsWindowHelp: "Trade 30 minutes before and 1 hour after important high-impact events. Avoid still blocks. Tradfi stays fail-safe if the calendar is down.",
+            newsWindowTrade: "Trade around important events",
+            newsWindowAvoid: "Avoid (block) high-impact windows",
+            newsWindowIgnore: "Ignore calendar windows",
+            persistRuntime: "Keep running after restart",
+            persistRuntimeHelp: "Remember START / ARM until you stop the bot.",
+            sessionLogin: "Session login"
         },
         fr: {
             dashboard: "Tableau de bord",
@@ -548,7 +556,15 @@
             scannerProgress: "Progression du scanner",
             marketsUnavailable: "Marchés indisponibles",
             scannerError: "Erreur du scanner",
-            lastScan: "Dernier scan"
+            lastScan: "Dernier scan",
+            newsWindowMode: "Fenêtre news",
+            newsWindowHelp: "Trader 30 minutes avant et 1 heure après les annonces importantes. Avoid bloque encore. Le tradfi reste fail-safe si le calendrier est HS.",
+            newsWindowTrade: "Trader autour des événements importants",
+            newsWindowAvoid: "Éviter (bloquer) les fenêtres high-impact",
+            newsWindowIgnore: "Ignorer les fenêtres calendrier",
+            persistRuntime: "Continuer après redémarrage",
+            persistRuntimeHelp: "Mémoriser START / ARM jusqu'à l'arrêt manuel.",
+            sessionLogin: "Connexion de session"
         },
         es: {
             dashboard: "Panel",
@@ -823,7 +839,15 @@
             scannerProgress: "Progreso del escáner",
             marketsUnavailable: "Mercados no disponibles",
             scannerError: "Error del escáner",
-            lastScan: "Último escaneo"
+            lastScan: "Último escaneo",
+            newsWindowMode: "Ventana de noticias",
+            newsWindowHelp: "Operar 30 minutos antes y 1 hora después de anuncios importantes. Avoid sigue bloqueando. Tradfi permanece fail-safe si el calendario cae.",
+            newsWindowTrade: "Operar alrededor de eventos importantes",
+            newsWindowAvoid: "Evitar (bloquear) ventanas de alto impacto",
+            newsWindowIgnore: "Ignorar ventanas del calendario",
+            persistRuntime: "Seguir tras reinicio",
+            persistRuntimeHelp: "Recordar START / ARM hasta que detengas el bot.",
+            sessionLogin: "Inicio de sesión"
         },
         de: {
             dashboard: "Dashboard",
@@ -1098,7 +1122,15 @@
             scannerProgress: "Scanner-Fortschritt",
             marketsUnavailable: "Märkte nicht verfügbar",
             scannerError: "Scannerfehler",
-            lastScan: "Letzter Scan"
+            lastScan: "Letzter Scan",
+            newsWindowMode: "News-Fenster",
+            newsWindowHelp: "30 Minuten vor und 1 Stunde nach wichtigen Events handeln. Avoid blockiert weiter. Tradfi bleibt fail-safe bei Kalenderausfall.",
+            newsWindowTrade: "Um wichtige Events handeln",
+            newsWindowAvoid: "High-Impact-Fenster meiden (blockieren)",
+            newsWindowIgnore: "Kalenderfenster ignorieren",
+            persistRuntime: "Nach Neustart weiterlaufen",
+            persistRuntimeHelp: "START / ARM merken, bis du den Bot stoppst.",
+            sessionLogin: "Sitzungs-Login"
         }
     };
 

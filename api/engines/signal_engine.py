@@ -146,7 +146,7 @@ class SignalEngine:
                               strategy: Optional[str] = None) -> float:
         """Take-profit target (R multiple) for a market, tuned per market.
 
-        RSI always uses a symmetric RR clamped to 1.0–2.0 with a 1.5 default.
+        RSI always uses a symmetric RR clamped to 1.0–2.0 with a 2.0 default.
         """
         tuning = self.market_tuning.get(market_id or "", {}) or {}
         if str(strategy or "").lower() == "rsi":

@@ -96,7 +96,7 @@ def test_scanner_api_exposes_full_universe(monkeypatch):
     assert data["markets_total"] == len(ids)
     assert len(data["assets"]) == len(ids)
     assert data["markets_unavailable"] >= 1
-    assert data["risk_reward_rsi"] == 1.5
+    assert data["risk_reward_rsi"] == 2.0
     assert data["active_strategy"] == "rsi"
 
 
@@ -233,7 +233,7 @@ def test_status_and_diagnose_expose_block_reason():
     status = client.get("/api/status?market_id=btc_usdt").json()
     assert "block_reason" in status
     assert status["active_strategy"] == "rsi"
-    assert status["risk_reward_rsi"] == 1.5
+    assert status["risk_reward_rsi"] == 2.0
     assert "news_unavailable_policy" in status
     diag = client.get("/api/diagnose?market_id=btc_usdt").json()
     assert "block_reason" in diag
@@ -272,6 +272,8 @@ def test_i18n_new_keys_parity():
     required = {
         "strategyRsiName", "activeStrategy", "riskRewardRsi",
         "scannerProgress", "marketsUnavailable", "scannerError", "lastScan",
+        "newsWindowMode", "newsWindowHelp", "newsWindowTrade", "newsWindowAvoid",
+        "newsWindowIgnore", "persistRuntime", "persistRuntimeHelp", "sessionLogin",
     }
     for lang, expected in {
         "en": "RSI-14 Reversal",

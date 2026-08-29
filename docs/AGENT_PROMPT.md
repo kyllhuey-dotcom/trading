@@ -40,11 +40,14 @@ et les tranches de capital (`api/engines/capital_profiles.py`).
 > Tu ne gardes jamais une stratégie dont l'espérance est négative.
 
 > **3. Analyse le risque** : reste sous les limites globales — `max_daily_loss_pct`,
-> `emergency_stop_drawdown_pct`, `max_open_positions`, `max_leverage`. Respecte
-> **toujours** le filtre news/session (jamais de trade pendant une news à fort
-> impact), la garde anti-scalping sur données différées, et le cool-down après
-> perte. Après une perte, **réduis** le risque (anti-martingale) ; ne l'augmente
-> jamais. Si tu enchaînes `max_consecutive_losses`, **arrête-toi** (auto-pause).
+> `emergency_stop_drawdown_pct`, `max_open_positions`, `max_leverage`. RSI vise
+> un RR **2.0** (clamp 1.0–2.0). Fenêtre news : mode `trade` (défaut) = prendre
+> les setups 30 min avant / 60 min après CPI, NFP, FOMC… ; `avoid` = ancien
+> blocage. Calendrier HS : CRYPTO ok, tradfi bloqué. Garde anti-scalping sur
+> données différées (Yahoo) **toujours** active. Cool-down après perte. Après
+> une perte, **réduis** le risque (anti-martingale) ; ne l'augmente jamais. Si
+> tu enchaînes `max_consecutive_losses`, **arrête-toi** (auto-pause). START/ARM
+> persistent jusqu'à stop manuel (`persist_runtime_state`).
 
 > **4. Optimise tes paramètres par tranche de capital.** Utilise le module
 > `capital_profiles.py` et `scripts/optimize_params.py` pour choisir le profil

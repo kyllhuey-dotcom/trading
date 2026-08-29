@@ -179,6 +179,22 @@ class DatabaseManager:
                     payload_json TEXT NOT NULL
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS last_quotes (
+                    market_id TEXT PRIMARY KEY,
+                    saved_at REAL NOT NULL,
+                    payload_json TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS last_ohlcv (
+                    market_id TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    saved_at REAL NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    PRIMARY KEY (market_id, timeframe)
+                )
+            """)
 
             # Seed default settings
             cursor = conn.execute("SELECT COUNT(*) FROM settings")
@@ -192,7 +208,7 @@ class DatabaseManager:
                     "trailing_stop_active": "true",
                     "max_spread_pct": "0.5",
                     "min_signal_score": "84",
-                    "risk_reward_ratio": "1.5",
+                    "risk_reward_ratio": "2.0",
                     "trailing_stop_distance_atr": "1.5",
                     "emergency_stop_drawdown_pct": "10.0",
                     "auto_arm_on_startup": "false",
@@ -223,9 +239,11 @@ class DatabaseManager:
                        WHERE key = 'active_strategies'
                          AND value = 'structure,arbitrage,tape,liquidity'"""
                 )
+                # v3.0: operator target is risk 1 : reward 2. Reverse the
+                # previous v2.9 seed that rewrote an explicit 2.0 back to 1.5.
                 conn.execute(
-                    """UPDATE settings SET value = '1.5'
-                       WHERE key = 'risk_reward_ratio' AND value = '2.0'"""
+                    """UPDATE settings SET value = '2.0'
+                       WHERE key = 'risk_reward_ratio' AND value = '1.5'"""
                 )
                 # P0-1 (2026-08-23): the previous seed default `block_all` kept
                 # prod crypto blocked whenever FairEconomy/ForexFactory TLS
@@ -497,6 +515,76 @@ class DatabaseManager:
             return None
         payload["saved_at"] = float(row["saved_at"])
         return payload
+
+    # ------------------------------------------------------------------ #
+    # Last-good market snapshots (offline memory)                         #
+    # ------------------------------------------------------------------ #
+    def save_last_quote(self, market_id: str, payload: Dict[str, Any],
+                        saved_at: Optional[float] = None) -> None:
+        import time
+
+        if not market_id or not isinstance(payload, dict):
+            return
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO last_quotes
+                   (market_id, saved_at, payload_json) VALUES (?, ?, ?)""",
+                (str(market_id), float(saved_at or time.time()),
+                 json.dumps(payload, default=str)),
+            )
+
+    def load_last_quote(self, market_id: str,
+                        max_age_s: float = 7 * 24 * 3600) -> Optional[Dict[str, Any]]:
+        import time
+
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT saved_at, payload_json FROM last_quotes WHERE market_id = ?",
+                (str(market_id),),
+            ).fetchone()
+        if not row or time.time() - float(row["saved_at"]) > float(max_age_s):
+            return None
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        payload["_cached_at"] = float(row["saved_at"])
+        return payload
+
+    def save_last_ohlcv(self, market_id: str, timeframe: str, rows: List[Any],
+                        saved_at: Optional[float] = None) -> None:
+        import time
+
+        if not market_id or not timeframe:
+            return
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO last_ohlcv
+                   (market_id, timeframe, saved_at, payload_json)
+                   VALUES (?, ?, ?, ?)""",
+                (str(market_id), str(timeframe), float(saved_at or time.time()),
+                 json.dumps(rows, default=str)),
+            )
+
+    def load_last_ohlcv(self, market_id: str, timeframe: str,
+                        max_age_s: float = 7 * 24 * 3600) -> Optional[List[Any]]:
+        import time
+
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """SELECT saved_at, payload_json FROM last_ohlcv
+                   WHERE market_id = ? AND timeframe = ?""",
+                (str(market_id), str(timeframe)),
+            ).fetchone()
+        if not row or time.time() - float(row["saved_at"]) > float(max_age_s):
+            return None
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload, list) else None
 
     # ------------------------------------------------------------------ #
     # Helpers                                                             #

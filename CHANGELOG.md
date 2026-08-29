@@ -1,5 +1,24 @@
 # Changelog - Quantum Trade Pro
 
+## [3.0.0] - 2026-08-29 — Données fiables, mémoire, RR 1:2, news tradable, auth
+
+- RSI cible **RR 2.0** (clamp 1.0–2.0). Seed SQLite et migration `1.5 → 2.0`.
+  Slider UI max 2.0. Les tests structure qui **fixent** 1.5 restent à 1.5.
+- Fenêtre news configurable : `trade` (défaut, 30 min avant / 60 min après
+  les High-impact importants), `avoid` (ancien blocage), `ignore`.
+  Outage calendrier : CRYPTO ok, tradfi fail-safe (`block_tradfi_only`).
+- Mémoire hors-ligne : tables `last_quotes` / `last_ohlcv` (7 jours). Restore
+  `STALE` pour l’UI ; l’auto-exec exige toujours une quote `LIVE`.
+- Kraken / OKX : CCXT puis REST public natif (`exchange_rest.py`). Cascade
+  crypto **non réordonnée**.
+- START / ARM / mode persistés (`persist_runtime_state=true`) jusqu’à stop
+  manuel. `auto_arm_on_startup` ne arme toujours pas REAL tout seul.
+- Sécurité : cookie HttpOnly `qtp_session`, HMAC timing-safe, lockout,
+  CSP / X-Frame-Options, docs OpenAPI masqués hors `TESTING`, sessionStorage
+  (plus localStorage) pour la clé UI, `credentials:'include'`.
+- Mutations toujours `require_admin`. GET status/settings restent publics
+  (lecture locale). Pas de promesse de win rate 99 %.
+
 ## [2.9.3] - 2026-08-23 — RSI 1.5 only, P0 Railway
 
 - Auto uniquement RSI-14, RR 1.5 clampé 1.0–2.0, plancher 84.
