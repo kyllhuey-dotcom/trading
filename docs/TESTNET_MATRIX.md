@@ -3,15 +3,33 @@
 > **REAL is experimental. A successful testnet campaign is required before
 > any real ARM. No profitability guarantee.**
 
-## Statut honnête
+## Statut honnête (v3.3.2 — 2026-08-29)
 
-**La campagne testnet externe n'a PAS pu être exécutée dans cet
-environnement** : aucune clé testnet (Binance/Bybit/OKX/Gate) n'est
-disponible dans le sandbox, et simuler le résultat serait déshonnête.
+**La campagne testnet externe n'a PAS été exécutée** et son PASS n'a PAS été
+obtenu : le sandbox Arena n'a ni clés testnet ni sortie réseau vers les
+hostnames testnet (HTTP 000 sur les 4 endpoints de pré-vol). Simuler le
+résultat serait déshonnête — **REAL reste donc expérimental.**
+
+Deux chemins pour obtenir le PASS (les clés doivent être les vôtres, créées
+par vous sur les portaux officiels, read + trading uniquement, jamais de
+withdrawal) :
+
+1. **GitHub Actions (recommandé)** : le workflow
+   `testnet-campaign.yml` (livré prêt dans `docs/ci/workflows/`, à déposer
+   dans `.github/workflows/` — voir `docs/CI_SETUP.md` ; manuel uniquement,
+   jamais automatique) lit les clés dans les **secrets du repo** (`BINANCE_API_KEY`
+   / `BINANCE_API_SECRET`, `BYBIT_API_KEY` / `BYBIT_API_SECRET`,
+   `OKX_API_KEY` / `OKX_API_SECRET` / `OKX_API_PASSPHRASE`, `GATE_API_KEY` /
+   `GATE_API_SECRET`), lance `scripts/testnet_broker_matrix.py` avec
+   `CONFIRM_TESTNET=true` et publie le rapport scrubé en artefact.
+   Actions → *Testnet campaign* → *Run workflow*.
+2. **Machine avec sortie réseau** : `docs/TESTNET_KEYS_GUIDE.md` (pré-vol
+   curl, export des variables, commande exacte).
 
 Tout le reste est en place et testé hors-ligne :
 - mocks contractuels complets des 4 exchanges (`tests/exchange_matrix.py`) ;
 - script de campagne opt-in `scripts/testnet_broker_matrix.py` ;
+- workflow CI dédié (opt-in manuel) ;
 - matrice de couverture par contrat (ci-dessous).
 
 ## Exigence avant ARM REAL

@@ -1,37 +1,80 @@
-"""Premium Market Hub helpers — pure (LOT 2)."""
-from typing import Any, Dict, List
+"""Premium Market Hub helpers — pure (LOT 2).
+
+v3.3.2 (D1/D2): 100 % real data.
+
+- The ``synthetic_sparkline`` (a curve invented from the last price) has been
+  REMOVED. A hub row only carries a sparkline when the scanner attached the
+  REAL latest 1h OHLCV closes; otherwise the list is empty and the UI draws
+  nothing. An empty chart is honest; a fake one is not.
+- A missing price is ``None`` (rendered as "—"), never a fabricated ``0.0``.
+"""
+from typing import Any, Dict, List, Optional
 
 
-def synthetic_sparkline(price: float, change_pct: float, points: int = 12) -> List[float]:
-    """Deterministic 24h-ish sparkline from last price + change %."""
+def _to_float(value: Any) -> Optional[float]:
+    """Coerce a raw quote field to float, or None (0.0 stays 0.0)."""
+    if value is None or value == "":
+        return None
     try:
-        last = float(price or 0)
-        ch = float(change_pct or 0) / 100.0
+        return float(value)
     except (TypeError, ValueError):
-        return [0.0] * points
-    if last <= 0:
-        return [0.0] * points
-    start = last / (1.0 + ch) if (1.0 + ch) != 0 else last
-    out = []
-    for i in range(points):
-        t = i / max(1, points - 1)
-        # slight sine wobble so the line isn't perfectly linear
-        wobble = 1.0 + 0.004 * ((i % 3) - 1)
-        out.append(round((start + (last - start) * t) * wobble, 8))
-    out[-1] = last
+        return None
+
+
+def _num_or_none(value: Any) -> Optional[float]:
+    """Coerce a PRICE to a positive float, or None.
+
+    No real tradable asset prices at 0 — a 0.0 here is a "no data" marker
+    and must never be presented as a price (D2).
+    """
+    out = _to_float(value)
+    if out is None or out <= 0:
+        return None
     return out
+
+
+def _real_sparkline(raw: Any, max_points: int = 24) -> List[float]:
+    """v3.3.2 (D1): keep ONLY real closes, nothing else.
+
+    Accepts the list the scanner stored (real 1h OHLCV closes). Non-numeric
+    or non-positive entries are dropped; the result is capped to the latest
+    ``max_points``. There is NO interpolation, padding or synthesis path —
+    if the input is empty the output is empty.
+    """
+    if raw is None:
+        return []
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out: List[float] = []
+    for value in raw:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            continue
+        if v > 0:
+            out.append(v)
+    return out[-max_points:]
 
 
 def enrich_market_item(item: Dict[str, Any], scan_by_id: Dict[str, Any] = None) -> Dict[str, Any]:
     row = dict(item or {})
     mid = row.get("market_id") or row.get("symbol")
     scan = (scan_by_id or {}).get(mid) or {}
-    price = float(row.get("price") or row.get("last") or scan.get("price") or 0)
-    change = row.get("change")
+    # v3.3.2 (D2): real price or None — a 0.0 fallback was presenting
+    # "no data" as a $0.00 market.
+    price = _num_or_none(
+        row.get("price")
+        if row.get("price") not in (None, "")
+        else (row.get("last") if row.get("last") not in (None, "") else scan.get("price"))
+    )
+    change = _to_float(row.get("change"))
     if change is None:
-        change = row.get("change_24h")
+        change = _to_float(row.get("change_24h"))
     if change is None:
-        change = scan.get("change") or 0
+        change = _to_float(scan.get("change"))
+    if price is None:
+        # No price → no meaningful change either (0.0 % would be fake).
+        change = None
     row["price"] = price
     row["score"] = int(scan.get("score") or row.get("score") or 0)
     row["trend"] = scan.get("trend") or row.get("trend")
@@ -42,8 +85,18 @@ def enrich_market_item(item: Dict[str, Any], scan_by_id: Dict[str, Any] = None) 
     )
     row["active_source"] = scan.get("active_source") or row.get("active_source") or row.get("source")
     row["strategy"] = scan.get("strategy") or (scan.get("signal_data") or {}).get("strategy") or row.get("strategy")
-    row["change"] = float(change or 0)
-    row["sparkline"] = row.get("sparkline") or synthetic_sparkline(price, row["change"])
+    row["change"] = change
+    # v3.3.2 (D1): REAL sparkline only — the scanner's latest 1h OHLCV
+    # closes. No sparkline in the item/scan → empty list, never invented.
+    raw_spark = row.get("sparkline")
+    if raw_spark is None:
+        raw_spark = scan.get("sparkline")
+    row["sparkline"] = _real_sparkline(raw_spark)
+    row["sparkline_stale"] = bool(
+        row.get("sparkline_stale")
+        if row.get("sparkline_stale") is not None
+        else scan.get("sparkline_stale", False)
+    )
     row["display_symbol"] = row.get("display_symbol") or scan.get("display_symbol")
     row["name"] = row.get("name") or scan.get("name")
     row["underlying"] = row.get("underlying") or scan.get("underlying") or mid

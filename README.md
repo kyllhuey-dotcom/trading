@@ -2,6 +2,19 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
+> **v3.3.2** — **Données 100 % réelles** : plus aucun `price=0.0` fabriqué,
+> la sparkline synthétique est supprimée (remplacée par les **vraies clôtures
+> OHLCV 1h** du scanner), les bougies persistées (cache offline) portent le
+> marqueur `stale` : badge **STALE** distinct de **DIFFÉRÉ** + bandeau UI, et
+> le **RSI est refusé sur les données réelles en cache** (`STALE_DATA`).
+> Campagne live `scripts/realtime_data_audit.py` (10 endpoints publics,
+> tolérances 0,10 % crypto / 1 % réf croisée / 0,7 % tradfi, fraîcheur 10 s)
+> + workflows GitHub CI / audit / testnet (dépose :
+> [`docs/CI_SETUP.md`](docs/CI_SETUP.md) — le compte agent n'a pas la
+> permission `workflows`, les 3 fichiers YAML sont prêts dans
+> `docs/ci/workflows/`). Retry de lecture broker **transitoire-only**
+> (le non-transitoire remonte immédiatement).
+>
 > **v3.3.0** — REAL is experimental. A successful testnet campaign is
 > required before any real ARM. No profitability guarantee. (Campagne
 > testnet réussie obligatoire avant tout ARM réel ; aucune garantie de
@@ -74,7 +87,7 @@ Bot de trading multi-marchés : données réelles, exécution papier réaliste, 
 | **Gestion de positions** | Partial TP 50 % au 1:1 → break-even, trailing stop ATR, fermeture forcée hors session, réconciliation broker en mode REAL |
 | **Filtres** | Calendrier économique multi-sources (Fair Economy JSON, ForexFactory HTML, dernier calendrier SQLite ≤ 7 jours), politique de panne `block_tradfi_only` par défaut (crypto 24/7 reste tradable, tradfi bloqué), sessions, fraîcheur des données, spread max |
 | **Alertes** | Telegram + Discord (ouvertures, fermetures, emergency stop) |
-| **Dashboard** | Interface autonome sans CDN : Tailwind compilé, Lucide local, polices système ; scanner immédiat/incrémental avec progression, badges LIVE/DIFFÉRÉ, raison de refus, filtres live, intention STOPPED/WAITING_SETUP/EXECUTING et bannières calendrier/API |
+| **Dashboard** | Interface autonome sans CDN : Tailwind compilé, Lucide local, polices système ; scanner immédiat/incrémental avec progression, badges **LIVE / DIFFÉRÉ / STALE**, raison de refus, filtres live, intention STOPPED/WAITING_SETUP/EXECUTING et bannières calendrier/API/STALE |
 | **Sécurité** | Authentification par clé API sur tous les endpoints mutables, secrets brokers chiffrés au repos (Fernet), rate limiting par IP (sliding window), audit log complet, bannière d'avertissement en mode REAL |
 
 ## 🚀 Démarrage rapide
@@ -102,6 +115,19 @@ python3 -m api.index
 - Le calendrier persistant et la base de trades partagent le volume SQLite. La politique de panne se règle via `news_unavailable_policy=block_all|block_tradfi_only|allow_all` (`block_tradfi_only` par défaut : si le calendrier est HS, la crypto continue et le tradfi reste bloqué).
 - `auto_start_on_startup=true` démarre sans armer ; `auto_arm_on_startup=true` arme **et** démarre. Les deux restent `false` par défaut.
 - Healthcheck léger : `GET /healthz`. Détail providers/marchés/calendrier : `GET /api/health`.
+
+## 📊 Données 100 % réelles (v3.3.2)
+
+Règle non négociable : **jamais de donnée synthétique, jamais de faux PASS**.
+
+| Garantie | Implémentation |
+|---|---|
+| Pas de `price=0.0` fabriqué | Prix absent → `null` (UI : « — »), jamais un zéro présenté comme un prix ; même règle pour la variation (%) |
+| Pas de sparkline inventée | `synthetic_sparkline` supprimé ; le hub ne dessine que les **vraies clôtures OHLCV 1h** stockées par le scanner (dernières 24) — sinon rien |
+| Bougies persistées = STALE | Le cache offline (SQLite, 7 jours) marque chaque frame restaurée `stale=True` + âge des bougies ; le frame live porte `stale=False` |
+| RSI refusé sur du vieux réel | `RSIMeanReversionStrategy` refuse une frame `stale` (`block_reason=STALE_DATA`) ; le scanner passe la ligne en statut **STALE** |
+| Badge STALE ≠ DIFFÉRÉ | STALE (violet) = données réelles en cache ; DIFFÉRÉ (orange) = source live retardée (ex. Yahoo) ; bandeau global + compteur « Stale (cached) » dans le radar |
+| Campagne live | `python3 scripts/realtime_data_audit.py` — 10 endpoints publics sans clé (Binance, Gate, Bybit, OKX, Kraken, Coinbase, CoinGecko, Yahoo, Stooq, Frankfurter), tolérances 0,10 % crypto / 1 % référence croisée / 0,7 % tradfi, fraîcheur ≤ 10 s sur les flux exchange ; exit 0 uniquement si `overall_status: PASS`. Exécutée en continu par le workflow GitHub `Realtime data audit` |
 
 ## 🧪 Tests
 

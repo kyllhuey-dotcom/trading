@@ -74,11 +74,58 @@ def test_read_with_retry_reraises_last_exception():
 
     async def always_down():
         calls["n"] += 1
-        raise ValueError(f"down-{calls['n']}")
+        raise ConnectionError(f"down-{calls['n']}")
 
-    with pytest.raises(ValueError, match="down-3"):
+    with pytest.raises(ConnectionError, match="down-3"):
         asyncio.run(read_with_retry(always_down, retries=2))
     assert calls["n"] == 3
+
+
+def test_read_with_retry_non_transient_not_retried():
+    """v3.3.2: a non-transient failure (auth, permission, invalid input…)
+    can never succeed on a second attempt — it must surface IMMEDIATELY,
+    not after a pointless retry with backoff."""
+    import ccxt.async_support as ccxt_lib
+    calls = {"n": 0}
+
+    async def bad_auth():
+        calls["n"] += 1
+        raise ccxt_lib.AuthenticationError("invalid api key")
+
+    with pytest.raises(ccxt_lib.AuthenticationError):
+        asyncio.run(read_with_retry(bad_auth, retries=3))
+    assert calls["n"] == 1  # NO retry
+
+    calls["n"] = 0
+
+    async def bad_input():
+        calls["n"] += 1
+        raise ValueError("bad input")
+
+    with pytest.raises(ValueError):
+        asyncio.run(read_with_retry(bad_input, retries=3))
+    assert calls["n"] == 1
+
+
+def test_read_with_retry_5xx_is_transient():
+    """v3.3.2: an exchange error carrying an HTTP 5xx/429 status is
+    transient and IS retried."""
+    import ccxt.async_support as ccxt_lib
+    calls = {"n": 0}
+
+    class Boom(ccxt_lib.ExchangeError):
+        def __init__(self, msg):
+            super().__init__(msg)
+            self.status_code = 502
+
+    async def flaky_502():
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise Boom("bad gateway")
+        return "ok"
+
+    assert asyncio.run(read_with_retry(flaky_502, retries=2)) == "ok"
+    assert calls["n"] == 2
 
 
 async def test_adapter_get_balance_retries_transient_failure():

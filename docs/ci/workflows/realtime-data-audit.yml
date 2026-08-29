@@ -1,0 +1,48 @@
+# v3.3.2 — Realtime data audit campaign.
+#
+# Runs OUTSIDE the core CI gate on purpose: it measures live public market
+# data (10 keyless endpoints — Binance, Gate, Bybit, OKX, Kraken, Coinbase,
+# CoinGecko, Yahoo, Stooq, Frankfurter) against numeric tolerances
+# (crypto <= 0.10 %, cross-reference <= 1 %, tradfi <= 0.7 %) and a 10 s
+# freshness test on the exchange feeds. A red run means "the market feeds
+# disagree or a provider is down RIGHT NOW" — rerun the campaign; it is not
+# a code regression.
+#
+# Honesty rule: the script never fabricates values. An unreachable endpoint
+# is an ERROR in the report, and overall_status is FAIL until every
+# endpoint and every tolerance passes.
+name: Realtime data audit
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: Live public feeds vs real markets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python3 -m pip install -r requirements.txt
+
+      - name: Run realtime data audit (10 endpoints, 10 s freshness)
+        run: python3 scripts/realtime_data_audit.py --max-age-s 10 --report-dir data
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: realtime-audit-report
+          path: data/realtime_audit_*.json
+          if-no-files-found: ignore

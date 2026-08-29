@@ -157,12 +157,32 @@ class ScannerEngine:
                     self._safe_fetch(
                         self.data.fetch_ticker(symbol),
                         None, "ticker", symbol),
+                    # v3.3.2 (D1): real 1h closes for the hub sparkline —
+                    # replaces the removed synthetic sparkline.
+                    self._safe_fetch(
+                        self.data.fetch_ohlcv(symbol, timeframe="1h", limit=24),
+                        pd.DataFrame(), "ohlcv_1h", symbol),
                     return_exceptions=True,
                 ), timeout=15.0)
                 df_ltf = fetched[0] if not isinstance(fetched[0], Exception) else pd.DataFrame()
                 ticker = fetched[1] if not isinstance(fetched[1], Exception) else None
+                df_1h = fetched[2] if not isinstance(fetched[2], Exception) else pd.DataFrame()
                 if not isinstance(df_ltf, pd.DataFrame):
                     df_ltf = pd.DataFrame()
+                if not isinstance(df_1h, pd.DataFrame):
+                    df_1h = pd.DataFrame()
+
+                # v3.3.2 (D3): real candles restored from the persisted
+                # last-good cache carry the layer's stale marker.
+                ohlcv_stale = bool(df_ltf.attrs.get("stale"))
+
+                # v3.3.2 (D1): sparkline = the latest 24 REAL hourly closes
+                # (1h OHLCV). No data → honest empty list, never a curve
+                # invented from the last price.
+                sparkline: List[float] = []
+                if not df_1h.empty and "Close" in df_1h.columns:
+                    closes = pd.to_numeric(df_1h["Close"], errors="coerce").dropna()
+                    sparkline = [round(float(v), 10) for v in closes.tail(24) if float(v) > 0]
 
                 if df_ltf.empty or not ticker:
                     row = placeholder_row(
@@ -183,6 +203,12 @@ class ScannerEngine:
                     ticker.get("source") or getattr(self.data.layer, "market_source_state", {}).get(symbol, {}).get("provider_id"),
                 )
                 status = classified["status"]
+                # v3.3.2 (D3): the RSI decision consumes 1m OHLCV — when those
+                # candles are cached (stale), the row is STALE even if the
+                # ticker is fresh: a live price on a dead chart is not a
+                # tradable market.
+                if ohlcv_stale:
+                    status = "STALE"
 
                 ltf_analysis: Dict[str, Any] = {"trend": "NEUTRAL", "market_id": symbol}
                 if self.analysis is not None:
@@ -257,6 +283,22 @@ class ScannerEngine:
                     and realtime
                 )
 
+                # v3.3.2 (D2): never fabricate a price. No quote → None (the
+                # UI renders "—"), NOT 0.0: a $0.00 BTC would be read as real.
+                # A 0.0 "last" from any source is likewise no data, not a price.
+                # (change/spread/volume keep their sign: -1.5 % is real data.)
+                def _to_float(value):
+                    if value is None or value == "":
+                        return None
+                    try:
+                        return float(value)
+                    except (TypeError, ValueError):
+                        return None
+
+                def _price_or_none(value):
+                    out = _to_float(value)
+                    return out if out is not None and out > 0 else None
+
                 return {
                     "symbol": symbol,
                     "display_symbol": info.get("display_symbol"),
@@ -264,11 +306,13 @@ class ScannerEngine:
                     "direction": signal.get("direction") or ltf_analysis.get("trend"),
                     "asset_class": info.get("asset_class"),
                     "name": info.get("name"),
-                    "price": float(ticker.get("last", 0) or 0),
-                    "change": float(ticker.get("change_24h", 0) or 0),
-                    "spread": float(ticker.get("spread", 0) or 0),
-                    "volume": float(ticker.get("volume", 0) or 0),
+                    "price": _price_or_none(ticker.get("last")),
+                    "change": _to_float(ticker.get("change_24h")),
+                    "spread": _to_float(ticker.get("spread")),
+                    "volume": _to_float(ticker.get("volume")),
                     "status": status,
+                    "sparkline": sparkline,
+                    "sparkline_stale": bool(df_1h.attrs.get("stale")),
                     "data_age_ms": data_age_ms,
                     "realtime_source": bool(realtime),
                     "active_source": ticker.get("source"),

@@ -1,0 +1,45 @@
+# v3.3.2 — Core CI. Gates (non-negotiable, all in scripts/validate.sh):
+#   1. dependencies install + import + pip check
+#   2. compileall + ruff (static correctness)
+#   3. no hardcoded secrets
+#   4. full suite with BRANCH coverage gate 85% (api + scripts)
+#   5. api/engines coverage gate 80%
+#   6. production entry point imports and registers its routes
+name: CI
+
+on:
+  push:
+    branches: [main, "arena/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate (ruff + full suite + coverage gates)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Validation pipeline (6 gates)
+        run: bash scripts/validate.sh
+
+      - name: Upload coverage data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data
+          path: |
+            .coverage
+            .coverage.*
+          if-no-files-found: ignore

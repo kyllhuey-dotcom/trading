@@ -251,6 +251,12 @@
     <div id="no-market-data-banner" class="hidden fixed top-0 left-0 right-0 z-[110] bg-slate-800 text-white text-center text-xs font-black py-2 px-4 shadow-lg" data-i18n="noMarketData">
         AUCUNE DONNÉE DE MARCHÉ — valeurs figées/périmées
     </div>
+    <!-- v3.3.2 (D4): STALE = real data restored from the persisted cache.
+         Distinct from DIFFÉRÉ (a delayed-but-live source, e.g. Yahoo) and
+         from the no-data banner. RSI signals are refused on stale data. -->
+    <div id="stale-data-banner" class="hidden fixed top-0 left-0 right-0 z-[109] bg-violet-600 text-white text-center text-xs font-black py-2 px-4 shadow-lg" data-i18n="staleData">
+        DONNÉES STALE — vraies données mises en cache · signaux RSI refusés
+    </div>
     <div id="real-mode-banner" class="hidden fixed top-0 left-0 right-0 z-[100] bg-amber-500 text-slate-900 text-center text-xs font-bold py-1.5 px-4 shadow-lg" data-i18n="liveWarning">
         ⚠️ LIVE EXECUTION STILL EXPERIMENTAL — USE DEMO FOR STRATEGIES
     </div>
@@ -495,6 +501,7 @@
                             <span><span data-i18n="riskRewardRsi">RSI target RR</span>: <strong>2.0</strong></span>
                             <span><span data-i18n="scannerProgress">Scanner progress</span>: <strong class="notranslate" id="radar-progress">0/127</strong></span>
                             <span><span data-i18n="marketsUnavailable">Markets unavailable</span>: <strong class="notranslate" id="radar-unavailable">0</strong></span>
+                            <span title="Real data restored from the persisted cache — RSI refused on it"><span data-i18n="staleMarkets">Stale (cached)</span>: <strong class="notranslate" id="radar-stale">0</strong></span>
                             <span><span data-i18n="scannerError">Scanner error</span>: <strong class="notranslate" id="radar-error">—</strong></span>
                             <span><span data-i18n="lastScan">Last scan</span>: <strong class="notranslate" id="radar-last-scan">—</strong></span>
                         </div>
@@ -1699,6 +1706,14 @@
                 String(a.status || a.data_source_label || '').toUpperCase() === 'DATA_UNAVAILABLE');
             const ndBanner = document.getElementById('no-market-data-banner');
             if (ndBanner) ndBanner.classList.toggle('hidden', !(allUnavailable || rowsAllDead));
+            // v3.3.2 (D4): stale banner — shown while ANY market row rests on
+            // cached (persisted) real data.
+            const staleCount = data.assets.filter(a =>
+                String(a.status || a.data_source_label || '').toUpperCase() === 'STALE'
+            ).length;
+            const staleBanner = document.getElementById('stale-data-banner');
+            if (staleBanner) staleBanner.classList.toggle('hidden', staleCount === 0);
+            setRadar('radar-stale', staleCount);
             const progressRow = data.scanning ? `
                 <tr><td colspan="9" class="py-5 text-center bg-blue-500/5">
                     <div class="skel mx-auto mb-2 w-40"></div>
@@ -1713,9 +1728,13 @@
                     ? `<span class="status-badge bg-slate-500/10 text-slate-500">DATA_UNAVAILABLE</span>`
                     : (st === 'ERROR'
                         ? `<span class="status-badge bg-red-500/10 text-red-500">ERROR</span>`
-                        : (a.realtime_source
-                            ? `<span class="status-badge bg-green-500/10 text-green-500">${t('live')}</span>`
-                            : `<span class="status-badge bg-orange-500/10 text-orange-500">${t('delayed')}</span>`));
+                        // v3.3.2 (D4): STALE (real data, cached) is its own
+                        // badge — distinct from LIVE and from DIFFÉRÉ.
+                        : (st === 'STALE'
+                            ? `<span class="status-badge bg-violet-500/10 text-violet-600">${t('stale')}</span>`
+                            : (a.realtime_source
+                                ? `<span class="status-badge bg-green-500/10 text-green-500">${t('live')}</span>`
+                                : `<span class="status-badge bg-orange-500/10 text-orange-500">${t('delayed')}</span>`)));
                 return `
                 <tr title="${escapeHtml(diagnosisReason)}" class="group hover:bg-black/[0.01] transition-colors ${hot ? 'radar-row-institutional' : ''}">
                     <td class="py-4 px-6 cursor-pointer" onclick="selectMarket('${escapeHtml(a.symbol)}')"><span class="font-black">${escapeHtml(a.display_symbol || (a.symbol||'').toUpperCase())}</span><span class="block text-[8px] text-secondary mt-1 max-w-[180px] truncate">${escapeHtml(diagnosisReason)}</span></td>
@@ -1751,6 +1770,13 @@
             const calendarBlocked = s.calendar && s.calendar.status === 'DATA_UNAVAILABLE'
                 && s.news && s.news.news_ok === false;
             if (calendarBanner) calendarBanner.classList.toggle('hidden', !calendarBlocked);
+            // v3.3.2 (D4): STALE banner from the status snapshot — the quote
+            // is a persisted cache entry, or the RSI signal was refused on
+            // cached candles.
+            const snapStale = (s.ticker && String(s.ticker.status || '').toUpperCase() === 'STALE')
+                || String((s.signal || {}).block_reason || '').toUpperCase() === 'STALE_DATA';
+            const staleBannerS = document.getElementById('stale-data-banner');
+            if (staleBannerS) staleBannerS.classList.toggle('hidden', !snapStale);
             const intent = s.execution_intent || { state: 'STOPPED', code: 'STOPPED' };
             const intentState = intent.state || intent.code || 'STOPPED';
             const intentBadge = document.getElementById('execution-intent-badge');
@@ -1937,13 +1963,25 @@
                     html += marketItems.map(m => {
                         const hot = (m.score || 0) >= 84;
                         const initials = (m.display_symbol || m.symbol || '??').slice(0,2).toUpperCase();
+                        // v3.3.2 (D1/D4): sparkline = REAL latest 1h closes.
+                        // Empty when the scanner has no candles — the UI then
+                        // draws nothing (honest), and cached candles are
+                        // desaturated + labelled STALE.
+                        const sparkStale = !!m.sparkline_stale;
                         const spark = (m.sparkline || []).map((v,i,arr) => {
                             const mn = Math.min(...arr), mx = Math.max(...arr), sp = (mx-mn)||1;
-                            return `<div style="height:${8+((v-mn)/sp)*22}px;width:3px;background:${hot?'#28cd41':'#0071e3'};border-radius:1px"></div>`;
+                            const bg = sparkStale ? '#a78bfa' : (hot?'#28cd41':'#0071e3');
+                            return `<div style="height:${8+((v-mn)/sp)*22}px;width:3px;background:${bg};border-radius:1px;opacity:${sparkStale?0.55:1}"></div>`;
                         }).join('');
+                        const mStatus = String(m.status || '').toUpperCase();
+                        const hubBadge = mStatus === 'STALE'
+                            ? `<span class="status-badge bg-violet-500/10 text-violet-600">${t('stale')}</span>`
+                            : (m.realtime_source
+                                ? `<span class="status-badge bg-green-500/10 text-green-500">${t('live')}</span>`
+                                : `<span class="status-badge bg-orange-500/10 text-orange-500">${t('delayed')}</span>`);
                         return `
                         <div class="market-card ${hot?'hub-hot':''}" onclick="selectMarket('${escapeHtml(m.market_id || m.symbol)}')">
-                            <div class="flex items-center justify-between mb-2"><span class="status-badge ${m.realtime_source?'bg-green-500/10 text-green-500':'bg-orange-500/10 text-orange-500'}">${m.realtime_source?t('live'):t('delayed')}</span><span class="text-[8px] text-secondary">${escapeHtml(m.active_source || '')}</span></div>
+                            <div class="flex items-center justify-between mb-2">${hubBadge}<span class="text-[8px] text-secondary">${escapeHtml(m.active_source || '')}${sparkStale?' · '+t('stale'):''}</span></div>
                             <div class="flex items-center gap-2"><div class="w-7 h-7 rounded-lg bg-black/10 flex items-center justify-center text-[10px] font-black">${escapeHtml(initials)}</div>
                             <div class="flex flex-col"><span class="font-black text-sm">${escapeHtml((m.display_symbol || m.symbol || '').toUpperCase())}</span><span class="text-[9px] font-bold text-secondary uppercase">${escapeHtml(m.name || '--')}</span></div></div>
                             <p class="font-black text-sm mt-2" data-price-id="${escapeHtml(m.market_id || m.symbol)}">${fmtPrice(m.price)}</p>

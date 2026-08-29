@@ -12,6 +12,23 @@ logger = logging.getLogger("DataLayer")
 class DataIntegrityError(Exception):
     pass
 
+
+def ohlcv_is_stale(df: Any) -> bool:
+    """v3.3.2 (D3): True when a frame carries the persisted-cache marker.
+
+    A frame fetched live from a provider is marked ``stale=False`` by the
+    layer; a frame restored from the SQLite last-good cache is marked
+    ``stale=True`` (real data, but cached — never fresh, never auto-traded).
+    A frame without any marker (historical backtest input, unit fixtures)
+    is not treated as stale.
+    """
+    try:
+        if df is None:
+            return False
+        return bool(df.attrs.get("stale"))
+    except Exception:
+        return False
+
 class DataLayer:
     """
     Market Data Layer (Rule 2).
@@ -134,9 +151,29 @@ class DataLayer:
         if not rows:
             return None
         try:
-            return pd.DataFrame(rows)
+            frame = pd.DataFrame(rows)
         except Exception:
             return None
+        # v3.3.2 (D3): persisted candles are REAL data — but they are cached,
+        # i.e. stale by definition. Mark them so every consumer (RSI,
+        # structure, UI) can tell them apart from a fresh provider frame.
+        # Never presented as live, never silently traded on.
+        frame.attrs["stale"] = True
+        frame.attrs["stale_reason"] = "persisted_cache"
+        frame.attrs["restored_at"] = time.time()
+        try:
+            last_ts = pd.to_numeric(
+                frame.get("Timestamp") if "Timestamp" in frame.columns else pd.Series(dtype=float),
+                errors="coerce",
+            ).dropna()
+            if not last_ts.empty:
+                unit_ms = last_ts.iloc[-1] > 1e12
+                scale = 1000.0 if unit_ms else 1.0
+                frame.attrs["candles_age_s"] = round(
+                    max(0.0, time.time() - float(last_ts.iloc[-1]) / scale), 1)
+        except Exception:
+            pass
+        return frame
 
     def register_provider(self, provider_id: str, provider: MarketDataProvider):
         self.providers[provider_id] = provider
@@ -235,6 +272,11 @@ class DataLayer:
                         timeout=self.provider_timeout_s * 2)
                     if not df.empty:
                         self._record_success(cache_key)
+                        # v3.3.2 (D3): an explicit FRESH marker — consumers
+                        # must never guess; a frame without a stale attr is
+                        # still treated as fresh only because the layer said
+                        # so.
+                        df.attrs["stale"] = False
                         self._persist_ohlcv(symbol_id, timeframe, df)
                         return df
                     else:
