@@ -37,6 +37,19 @@ def _sha256(path: str) -> str:
     return digest.hexdigest()
 
 
+def _next_free_path(out_dir: str, stamp: str) -> str:
+    """v3.3.1: never overwrite a previous backup — two runs in the same
+    second (cron overlap, manual double-run) used to silently replace the
+    first file via os.replace. Colliding names now get a _1, _2, … suffix.
+    """
+    dest = os.path.join(out_dir, f"quantum_trade_{stamp}.db")
+    counter = 0
+    while os.path.exists(dest) or os.path.exists(dest + ".sha256"):
+        counter += 1
+        dest = os.path.join(out_dir, f"quantum_trade_{stamp}_{counter}.db")
+    return dest
+
+
 def cmd_backup(db_path: str, out_dir: str) -> str:
     if not os.path.exists(db_path):
         print(f"ERROR: DB not found: {db_path}", file=sys.stderr)
@@ -47,7 +60,7 @@ def cmd_backup(db_path: str, out_dir: str) -> str:
         # Force a WAL checkpoint so the main file is self-contained.
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         stamp = time.strftime("%Y%m%d_%H%M%S")
-        dest = os.path.join(out_dir, f"quantum_trade_{stamp}.db")
+        dest = _next_free_path(out_dir, stamp)
         tmp = dest + ".tmp"
         shutil.copyfile(db_path, tmp)
         os.replace(tmp, dest)  # atomic on the same filesystem

@@ -35,6 +35,11 @@ import traceback
 from datetime import datetime
 
 from api.json_logging import setup_json_file_handler, structured_log
+from api.engines.correlation import (
+    CORRELATION_HEADER,
+    audit_details,
+    bind_correlation_id,
+)
 from api.engines.exchange_constraints import normalize_order
 from api.engines.metrics_engine import MetricsEngine
 from api.rate_limit import SlidingWindowRateLimiter
@@ -172,6 +177,18 @@ async def rate_limit_middleware(request: Request, call_next):
                      "retry_after_s": int(rate_limiter.window_s)},
         ), request)
     return _apply_security_headers(await call_next(request), request)
+
+
+# v3.3.1: correlation IDs — every request is bound to an ID (client-supplied
+# X-Correlation-ID or generated) that is echoed on the response and attached
+# to audit logs / order intents for end-to-end tracing.
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    correlation_id = await bind_correlation_id(request)
+    response = await call_next(request)
+    response.headers[CORRELATION_HEADER] = correlation_id
+    return response
+
 
 db_manager = DatabaseManager()
 data_engine = DataEngine()
@@ -2020,7 +2037,8 @@ async def close_position_api(market_id: str):
             async with state_lock:
                 bot_state["active_trades"] = db_manager.get_active_positions("REAL")
             db_manager.log_audit("INFO", "MANUAL_CLOSE",
-                                 f"REAL position {market_id} closed on broker")
+                                 f"REAL position {market_id} closed on broker",
+                                 audit_details({"partial": bool(res.get("partial"))}))
         return res
     ticker = await data_engine.fetch_ticker(market_id)
     if not ticker or not ticker.get("last"):
@@ -2030,7 +2048,8 @@ async def close_position_api(market_id: str):
         return {"success": False, "reason": "Position not found in the DEMO engine"}
     bot_state["active_trades"] = demo_execution.active_positions
     db_manager.log_audit("INFO", "MANUAL_CLOSE",
-                         f"Position {market_id} closed at market ({ticker['last']})")
+                         f"Position {market_id} closed at market ({ticker['last']})",
+                         audit_details({"exit_price": float(ticker["last"])}))
     return {"success": True, "symbol": market_id,
             "exit_price": float(ticker["last"]),
             "pnl": closed.get("pnl"), "net_pnl": closed.get("net_pnl")}

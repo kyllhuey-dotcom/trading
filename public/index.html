@@ -248,6 +248,9 @@
     <div id="calendar-offline-banner" class="hidden fixed top-0 left-0 right-0 z-[120] bg-orange-500 text-slate-950 text-center text-xs font-black py-2 px-4 shadow-lg" data-i18n="calendarOffline">
         CALENDRIER HORS LIGNE — exécution bloquée (fail-safe)
     </div>
+    <div id="no-market-data-banner" class="hidden fixed top-0 left-0 right-0 z-[110] bg-slate-800 text-white text-center text-xs font-black py-2 px-4 shadow-lg" data-i18n="noMarketData">
+        AUCUNE DONNÉE DE MARCHÉ — valeurs figées/périmées
+    </div>
     <div id="real-mode-banner" class="hidden fixed top-0 left-0 right-0 z-[100] bg-amber-500 text-slate-900 text-center text-xs font-bold py-1.5 px-4 shadow-lg" data-i18n="liveWarning">
         ⚠️ LIVE EXECUTION STILL EXPERIMENTAL — USE DEMO FOR STRATEGIES
     </div>
@@ -296,8 +299,8 @@
                     <div class="flex items-center gap-3">
                         <div id="status-dot" class="w-2 h-2 rounded-full bg-slate-400"></div>
                         <div class="flex flex-col">
-                            <span id="system-status-text" class="text-[10px] font-black uppercase tracking-widest">Disconnected</span>
-                            <span class="text-[8px] font-bold text-secondary uppercase tracking-tighter" id="bot-mode-display">DEMO</span>
+                            <span id="system-status-text" class="notranslate text-[10px] font-black uppercase tracking-widest">Disconnected</span>
+                            <span class="notranslate text-[8px] font-bold text-secondary uppercase tracking-tighter" id="bot-mode-display">DEMO</span>
                         </div>
                     </div>
                     
@@ -305,7 +308,7 @@
 
                     <div class="flex flex-col min-w-[112px]">
                         <span class="text-[7px] font-black text-secondary uppercase tracking-widest" data-i18n="executionIntent">Execution intent</span>
-                        <span id="execution-intent-badge" class="status-badge bg-slate-500/10 text-slate-500 !px-2 !py-1">STOPPED</span>
+                        <span id="execution-intent-badge" class="notranslate status-badge bg-slate-500/10 text-slate-500 !px-2 !py-1">STOPPED</span>
                     </div>
 
                     <div class="h-6 w-[1px] bg-black/5 dark:bg-white/5"></div>
@@ -320,28 +323,28 @@
 
                     <div class="flex flex-col">
                          <span class="text-[7px] uppercase font-extrabold text-secondary tracking-widest" data-i18n="tradesToday">Trades today</span>
-                         <span class="font-black text-xs tabular-nums" id="trades-today-count">0</span>
+                         <span class="notranslate font-black text-xs tabular-nums" id="trades-today-count">0</span>
                     </div>
 
                     <div class="h-6 w-[1px] bg-black/5 dark:bg-white/5"></div>
 
                     <div class="flex flex-col">
                          <span class="text-[7px] uppercase font-extrabold text-secondary tracking-widest" data-i18n="nextScan">Next scan</span>
-                         <span class="font-black text-xs tabular-nums" id="next-scan-countdown">--</span>
+                         <span class="notranslate font-black text-xs tabular-nums" id="next-scan-countdown">--</span>
                     </div>
 
                     <div class="h-6 w-[1px] bg-black/5 dark:bg-white/5"></div>
 
                     <div class="flex flex-col">
                          <span class="text-[9px] uppercase font-extrabold text-secondary tracking-widest" data-i18n="globalBalance">Global Balance</span>
-                         <span class="font-black text-xs tabular-nums" id="header-balance">0.00 €</span>
+                         <span class="notranslate font-black text-xs tabular-nums" id="header-balance">0.00 €</span>
                     </div>
 
                     <div class="h-6 w-[1px] bg-black/5 dark:bg-white/5"></div>
 
                     <div class="flex flex-col">
                          <span class="text-[9px] uppercase font-extrabold text-secondary tracking-widest" data-i18n="activeInstrument">Active Instrument</span>
-                         <span class="font-black text-xs" id="active-symbol-header">---</span>
+                         <span class="notranslate font-black text-xs" id="active-symbol-header">---</span>
                     </div>
                     <div class="h-6 w-[1px] bg-black/5 dark:bg-white/5"></div>
 
@@ -383,19 +386,19 @@
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
                         <div class="card-premium">
                             <span class="metric-label" data-i18n="balance">Account Balance</span>
-                            <h3 class="metric-value mt-0.5" id="dash-balance">0.00 €</h3>
+                            <h3 class="notranslate metric-value mt-0.5" id="dash-balance">0.00 €</h3>
                         </div>
                         <div class="card-premium">
                             <span class="metric-label" data-i18n="equity">Current Equity</span>
-                            <h3 class="metric-value mt-0.5" id="dash-equity">0.00 €</h3>
+                            <h3 class="notranslate metric-value mt-0.5" id="dash-equity">0.00 €</h3>
                         </div>
                         <div class="card-premium">
                             <span class="metric-label" data-i18n="dailyPnl">Daily P&L</span>
-                            <h3 class="metric-value mt-0.5" id="dash-daily-pnl">0.00 €</h3>
+                            <h3 class="notranslate metric-value mt-0.5" id="dash-daily-pnl">0.00 €</h3>
                         </div>
                         <div class="card-premium">
                             <span class="metric-label" data-i18n="drawdown">Max Drawdown</span>
-                            <h3 class="metric-value mt-0.5 text-accent-red" id="dash-drawdown">0.00%</h3>
+                            <h3 class="notranslate metric-value mt-0.5 text-accent-red" id="dash-drawdown">0.00%</h3>
                         </div>
                     </div>
 
@@ -403,13 +406,13 @@
                         <div class="lg:col-span-4 card-premium flex flex-col">
                             <h4 class="text-[10px] font-black uppercase tracking-widest mb-3 border-b border-black/5 dark:border-white/5 pb-2" data-i18n="engineHealth">Engine Health</h4>
                             <div class="space-y-2 flex-1">
-                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="scannerLabel">Scanner</span><span id="eng-status" class="status-badge bg-red-500/10 text-red-500">OFFLINE</span></div>
-                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="marketCount">Markets</span><span id="eng-markets" class="font-black text-xs">--</span></div>
-                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="scanned">Scanned</span><span id="eng-scanned" class="font-black text-xs">--</span></div>
-                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="analyzing">Analyzing</span><span id="eng-analyzing" class="font-black text-xs">--</span></div>
-                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="signals">Signals</span><span id="eng-signals" class="font-black text-xs">--</span></div>
-                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="tradable">Tradable</span><span id="eng-tradable" class="status-badge bg-green-500/10 text-green-500">--</span></div>
-                                <div class="flex justify-between items-center border-t border-black/5 dark:border-white/5 pt-1 mt-1"><span class="text-[8px] font-black text-secondary uppercase" data-i18n="scanTime">Scan Time</span><span id="eng-duration" class="font-mono text-[9px]">--s</span></div>
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="scannerLabel">Scanner</span><span id="eng-status" class="notranslate status-badge bg-red-500/10 text-red-500">OFFLINE</span></div>
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="marketCount">Markets</span><span id="eng-markets" class="notranslate font-black text-xs">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="scanned">Scanned</span><span id="eng-scanned" class="notranslate font-black text-xs">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="analyzing">Analyzing</span><span id="eng-analyzing" class="notranslate font-black text-xs">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="signals">Signals</span><span id="eng-signals" class="notranslate font-black text-xs">--</span></div>
+                                <div class="flex justify-between items-center"><span class="text-[10px] font-bold text-secondary" data-i18n="tradable">Tradable</span><span id="eng-tradable" class="notranslate status-badge bg-green-500/10 text-green-500">--</span></div>
+                                <div class="flex justify-between items-center border-t border-black/5 dark:border-white/5 pt-1 mt-1"><span class="text-[8px] font-black text-secondary uppercase" data-i18n="scanTime">Scan Time</span><span id="eng-duration" class="notranslate font-mono text-[9px]">--s</span></div>
                             </div>
                         </div>
 
@@ -422,15 +425,15 @@
                                     </div>
                                     <div>
                                         <p class="text-[9px] font-black text-secondary uppercase tracking-widest mb-0" data-i18n="criticalBlocker">Critical Blocker</p>
-                                        <p id="diag-main-blocker" class="text-xs font-black leading-tight mb-0.5">INITIALIZING...</p>
-                                        <p id="diag-reason" class="text-[10px] text-secondary font-medium leading-relaxed italic">
+                                        <p id="diag-main-blocker" class="notranslate text-xs font-black leading-tight mb-0.5">INITIALIZING...</p>
+                                        <p id="diag-reason" class="notranslate text-[10px] text-secondary font-medium leading-relaxed italic">
                                             "System is warming up..."
                                         </p>
                                     </div>
                                 </div>
                                 
                                 <div class="pt-2 mt-2 border-t border-black/5 dark:border-white/5">
-                                    <div id="diag-checklist" class="grid grid-cols-5 gap-1">
+                                    <div id="diag-checklist" class="notranslate grid grid-cols-5 gap-1">
                                         <!-- Indicators -->
                                     </div>
                                 </div>
@@ -439,12 +442,12 @@
 
                         <div class="lg:col-span-3 card-premium flex flex-col">
                             <h4 class="text-[10px] font-black uppercase tracking-widest mb-3 border-b border-black/5 dark:border-white/5 pb-2" data-i18n="opportunities">Opportunities</h4>
-                            <div id="best-setups-list" class="space-y-1.5 flex-1 mb-3">
+                            <div id="best-setups-list" class="notranslate space-y-1.5 flex-1 mb-3">
                                 <p class="text-secondary font-medium text-[9px] italic" data-i18n="scanInProgress">Scanning...</p>
                             </div>
                             
                             <h4 class="text-[10px] font-black uppercase tracking-widest mb-3 border-b border-black/5 dark:border-white/5 pb-2" data-i18n="calendar">Calendar</h4>
-                            <div id="dashboard-calendar" class="space-y-1.5 max-h-[100px] overflow-y-auto pr-1 custom-scrollbar">
+                            <div id="dashboard-calendar" class="notranslate space-y-1.5 max-h-[100px] overflow-y-auto pr-1 custom-scrollbar">
                                 <p class="text-secondary font-medium text-[8px] italic" data-i18n="loading">Loading...</p>
                             </div>
                         </div>
@@ -467,18 +470,18 @@
                             <button id="hub-live-only" class="btn-premium bg-black/5" onclick="toggleHubLiveOnly()" data-i18n="liveOnly">Live only</button>
                         </div>
                         <div class="switch-container p-1" id="market-filters">
-                            <div onclick="setMarketFilter('ALL')" class="switch-option active">ALL</div>
-                            <div onclick="setMarketFilter('CRYPTO')" class="switch-option">CRYPTO</div>
-                            <div onclick="setMarketFilter('STOCKS')" class="switch-option">STOCKS</div>
-                            <div onclick="setMarketFilter('FUTURES')" class="switch-option">FUTURES</div>
-                            <div onclick="setMarketFilter('ETFS')" class="switch-option">ETFS</div>
-                            <div onclick="setMarketFilter('BONDS')" class="switch-option">BONDS</div>
-                            <div onclick="setMarketFilter('FOREX')" class="switch-option">FOREX</div>
-                            <div onclick="setMarketFilter('INDICES')" class="switch-option">INDICES</div>
-                            <div onclick="setMarketFilter('COMMODITIES')" class="switch-option">COMMODITIES</div>
+                            <div onclick="setMarketFilter('ALL')" class="switch-option notranslate active">ALL</div>
+                            <div onclick="setMarketFilter('CRYPTO')" class="switch-option notranslate">CRYPTO</div>
+                            <div onclick="setMarketFilter('STOCKS')" class="switch-option notranslate">STOCKS</div>
+                            <div onclick="setMarketFilter('FUTURES')" class="switch-option notranslate">FUTURES</div>
+                            <div onclick="setMarketFilter('ETFS')" class="switch-option notranslate">ETFS</div>
+                            <div onclick="setMarketFilter('BONDS')" class="switch-option notranslate">BONDS</div>
+                            <div onclick="setMarketFilter('FOREX')" class="switch-option notranslate">FOREX</div>
+                            <div onclick="setMarketFilter('INDICES')" class="switch-option notranslate">INDICES</div>
+                            <div onclick="setMarketFilter('COMMODITIES')" class="switch-option notranslate">COMMODITIES</div>
                         </div>
                     </header>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6" id="markets-full-grid"></div>
+                    <div class="notranslate grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6" id="markets-full-grid"></div>
                 </div>
             </section>
 
@@ -490,10 +493,10 @@
                         <div class="flex flex-wrap gap-3 mt-2 text-[10px] font-bold text-secondary">
                             <span><span data-i18n="activeStrategy">Active strategy</span>: <strong data-i18n="strategyRsiName">RSI-14 Reversal</strong></span>
                             <span><span data-i18n="riskRewardRsi">RSI target RR</span>: <strong>2.0</strong></span>
-                            <span><span data-i18n="scannerProgress">Scanner progress</span>: <strong id="radar-progress">0/127</strong></span>
-                            <span><span data-i18n="marketsUnavailable">Markets unavailable</span>: <strong id="radar-unavailable">0</strong></span>
-                            <span><span data-i18n="scannerError">Scanner error</span>: <strong id="radar-error">—</strong></span>
-                            <span><span data-i18n="lastScan">Last scan</span>: <strong id="radar-last-scan">—</strong></span>
+                            <span><span data-i18n="scannerProgress">Scanner progress</span>: <strong class="notranslate" id="radar-progress">0/127</strong></span>
+                            <span><span data-i18n="marketsUnavailable">Markets unavailable</span>: <strong class="notranslate" id="radar-unavailable">0</strong></span>
+                            <span><span data-i18n="scannerError">Scanner error</span>: <strong class="notranslate" id="radar-error">—</strong></span>
+                            <span><span data-i18n="lastScan">Last scan</span>: <strong class="notranslate" id="radar-last-scan">—</strong></span>
                         </div>
                         <div class="flex gap-2 mt-3">
                             <button class="btn-premium bg-black/5" data-radar-filter="ge80" onclick="setRadarFilter('ge80')">≥84</button>
@@ -512,15 +515,15 @@
                                     <th class="py-3 text-right" data-i18n="livePrice">Prix live</th>
                                     <th class="py-3 text-right" data-i18n="change24h">Variation 24h</th>
                                     <th class="py-3 text-center" data-i18n="bias">Bias</th>
-                                    <th class="py-3 text-center cursor-pointer" onclick="toggleRadarSort()">Score <span id="radar-sort-arrow">▾</span></th>
+                                    <th class="py-3 text-center cursor-pointer" onclick="toggleRadarSort()">Score <span class="notranslate" id="radar-sort-arrow">▾</span></th>
                                     <th class="py-3 text-center" data-i18n="strategy">Stratégie</th>
                                     <th class="py-3 text-center" data-i18n="source">Source</th>
                                     <th class="py-3 text-center" data-i18n="dataAge">Age data</th>
                                     <th class="py-3 pr-6 text-right" data-i18n="action">Action</th>
                                 </tr>
                             </thead>
-                            <tbody id="scanner-table-body" class="divide-y divide-black/5 dark:divide-white/5">
-                                <tr><td colspan="9" class="py-10 text-center"><div class="skel mx-auto mb-3 w-48"></div><span class="text-xs text-secondary" data-i18n="scanInProgress">Scan in progress</span> <span id="initial-scan-progress">0/127…</span></td></tr>
+                            <tbody id="scanner-table-body" class="notranslate divide-y divide-black/5 dark:divide-white/5">
+                                <tr><td colspan="9" class="py-10 text-center"><div class="skel mx-auto mb-3 w-48"></div><span class="text-xs text-secondary" data-i18n="scanInProgress">Scan in progress</span> <span class="notranslate" id="initial-scan-progress">0/127…</span></td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -623,7 +626,7 @@
                         <div class="lg:col-span-8 space-y-6">
                             <div class="card-premium">
                                 <h4 class="text-[10px] font-black uppercase tracking-widest mb-4" data-i18n="wallets">Institutional Wallets</h4>
-                                <div id="wallet-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div id="wallet-list" class="notranslate grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <p class="text-secondary italic text-[10px]" data-i18n="noWallets">No wallets synchronized.</p>
                                 </div>
                             </div>
@@ -644,7 +647,7 @@
                                                 <th class="py-3 px-4 text-right" data-i18n="actions">Actions</th>
                                             </tr>
                                         </thead>
-                                        <tbody id="broker-status-table"></tbody>
+                                        <tbody class="notranslate" id="broker-status-table"></tbody>
                                     </table>
                                 </div>
                             </div>
@@ -662,13 +665,13 @@
                             <div class="flex justify-between items-start mb-6">
                                 <div>
                                     <div class="flex items-center gap-3 mb-1">
-                                        <h3 class="font-black text-sm tracking-tighter" id="trading-active-symbol">---</h3>
-                                        <span id="market-status-tag" class="text-[9px] font-black uppercase tracking-widest bg-green-500/10 text-green-500 px-2 py-0.5 rounded">OPEN</span>
+                                        <h3 class="notranslate font-black text-sm tracking-tighter" id="trading-active-symbol">---</h3>
+                                        <span id="market-status-tag" class="notranslate text-[9px] font-black uppercase tracking-widest bg-green-500/10 text-green-500 px-2 py-0.5 rounded">OPEN</span>
                                     </div>
-                                    <p class="text-xs font-bold text-secondary uppercase tracking-widest" id="trading-asset-class">---</p>
+                                    <p class="notranslate text-xs font-bold text-secondary uppercase tracking-widest" id="trading-asset-class">---</p>
                                 </div>
                                 <div class="text-right">
-                                    <p class="font-black text-sm tracking-tighter tabular-nums" id="trading-live-price">0.00</p>
+                                    <p class="notranslate font-black text-sm tracking-tighter tabular-nums" id="trading-live-price">0.00</p>
                                     <div class="flex items-center justify-end gap-2 mt-1">
                                         <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
                                         <span class="text-[10px] text-secondary font-black uppercase tracking-widest" data-i18n="liveFeed">Live Execution Feed</span>
@@ -680,26 +683,26 @@
                             <div class="flex gap-4 mb-6">
                                 <div class="px-3 py-1.5 bg-black/5 dark:bg-white/5 rounded-xl flex items-center gap-2">
                                     <span class="text-[8px] font-black text-secondary uppercase">RSI (14)</span>
-                                    <span id="ind-rsi" class="text-[10px] font-black">--</span>
+                                    <span id="ind-rsi" class="notranslate text-[10px] font-black">--</span>
                                 </div>
                                 <div class="px-3 py-1.5 bg-black/5 dark:bg-white/5 rounded-xl flex items-center gap-2">
                                     <span class="text-[8px] font-black text-secondary uppercase">EMA 8/21</span>
-                                    <span id="ind-ema" class="text-[10px] font-black">--</span>
+                                    <span id="ind-ema" class="notranslate text-[10px] font-black">--</span>
                                 </div>
                                 <div class="px-3 py-1.5 bg-black/5 dark:bg-white/5 rounded-xl flex items-center gap-2">
                                     <span class="text-[8px] font-black text-secondary uppercase">ATR</span>
-                                    <span id="ind-atr" class="text-[10px] font-black">--</span>
+                                    <span id="ind-atr" class="notranslate text-[10px] font-black">--</span>
                                 </div>
                             </div>
 
                             <div class="flex-1 bg-black/[0.03] dark:bg-white/[0.03] rounded-[32px] p-8 relative overflow-hidden group">
-                                <div id="bos-choch-tag" class="absolute top-3 left-4 text-[9px] font-black uppercase tracking-widest"></div>
+                                <div id="bos-choch-tag" class="notranslate absolute top-3 left-4 text-[9px] font-black uppercase tracking-widest"></div>
                                 <div class="chart-grid" id="main-chart-bars"></div>
-                                <div id="sltp-preview" class="absolute inset-0 pointer-events-none"></div>
+                                <div id="sltp-preview" class="notranslate absolute inset-0 pointer-events-none"></div>
                             </div>
                             <div id="orderbook-panel" class="mt-3 text-[10px] font-bold">
                                 <p class="text-[9px] font-black uppercase text-secondary mb-1" data-i18n="orderBook">Order Book</p>
-                                <div id="orderbook-rows" class="grid grid-cols-2 gap-2"></div>
+                                <div id="orderbook-rows" class="notranslate grid grid-cols-2 gap-2"></div>
                             </div>
                         </div>
 
@@ -756,15 +759,15 @@
                                     <div class="grid grid-cols-3 gap-2" id="order-preview">
                                         <div class="bg-black/5 dark:bg-white/5 p-2 rounded-xl">
                                             <p class="text-[7px] font-black text-secondary uppercase mb-0.5" data-i18n="estimatedRisk">Estimated risk</p>
-                                            <p id="op-risk" class="text-[10px] font-black tabular-nums">--</p>
+                                            <p id="op-risk" class="notranslate text-[10px] font-black tabular-nums">--</p>
                                         </div>
                                         <div class="bg-black/5 dark:bg-white/5 p-2 rounded-xl">
                                             <p class="text-[7px] font-black text-secondary uppercase mb-0.5" data-i18n="pctOfBalance">% of balance</p>
-                                            <p id="op-pct" class="text-[10px] font-black tabular-nums">--</p>
+                                            <p id="op-pct" class="notranslate text-[10px] font-black tabular-nums">--</p>
                                         </div>
                                         <div class="bg-black/5 dark:bg-white/5 p-2 rounded-xl">
                                             <p class="text-[7px] font-black text-secondary uppercase mb-0.5" data-i18n="estFees">Est. fees</p>
-                                            <p id="op-fees" class="text-[10px] font-black tabular-nums">--</p>
+                                            <p id="op-fees" class="notranslate text-[10px] font-black tabular-nums">--</p>
                                         </div>
                                     </div>
                                     <p id="manual-order-error" class="hidden text-[10px] font-black text-red-500"></p>
@@ -774,7 +777,7 @@
                                     <div class="mt-auto pt-4 flex items-center justify-between">
                                         <div class="flex flex-col">
                                             <span class="text-[8px] font-black text-secondary uppercase" data-i18n="projectedRisk">Projected Risk</span>
-                                            <span id="manual-risk-calc" class="text-[10px] font-bold">0.00 €</span>
+                                            <span id="manual-risk-calc" class="notranslate text-[10px] font-bold">0.00 €</span>
                                         </div>
                                         <div class="flex gap-1">
                                             <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
@@ -785,7 +788,7 @@
                             </div>
                             <div class="card-premium flex flex-col">
                                 <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4" data-i18n="globalStream">Global Data Stream</h4>
-                                <div id="terminal-news-list" class="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
+                                <div id="terminal-news-list" class="notranslate flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                                     <p class="text-secondary font-medium text-xs italic text-center py-4" data-i18n="connectingFeeds">Connecting to decentralized data feeds...</p>
                                 </div>
                             </div>
@@ -794,7 +797,7 @@
                         <!-- v2.8: live positions with per-position close + R multiple -->
                         <div class="card-premium">
                             <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-3" data-i18n="openPositionsHere">Live positions</h4>
-                            <div id="terminal-pos-list" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+                            <div id="terminal-pos-list" class="notranslate grid grid-cols-1 md:grid-cols-2 gap-3"></div>
                         </div>
 
                         <!-- v2.8: order history with filters and sortable columns -->
@@ -821,7 +824,7 @@
                                             <th class="py-2 text-right cursor-pointer select-none" data-oh-sort="pnl" onclick="sortTerminalOrders('pnl')"><span data-i18n="colPnl">PnL</span> <span class="oh-arrow" data-for="pnl"></span></th>
                                         </tr>
                                     </thead>
-                                    <tbody id="terminal-orders-body"></tbody>
+                                    <tbody class="notranslate" id="terminal-orders-body"></tbody>
                                 </table>
                             </div>
                         </div>
@@ -834,15 +837,15 @@
                             
                             <div class="space-y-6">
                                 <div class="space-y-4" id="ai-analysis-panel">
-                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary" data-i18n="trendAlignment">Trend Alignment</span><span id="ana-trend" class="font-black text-sm">--</span></div>
-                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary" data-i18n="structurePoints">Structure Points</span><span id="ana-struct" class="font-black text-sm">--</span></div>
-                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary" data-i18n="momentum">Rel. Momentum</span><span id="ana-mom" class="font-black text-sm">--</span></div>
-                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary" data-i18n="volatility">Local Volatility</span><span id="ana-vol" class="font-black text-sm">--</span></div>
+                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary" data-i18n="trendAlignment">Trend Alignment</span><span id="ana-trend" class="notranslate font-black text-sm">--</span></div>
+                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary" data-i18n="structurePoints">Structure Points</span><span id="ana-struct" class="notranslate font-black text-sm">--</span></div>
+                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary" data-i18n="momentum">Rel. Momentum</span><span id="ana-mom" class="notranslate font-black text-sm">--</span></div>
+                                    <div class="flex justify-between items-center"><span class="text-xs font-bold text-secondary" data-i18n="volatility">Local Volatility</span><span id="ana-vol" class="notranslate font-black text-sm">--</span></div>
                                 </div>
 
                                 <div class="pt-6 border-t border-black/5 dark:border-white/5">
                                     <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4" data-i18n="decisionSignal">Decision Signal</h4>
-                                    <div id="trading-signal-box" class="min-h-[120px] flex items-center justify-center text-center">
+                                    <div id="trading-signal-box" class="notranslate min-h-[120px] flex items-center justify-center text-center">
                                         <p class="text-secondary font-medium text-xs italic" data-i18n="awaitingTrigger">Awaiting market trigger...</p>
                                     </div>
                                 </div>
@@ -854,7 +857,7 @@
                                         <span class="text-[10px] font-black text-secondary uppercase tracking-widest" data-i18n="botAuthority">Bot Authority</span>
                                         <div id="arm-status-indicator" class="w-1.5 h-1.5 rounded-full bg-red-500"></div>
                                     </div>
-                                    <span id="arm-label" class="text-[10px] font-black text-red-500 uppercase tracking-widest">DISARMED</span>
+                                    <span id="arm-label" class="notranslate text-[10px] font-black text-red-500 uppercase tracking-widest">DISARMED</span>
                                 </div>
                                 <button id="arm-toggle-btn" class="w-full py-5 bg-black text-white dark:bg-white dark:text-black rounded-2xl font-black text-sm active:scale-95 transition-all shadow-xl">
                                     ARM EXECUTION ENGINE
@@ -865,7 +868,7 @@
                         <!-- Safety Blockers -->
                         <div class="card-premium border-2 border-transparent" id="blocker-card">
                             <h4 class="text-[10px] font-black text-secondary uppercase tracking-widest mb-4" data-i18n="securityLayer">Security Layer</h4>
-                            <div id="terminal-blockers" class="space-y-2">
+                            <div id="terminal-blockers" class="notranslate space-y-2">
                                 <!-- Blockers injected here -->
                             </div>
                         </div>
@@ -878,7 +881,7 @@
                                     <span class="text-[7px] font-black text-secondary uppercase" data-i18n="verifiedData">Verified Real Data</span>
                                 </div>
                             </div>
-                            <div id="terminal-audit-logs" class="space-y-3 overflow-y-auto max-h-[300px] custom-scrollbar text-[9px] font-bold">
+                            <div id="terminal-audit-logs" class="notranslate space-y-3 overflow-y-auto max-h-[300px] custom-scrollbar text-[9px] font-bold">
                                 <p class="text-secondary opacity-50 italic" data-i18n="systemReady">System ready.</p>
                             </div>
                         </div>
@@ -892,7 +895,7 @@
                         <h2 class="font-black text-sm uppercase tracking-widest" data-i18n="exposure">Exposure</h2>
                         <button onclick="fetchAPI('/demo/reset', 'POST').then(update)" class="btn-premium bg-red-500/10 text-red-500 text-[9px] font-black uppercase tracking-widest px-4 hover:bg-red-500/20 transition-colors" data-i18n="exitAll">Exit All</button>
                     </div>
-                    <div id="active-pos-list" class="space-y-4"></div>
+                    <div id="active-pos-list" class="notranslate space-y-4"></div>
                 </div>
             </section>
 
@@ -910,7 +913,7 @@
                                     <th class="py-3 pr-6 text-right" data-i18n="pnl">P&L</th>
                                 </tr>
                             </thead>
-                            <tbody id="history-table-body" class="divide-y divide-black/5 dark:divide-white/5"></tbody>
+                            <tbody id="history-table-body" class="notranslate divide-y divide-black/5 dark:divide-white/5"></tbody>
                         </table>
                     </div>
                 </div>
@@ -962,22 +965,22 @@
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="riskPerTrade">Risk Per Trade</label><span class="text-[10px] font-bold text-accent-blue" id="val-max_risk_pct">1.0%</span></div>
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="riskPerTrade">Risk Per Trade</label><span class="notranslate text-[10px] font-bold text-accent-blue" id="val-max_risk_pct">1.0%</span></div>
                                     <input type="range" id="set-max_risk_pct" min="0.1" max="10.0" step="0.1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="document.getElementById('val-max_risk_pct').innerText=this.value+'%'">
                                     <p class="text-[9px] text-secondary" data-i18n="riskHelp">Percentage of equity risked per single execution (Max 10%).</p>
                                 </div>
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="maxLeverage">Max Leverage</label><span class="text-[10px] font-bold text-accent-blue" id="val-max_leverage">20x</span></div>
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="maxLeverage">Max Leverage</label><span class="notranslate text-[10px] font-bold text-accent-blue" id="val-max_leverage">20x</span></div>
                                     <input type="range" id="set-max_leverage" min="1" max="100" step="1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="document.getElementById('val-max_leverage').innerText=this.value+'x'">
                                     <p class="text-[9px] text-secondary" data-i18n="leverageHelp">Hard limit for broker-side leverage application.</p>
                                 </div>
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="dailyLoss">Daily Loss Limit</label><span class="text-[10px] font-bold text-accent-red" id="val-max_daily_loss_pct">3.0%</span></div>
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="dailyLoss">Daily Loss Limit</label><span class="notranslate text-[10px] font-bold text-accent-red" id="val-max_daily_loss_pct">3.0%</span></div>
                                     <input type="range" id="set-max_daily_loss_pct" min="1.0" max="10.0" step="0.5" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-red-600" oninput="document.getElementById('val-max_daily_loss_pct').innerText=this.value+'%'">
                                     <p class="text-[9px] text-secondary" data-i18n="dailyLossHelp">Automatic system shutdown if daily equity drops by this %.</p>
                                 </div>
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="coolDown">Recovery Cool Down</label><span class="text-[10px] font-bold text-secondary" id="val-cool_down_mins">30m</span></div>
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="coolDown">Recovery Cool Down</label><span class="notranslate text-[10px] font-bold text-secondary" id="val-cool_down_mins">30m</span></div>
                                     <input type="range" id="set-cool_down_mins" min="5" max="240" step="5" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-cool_down_mins').innerText=this.value+'m'">
                                     <p class="text-[9px] text-secondary" data-i18n="coolDownHelp">Forced inactivity period after a losing trade (prevent revenge trading).</p>
                                 </div>
@@ -996,11 +999,11 @@
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="minConfidence">Min AI Confidence Score</label><span class="text-[10px] font-bold text-accent-green" id="val-min_signal_score">84</span></div>
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="minConfidence">Min AI Confidence Score</label><span class="notranslate text-[10px] font-bold text-accent-green" id="val-min_signal_score">84</span></div>
                                     <input type="range" id="set-min_signal_score" min="84" max="99" step="1" value="84" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-min_signal_score').innerText=this.value">
                                 </div>
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="riskRewardRsi">RSI target RR</label><span class="text-[10px] font-bold text-accent-green" id="val-risk_reward_ratio">2.0</span></div>
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase" data-i18n="riskRewardRsi">RSI target RR</label><span class="notranslate text-[10px] font-bold text-accent-green" id="val-risk_reward_ratio">2.0</span></div>
                                     <input type="range" id="set-risk_reward_ratio" min="1.0" max="2.0" step="0.1" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('val-risk_reward_ratio').innerText=this.value">
                                 </div>
                                 <div class="flex items-center justify-between p-3 bg-black/[0.02] rounded-xl">
@@ -1046,11 +1049,11 @@
                                     <input type="checkbox" id="set-persist_runtime_state" class="w-10 h-5 bg-gray-200 rounded-full appearance-none checked:bg-accent-blue relative transition-colors cursor-pointer before:content-[''] before:absolute before:w-4 before:h-4 before:bg-white before:rounded-full before:top-0.5 before:left-0.5 checked:before:left-5 before:transition-all">
                                 </div>
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Before (min)</label><span class="text-[10px] font-bold text-accent-blue" id="val-news_window_before_mins">30</span></div>
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">Before (min)</label><span class="notranslate text-[10px] font-bold text-accent-blue" id="val-news_window_before_mins">30</span></div>
                                     <input type="range" id="set-news_window_before_mins" min="30" max="60" step="30" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="document.getElementById('val-news_window_before_mins').innerText=this.value">
                                 </div>
                                 <div class="space-y-2">
-                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">After (min)</label><span class="text-[10px] font-bold text-accent-blue" id="val-news_window_after_mins">60</span></div>
+                                    <div class="flex justify-between"><label class="text-[10px] font-black text-secondary uppercase">After (min)</label><span class="notranslate text-[10px] font-bold text-accent-blue" id="val-news_window_after_mins">60</span></div>
                                     <input type="range" id="set-news_window_after_mins" min="30" max="60" step="30" class="w-full h-1.5 bg-black/5 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="document.getElementById('val-news_window_after_mins').innerText=this.value">
                                 </div>
                             </div>
@@ -1071,7 +1074,7 @@
                                         <span class="text-[10px] font-black text-secondary uppercase" data-i18n="demoAllocation">Demo Allocation</span>
                                         <span class="status-badge bg-blue-500/10 text-blue-500" data-i18n="paperTrading">Paper Trading</span>
                                     </div>
-                                    <p class="text-4xl font-black tracking-tighter mb-2" id="prov-demo-val">0.00 €</p>
+                                    <p class="notranslate text-4xl font-black tracking-tighter mb-2" id="prov-demo-val">0.00 €</p>
                                     <p class="text-[10px] font-bold text-secondary uppercase">Buying Power: <span class="text-primary" id="prov-demo-power">0 €</span></p>
                                 </div>
 
@@ -1081,8 +1084,8 @@
                                         <span class="text-[10px] font-black text-secondary uppercase" data-i18n="realAssets">Real Assets (Total)</span>
                                         <span class="status-badge bg-green-500/10 text-green-500" data-i18n="secured">Secured</span>
                                     </div>
-                                    <p class="text-4xl font-black tracking-tighter mb-2" id="prov-real-val">0.00 €</p>
-                                    <p class="text-[10px] font-bold text-secondary uppercase">Connected Brokers: <span class="text-primary" id="prov-broker-count">0</span></p>
+                                    <p class="notranslate text-4xl font-black tracking-tighter mb-2" id="prov-real-val">0.00 €</p>
+                                    <p class="text-[10px] font-bold text-secondary uppercase">Connected Brokers: <span class="notranslate text-primary" id="prov-broker-count">0</span></p>
                                 </div>
                             </div>
 
@@ -1437,7 +1440,7 @@
             if (daily) {
                 const v = Number(s.daily_pnl || 0);
                 daily.innerText = `${v >= 0 ? '+' : ''}${fmtMoney(v)} ${currency}`;
-                daily.className = `metric-value mt-0.5 ${v >= 0 ? 'text-accent-green' : 'text-accent-red'}`;
+                daily.className = `metric-value notranslate mt-0.5 ${v >= 0 ? 'text-accent-green' : 'text-accent-red'}`;
             }
             const dd = document.getElementById('dash-drawdown');
             if (dd) dd.innerText = `${(s.drawdown || 0).toFixed(2)}%`;
@@ -1686,6 +1689,16 @@
             setRadar('radar-unavailable', data.markets_unavailable ?? 0);
             setRadar('radar-error', data.scan_error || '—');
             setRadar('radar-last-scan', data.last_scan ? new Date(data.last_scan).toLocaleString() : (data.last_scan_age_s != null ? `${Math.round(data.last_scan_age_s)}s` : '—'));
+            // v3.3.1: honest "no market data" banner — shown only when the
+            // scanner (a COMPLETED scan) reports zero usable market rows.
+            const scanDone = !data.scanning
+                && data.progress_total > 0 && data.progress_count >= data.progress_total;
+            const allUnavailable = scanDone && data.assets.length === 0
+                && ((data.markets_unavailable || 0) > 0 || !!data.scan_error);
+            const rowsAllDead = data.assets.length > 0 && data.assets.every(a =>
+                String(a.status || a.data_source_label || '').toUpperCase() === 'DATA_UNAVAILABLE');
+            const ndBanner = document.getElementById('no-market-data-banner');
+            if (ndBanner) ndBanner.classList.toggle('hidden', !(allUnavailable || rowsAllDead));
             const progressRow = data.scanning ? `
                 <tr><td colspan="9" class="py-5 text-center bg-blue-500/5">
                     <div class="skel mx-auto mb-2 w-40"></div>
@@ -1744,7 +1757,7 @@
             if (intentBadge) {
                 intentBadge.textContent = intentState;
                 intentBadge.title = intent.message || intentState;
-                intentBadge.className = `status-badge !px-2 !py-1 ${intentState === 'EXECUTING' ? 'bg-green-500/10 text-green-500' : (intentState === 'WAITING_SETUP' ? 'bg-orange-500/10 text-orange-500' : 'bg-slate-500/10 text-slate-500')}`;
+                intentBadge.className = `status-badge notranslate !px-2 !py-1 ${intentState === 'EXECUTING' ? 'bg-green-500/10 text-green-500' : (intentState === 'WAITING_SETUP' ? 'bg-orange-500/10 text-orange-500' : 'bg-slate-500/10 text-slate-500')}`;
             }
 
             updateStatus(s);
@@ -1756,7 +1769,7 @@
             const taBadge = document.getElementById('trading-active-badge');
             if (taBadge) {
                 taBadge.textContent = tradingActive ? t('tradingActive') : t('paused');
-                taBadge.className = `status-badge !px-2 !py-1 ${tradingActive ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'}`;
+                taBadge.className = `status-badge notranslate !px-2 !py-1 ${tradingActive ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'}`;
             }
             const ttEl = document.getElementById('trades-today-count');
             if (ttEl) ttEl.innerText = (s.trades_today ?? 0);
@@ -1777,7 +1790,7 @@
             const engStatus = document.getElementById('eng-status');
             if (engStatus) {
                 engStatus.innerText = s.is_running ? 'ONLINE' : 'STANDBY';
-                engStatus.className = `status-badge ${s.is_running ? 'bg-green-500/10 text-green-500' : 'bg-slate-500/10 text-slate-500'}`;
+                engStatus.className = `status-badge notranslate ${s.is_running ? 'bg-green-500/10 text-green-500' : 'bg-slate-500/10 text-slate-500'}`;
             }
             const set = (id, v) => { const el = document.getElementById(id); if (el) el.innerText = v; };
             const st = s.stats || {};
@@ -1788,7 +1801,7 @@
             const tradableEl = document.getElementById('eng-tradable');
             if (tradableEl) {
                 tradableEl.innerText = st.tradable ?? '--';
-                tradableEl.className = `status-badge ${(st.tradable || 0) > 0 ? 'bg-green-500/10 text-green-500' : 'bg-slate-500/10 text-slate-500'}`;
+                tradableEl.className = `status-badge notranslate ${(st.tradable || 0) > 0 ? 'bg-green-500/10 text-green-500' : 'bg-slate-500/10 text-slate-500'}`;
             }
             set('eng-duration', `${(lastScanDuration || 0).toFixed(1)}s`);
 
@@ -1798,7 +1811,7 @@
             const armDot = document.getElementById('arm-status-indicator');
             if (armBtn) armBtn.innerText = s.armed ? t('disarmEngine') : t('armEngine');
             if (armBtn) armBtn.className = `w-full py-5 rounded-2xl font-black text-sm active:scale-95 transition-all shadow-xl ${s.armed ? 'bg-accent-orange text-black' : 'bg-black text-white dark:bg-white dark:text-black'}`;
-            if (armLabel) { armLabel.innerText = s.armed ? 'ARMED' : 'DISARMED'; armLabel.className = `text-[10px] font-black uppercase tracking-widest ${s.armed ? 'text-accent-orange' : 'text-red-500'}`; }
+            if (armLabel) { armLabel.innerText = s.armed ? 'ARMED' : 'DISARMED'; armLabel.className = `text-[10px] notranslate font-black uppercase tracking-widest ${s.armed ? 'text-accent-orange' : 'text-red-500'}`; }
             if (armDot) armDot.className = `w-1.5 h-1.5 rounded-full ${s.armed ? 'bg-accent-orange animate-pulse' : 'bg-red-500'}`;
             const demoBtn = document.getElementById('mode-demo-btn');
             const liveBtn = document.getElementById('mode-live-btn');
@@ -1819,7 +1832,7 @@
                 const statusTag = document.getElementById('market-status-tag');
                 if (statusTag) {
                     statusTag.innerText = s.ticker.status || 'LIVE';
-                    statusTag.className = `text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${s.ticker.status === 'LIVE' ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'}`;
+                    statusTag.className = `text-[9px] notranslate font-black uppercase tracking-widest px-2 py-0.5 rounded ${s.ticker.status === 'LIVE' ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'}`;
                 }
             }
 
@@ -1827,7 +1840,7 @@
             if (s.analysis) {
                 const a = s.analysis;
                 const trendEl = document.getElementById('ana-trend');
-                if (trendEl) { trendEl.innerText = a.trend || 'NEUTRAL'; trendEl.className = `font-black text-sm ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}`; }
+                if (trendEl) { trendEl.innerText = a.trend || 'NEUTRAL'; trendEl.className = `notranslate font-black text-sm ${a.trend === 'BULLISH' ? 'text-green-500' : (a.trend === 'BEARISH' ? 'text-red-500' : 'text-slate-500')}`; }
                 set('ana-struct', a.is_hh ? 'HH/HL' : (a.is_ll ? 'LH/LL' : 'CONSOLIDATION'));
                 set('ana-mom', `${(a.momentum || 0).toFixed(4)}%`);
                 set('ana-vol', a.volatility || 'LOW');
@@ -1987,7 +2000,7 @@
                     setTxt('op-risk', risk.toFixed(2));
                     const pct = window._liveBalance > 0 ? (risk / window._liveBalance * 100) : 0;
                     setTxt('op-pct', `${pct.toFixed(2)}%`);
-                    if (riskEl) riskEl.className = `text-[10px] font-black tabular-nums ${pct > 2 ? 'text-red-500' : 'text-accent-green'}`;
+                    if (riskEl) riskEl.className = `text-[10px] notranslate font-black tabular-nums ${pct > 2 ? 'text-red-500' : 'text-accent-green'}`;
                     const legacy = document.getElementById('manual-risk-calc');
                     if (legacy) legacy.innerText = risk.toFixed(2);
                 } else {
