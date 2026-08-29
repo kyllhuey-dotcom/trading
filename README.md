@@ -2,6 +2,24 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
+> **v3.1.0** — P0 REAL : **fail-close SL/TP** (échec d'attache → flatten
+> immédiat reduceOnly, jamais de position nue silencieuse), réconciliation
+> spot honnête (`get_positions()==[]` ne vaut close que si l'exchange sait
+> énumérer les positions), persistance du `filled` réel + frais broker,
+> **sandbox CCXT réel** (`set_sandbox_mode` avant `load_markets`, refus si
+> indisponible), close unitaire REAL via ordre broker confirmé,
+> `execute-signal` exige START+ARM. GET sensibles (`/api/settings`,
+> `/api/brokers`, `/api/history`, `/api/wallets`, `/api/metrics`,
+> `/api/optimization`) protégés par `ADMIN_API_KEY`. Déploiement cible :
+> **Railway** (le mode serverless ne porte pas les boucles asyncio).
+> La clé UI vit en **sessionStorage** + cookie de session HttpOnly
+> `qtp_session` (`credentials:'include'`). L'exécution REAL reste
+> **expérimentale** — aucun win rate de 99 % n'est promis.
+>
+> **v3.0** — RR défaut **2.0** (clamp 1.0–2.0), fenêtre news `trade`
+> (défaut), mémoire hors-ligne 7 jours (quotes/OHLCV), persist START/ARM,
+> cookie session HMAC + lockout, docs OpenAPI masqués hors TESTING.
+>
 > **v2.9.2** — Auto **RSI-14 only**, RR 1.5 (clamp 1.0–2.0). LIVE/DELAYED
 > basé sur le timestamp (jamais le nom du provider). Scan timeout 120s.
 > Corrélation par `underlying`. Objectifs réalistes : WR ≥45 %, RR net ≥1.5,

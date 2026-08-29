@@ -416,6 +416,18 @@ async def test_tick_capital_real_and_unsafe(monkeypatch):
 async def test_execute_signal_and_optimization(monkeypatch):
     with pytest.raises(HTTPException):
         await idx._execute_signal_for_market("no_such_market")
+
+    # v3.1 P0-6: without START+ARM the endpoint refuses immediately.
+    idx.bot_state.update(is_running=True, armed=False)
+    out = await idx._execute_signal_for_market("btc_usdt")
+    assert out["success"] is False
+    assert out["reason"] == "SYSTEM_NOT_ARMED"
+    idx.bot_state.update(is_running=False, armed=True)
+    out = await idx._execute_signal_for_market("btc_usdt")
+    assert out["success"] is False
+    assert out["reason"] == "SYSTEM_NOT_ARMED"
+
+    idx.bot_state.update(is_running=True, armed=True)
     idx.bot_state["latest_scan"] = []
     monkeypatch.setattr(idx, "get_market_snapshot", AsyncMock(return_value={
         "signal": {"strategy": "structure", "status": "SIGNAL_DETECTED", "entry": 1, "score": 90},
@@ -443,12 +455,23 @@ async def test_execute_signal_and_optimization(monkeypatch):
     report = await idx.get_optimization("DEMO")
     assert "market_feasibility" in report
     assert report["best_markets"] or report["worst_markets"]
+    idx.bot_state.update(is_running=False, armed=False)
 
 
 async def test_close_position_and_orderbook_ohlcv(monkeypatch):
     idx.bot_state.update(mode="DEMO", active_trades=[])
     assert (await idx.close_position_api("btc_usdt"))["success"] is False
+    # v3.1 P0-5: REAL close is routed to the broker connector.
     idx.bot_state.update(mode="REAL", active_trades=[{"symbol": "btc_usdt"}])
+    monkeypatch.setattr(idx.broker_connector, "close_position",
+                        AsyncMock(return_value={"success": True, "exit_price": 101.0}))
+    monkeypatch.setattr(idx.db_manager, "get_active_positions", MagicMock(return_value=[]))
+    res_real = await idx.close_position_api("btc_usdt")
+    assert res_real["success"] is True
+    idx.broker_connector.close_position.assert_awaited_once_with("btc_usdt")
+    monkeypatch.undo()
+    # REAL without a matching open position stays an honest failure.
+    idx.bot_state.update(mode="REAL", active_trades=[])
     assert (await idx.close_position_api("btc_usdt"))["success"] is False
     idx.bot_state.update(mode="DEMO", active_trades=[{"symbol": "btc_usdt"}])
     monkeypatch.setattr(idx.data_engine, "fetch_ticker", AsyncMock(return_value={"last": 101}))

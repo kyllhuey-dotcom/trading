@@ -197,7 +197,7 @@ def test_login_logout_cookie_flow():
 
 
 def test_app_version_and_docs_disabled_outside_testing():
-    assert idx.app.version == "3.0.0"
+    assert idx.app.version == "3.1.0"
     assert getattr(idx.news_engine, "news_window_mode", "trade") == "trade"
 
 

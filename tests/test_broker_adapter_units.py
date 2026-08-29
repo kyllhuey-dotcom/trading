@@ -22,6 +22,11 @@ class FakeClient:
         self.open_orders = []
         self.fail_types = set()
         self.fail_cancel_ids = set()
+        self.has = {}
+        self.sandbox_enabled = False
+
+    def set_sandbox_mode(self, enabled):
+        self.sandbox_enabled = bool(enabled)
 
     async def load_markets(self):
         return self.markets
@@ -46,6 +51,7 @@ class FakeClient:
             "status": "closed",
             "filled": args[3],
             "average": 100.0,
+            "fee": {"cost": 0.12, "currency": "USDT"},
         }
 
     async def fetch_open_orders(self):
@@ -134,6 +140,10 @@ async def test_execute_order_validates_inputs_and_creates_reduce_only_protection
     assert result["success"] is True
     assert result["tp_order_id"] == "limit-1"
     assert result["sl_order_id"] == "stop_loss-1"
+    # v3.1 P0-1: honest fill accounting exposed to the connector
+    assert result["filled"] == 2.0
+    assert result["average"] == 100.0
+    assert result["fees"] == 0.12
     market, take_profit, stop_loss = client.calls
     assert market == ("BTC/USDT", "market", "buy", 2.0)
     assert take_profit[-1] == {"reduceOnly": True}
@@ -149,14 +159,123 @@ async def test_execute_order_reports_primary_and_protection_failures():
     client = FakeClient()
     adapter.client = client
     client.fail_types.add("limit")
+    # v3.1 P0-1 fail-close: a protection failure is NO LONGER a success —
+    # the position is flattened with a reduce-only market hedge.
     result = await adapter.execute_order("BTC/USDT", "sell", 1, sl=105, tp=90)
-    assert result["success"] is True
+    assert result["success"] is False
+    assert result["reason"] == "SL_TP_ATTACH_FAILED_FLATTENED"
+    assert result["flattened"] is True
     assert "failed limit" in result["sl_tp_warning"]
+    # The flatten order is a market hedge (buy vs the original sell),
+    # reduce-only, on the FILLED quantity.
+    flatten = client.calls[-1]
+    assert flatten == ("BTC/USDT", "market", "buy", 1.0, None, {"reduceOnly": True})
 
     client.fail_types = {"market"}
     result = await adapter.execute_order("BTC/USDT", "buy", 1)
     assert result["success"] is False
     assert "BROKER_EXECUTION_ERROR" in result["reason"]
+
+
+async def test_execute_order_naked_when_flatten_also_fails():
+    adapter = CCXTAdapter("fake", "key", "secret")
+    client = FakeClient()
+    adapter.client = client
+
+    original_create = client.create_order
+    state = {"n": 0}
+
+    async def create_order(*args):
+        # 1st call: market fill OK; 2nd: TP limit fails; 3rd: flatten fails
+        state["n"] += 1
+        if state["n"] == 1:
+            return await original_create(*args)
+        raise RuntimeError(f"boom {args[1]}")
+
+    client.create_order = create_order
+    result = await adapter.execute_order("BTC/USDT", "buy", 1, sl=95, tp=110)
+    assert result["success"] is False
+    assert result["reason"] == "SL_TP_ATTACH_FAILED_NAKED"
+    assert result["flattened"] is False
+
+
+async def test_execute_order_invalid_fill():
+    adapter = CCXTAdapter("fake", "key", "secret")
+
+    class ZeroFillClient(FakeClient):
+        async def create_order(self, *args):
+            # A negative/absurd fill must never fall back to the requested
+            # quantity — that would attach protection on a phantom position.
+            return {"id": "m-1", "status": "closed", "filled": -1, "average": None}
+
+    adapter.client = ZeroFillClient()
+    result = await adapter.execute_order("BTC/USDT", "buy", 1, sl=95, tp=110)
+    assert result["success"] is False
+    assert result["reason"] == "INVALID_FILL"
+
+
+async def test_close_position_disconnected_invalid_and_happy_path():
+    adapter = CCXTAdapter("fake", "key", "secret")
+    # Disconnected
+    res = await adapter.close_position("BTC/USDT", "buy", 1)
+    assert res["success"] is False and res["reason"] == "BROKER_DISCONNECTED"
+
+    client = FakeClient()
+    adapter.client = client
+    # Invalid inputs
+    assert (await adapter.close_position("BTC/USDT", "hold", 1))["reason"] == "INVALID_SIDE"
+    for quantity in (0, -3, float("nan"), "oops"):
+        res = await adapter.close_position("BTC/USDT", "buy", quantity)
+        assert res["reason"] == "INVALID_QUANTITY"
+
+    # Happy path: market reduce-only hedge (sell closes a long)
+    res = await adapter.close_position("BTC/USDT", "BUY", 2)
+    assert res["success"] is True
+    assert client.calls[-1] == ("BTC/USDT", "market", "sell", 2.0, None, {"reduceOnly": True})
+
+    # Broker error → honest failure
+    client.fail_types.add("market")
+    res = await adapter.close_position("BTC/USDT", "sell", 1)
+    assert res["success"] is False
+    assert "BROKER_CLOSE_ERROR" in res["reason"]
+
+
+async def test_sandbox_setter_called_before_load_markets(monkeypatch):
+    import api.engines.broker_adapters.ccxt_adapter as module
+
+    class SandboxClient(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self.order = []
+
+        def set_sandbox_mode(self, enabled):
+            self.order.append("sandbox")
+            self.sandbox_enabled = bool(enabled)
+
+        async def load_markets(self):
+            self.order.append("load_markets")
+            return self.markets
+
+    client = SandboxClient()
+    monkeypatch.setattr(module.ccxt, "sbx", lambda config: client, raising=False)
+    adapter = CCXTAdapter("sbx", "key", "secret", sandbox=True)
+    assert await adapter.connect() is True
+    assert client.order == ["sandbox", "load_markets"]
+    assert client.sandbox_enabled is True
+
+
+async def test_sandbox_without_setter_refuses_connect(monkeypatch):
+    import api.engines.broker_adapters.ccxt_adapter as module
+
+    class NoSandboxClient(FakeClient):
+        set_sandbox_mode = None  # not callable
+
+    client = NoSandboxClient()
+    monkeypatch.setattr(module.ccxt, "nosbx", lambda config: client, raising=False)
+    adapter = CCXTAdapter("nosbx", "key", "secret", sandbox=True)
+    assert await adapter.connect() is False
+    assert adapter.client is None
+    assert client.closed is True
 
 
 async def test_close_all_positions_uses_correct_ccxt_signature_and_continues():

@@ -113,7 +113,7 @@ REAL_MODE_WARNING = "Live execution still experimental – use DEMO for strategi
 
 app = FastAPI(
     title="Quantum Trade Pro",
-    version="3.0.0",
+    version="3.1.0",
     lifespan=None,
     docs_url="/docs" if TESTING else None,
     redoc_url="/redoc" if TESTING else None,
@@ -1053,7 +1053,9 @@ async def tick_management():
         async with state_lock:
             bot_state["active_trades"] = demo_execution.active_positions
     else:
-        # REAL: never fake-close locally — close only via broker reconciliation.
+        # REAL: never fake-close locally — a close always goes through a real
+        # broker order (native SL/TP, reconciliation, or an explicit
+        # reduce-only close below). The DB is only CLOSED after confirmation.
         await broker_connector.reconcile_positions()
         for t in db_manager.get_active_positions("REAL"):
             ticker = tickers.get(t["display_symbol"]) or tickers.get(t["symbol"])
@@ -1067,6 +1069,22 @@ async def tick_management():
             else:
                 t["pnl"] = (t["entry_price"] - px) * t["quantity"]
             db_manager.save_trade(t)
+            # v3.1 P0-5: software SL/TP backstop — if the price touched the
+            # level, send a REAL reduce-only close through the broker. The
+            # trade only becomes CLOSED in DB when the broker confirms.
+            sl, tp = t.get("sl"), t.get("tp")
+            hit = False
+            if t["direction"] == "BUY":
+                hit = (sl is not None and px <= sl) or (tp is not None and px >= tp)
+            else:
+                hit = (sl is not None and px >= sl) or (tp is not None and px <= tp)
+            if hit:
+                try:
+                    await broker_connector.close_position(t["symbol"])
+                except Exception as exc:
+                    structured_log(logger, logging.ERROR, "REAL_SLTP_CLOSE_FAILED",
+                                   event="real_sltp_close_failed",
+                                   symbol=t.get("symbol"), error=str(exc))
         async with state_lock:
             bot_state["active_trades"] = db_manager.get_active_positions("REAL")
 
@@ -1451,7 +1469,7 @@ async def get_status(market_id: str = "btc_usdt"):
     }
 
 
-@app.get("/api/history")
+@app.get("/api/history", dependencies=[Depends(require_admin)])
 async def get_history(mode: str = "DEMO", limit: int = 100):
     return db_manager.get_history(mode=mode, limit=limit)
 
@@ -1484,7 +1502,7 @@ async def get_markets(sort: str = "score", order: str = "desc"):
     return enrich_overview(overview, bot_state.get("latest_scan") or [], sort=sort, order=order)
 
 
-@app.get("/api/settings")
+@app.get("/api/settings", dependencies=[Depends(require_admin)])
 async def get_settings():
     return ensure_defaults(db_manager.get_settings())
 
@@ -1784,7 +1802,7 @@ async def demo_balance(body: Dict[str, Any] = Body(...)):
 
 
 # ---- Brokers -------------------------------------------------------------- #
-@app.get("/api/brokers")
+@app.get("/api/brokers", dependencies=[Depends(require_admin)])
 async def get_brokers():
     # v2.8: enrich each broker row with its runtime snapshot (cached 30 s,
     # network calls only for active brokers, fail-safe to INACTIVE/ERROR).
@@ -1817,15 +1835,16 @@ async def test_broker_connection_api(body: Dict[str, Any] = Body(...)):
     if not exchange_id or not api_key or not api_secret:
         raise HTTPException(400, "exchange_id, api_key and api_secret are required")
 
-    import os as _os
     from api.engines.broker_adapters.ccxt_adapter import CCXTAdapter
     from api.engines.broker_adapters.primexbt_adapter import PrimeXBTAdapter
 
-    _os.environ["BROKER_SANDBOX"] = "true" if sandbox else "false"
+    # v3.1 P0-4: sandbox is passed to the adapter constructor — never via a
+    # process-wide os.environ mutation (racy, leaks into other connections).
     if exchange_id.upper() == "PRIMEXBT":
         adapter = PrimeXBTAdapter(api_key, api_secret, passphrase)
     else:
-        adapter = CCXTAdapter(exchange_id, api_key, api_secret, passphrase)
+        adapter = CCXTAdapter(exchange_id, api_key, api_secret, passphrase,
+                              sandbox=sandbox)
 
     start = time.monotonic()
     connected = await adapter.connect()
@@ -1849,11 +1868,13 @@ async def add_broker_api(body: Dict[str, Any] = Body(...)):
     api_key = str(body.get("api_key", "")).strip()
     api_secret = str(body.get("api_secret", "")).strip()
     passphrase = body.get("api_passphrase")
+    sandbox = bool(body.get("sandbox", False))
 
     if not broker_id or not exchange_id or not api_key or not api_secret:
         raise HTTPException(400, "broker_id, exchange_id, api_key and api_secret are required")
 
-    connected = await broker_connector.add_broker(broker_id, exchange_id, api_key, api_secret, passphrase)
+    connected = await broker_connector.add_broker(broker_id, exchange_id, api_key, api_secret,
+                                                  passphrase, sandbox=sandbox)
     broker_connector.invalidate_runtime_cache(broker_id)
     if connected:
         db_manager.save_broker_config(broker_id, exchange_id, api_key, api_secret, passphrase)
@@ -1895,8 +1916,8 @@ async def close_position_api(market_id: str):
     """Close ONE open position at market (user-initiated).
 
     DEMO mode closes locally through the demo execution engine. REAL mode
-    never fake-closes locally (positions are reconciled with the broker) —
-    use the emergency stop to flatten REAL exposure.
+    routes the close to the broker (reduce-only market order) and only marks
+    the DB CLOSED after the broker confirmed — never a local fake-close.
     """
     mode = bot_state["mode"]
     active = [p for p in (bot_state.get("active_trades") or [])
@@ -1904,9 +1925,14 @@ async def close_position_api(market_id: str):
     if not active:
         return {"success": False, "reason": f"No open position for {market_id}"}
     if mode != "DEMO":
-        return {"success": False,
-                "reason": "REAL mode: positions are closed on the broker "
-                          "(use Emergency Stop to flatten all exposure)."}
+        # v3.1 P0-5: REAL unit close goes through the broker connector.
+        res = await broker_connector.close_position(market_id)
+        if res.get("success"):
+            async with state_lock:
+                bot_state["active_trades"] = db_manager.get_active_positions("REAL")
+            db_manager.log_audit("INFO", "MANUAL_CLOSE",
+                                 f"REAL position {market_id} closed on broker")
+        return res
     ticker = await data_engine.fetch_ticker(market_id)
     if not ticker or not ticker.get("last"):
         return {"success": False, "reason": "No market data available to price the exit"}
@@ -1922,7 +1948,7 @@ async def close_position_api(market_id: str):
 
 
 # ---- Web3 wallets (watch-only) -------------------------------------------- #
-@app.get("/api/wallets")
+@app.get("/api/wallets", dependencies=[Depends(require_admin)])
 async def get_wallets():
     """v2.7 P1-10: Wallets are watch-only. Never presented as signing-capable."""
     wallets = db_manager.get_wallets()
@@ -2029,7 +2055,7 @@ async def get_performance(mode: str = "DEMO"):
     return portfolio_engine.get_performance_report(mode)
 
 
-@app.get("/api/optimization")
+@app.get("/api/optimization", dependencies=[Depends(require_admin)])
 async def get_optimization(mode: str = "DEMO"):
     """Audit & optimization dashboard data (LOT R).
 
@@ -2078,7 +2104,7 @@ async def get_optimization(mode: str = "DEMO"):
     }
 
 
-@app.get("/api/metrics")
+@app.get("/api/metrics", dependencies=[Depends(require_admin)])
 async def get_metrics():
     core = metrics_engine.snapshot()
     # Simulated winrate = win rate computed on CLOSED (paper/real) trades,
@@ -2191,6 +2217,10 @@ async def diagnose(market_id: str = "btc_usdt"):
 async def _execute_signal_for_market(market_id: str) -> Dict[str, Any]:
     if not market_id or not data_engine.universe.get_info(market_id):
         raise HTTPException(400, f"Unknown market_id: {market_id}")
+    # v3.1 P0-6: manual execute-signal obeys the same state machine as the
+    # scanner — no execution without START + ARM.
+    if not bot_state.get("is_running") or not bot_state.get("armed"):
+        return {"success": False, "reason": "SYSTEM_NOT_ARMED"}
     settings = settings_provider.get()
     try:
         min_score = float(settings.get("min_signal_score", AUTO_EXECUTION_SCORE_FLOOR))

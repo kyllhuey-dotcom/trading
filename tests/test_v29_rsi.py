@@ -47,6 +47,8 @@ def test_radar_disables_legacy_strategy_execution():
 
 @pytest.mark.asyncio
 async def test_execute_signal_rejects_non_rsi(monkeypatch):
+    # v3.1 P0-6: execute-signal requires START+ARM before any other check.
+    idx.bot_state.update(is_running=True, armed=True)
     idx.bot_state["latest_scan"] = [{
         "symbol": "btc_usdt",
         "score": 99,
@@ -58,6 +60,7 @@ async def test_execute_signal_rejects_non_rsi(monkeypatch):
     result = await idx._execute_signal_for_market("btc_usdt")
     assert result["success"] is False
     assert "RSI" in result["reason"]
+    idx.bot_state.update(is_running=False, armed=False)
 
 
 @pytest.mark.asyncio

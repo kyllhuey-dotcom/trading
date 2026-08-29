@@ -205,6 +205,8 @@ async def test_backtest_runs_on_trending_data():
 class FakeAdapter:
     exchange_id = "gate"
     connect_ok = True
+    # v3.1 P0-2: spot-like fake — an empty get_positions() is NOT proof of close
+    positions_authoritative = False
 
     def __init__(self, *args, **kwargs):
         self.connected = False
@@ -228,6 +230,9 @@ class FakeAdapter:
 
     async def close_all_positions(self):
         return {"closed_positions": 0}
+
+    async def close_position(self, symbol, side, quantity):
+        return {"success": True}
 
     async def get_positions(self):
         return []
@@ -348,7 +353,24 @@ async def test_broker_reconcile_positions(connector):
                    "direction": "BUY", "entry_price": 100.0, "quantity": 1.0,
                    "sl": 99.0, "tp": 102.0, "status": "OPEN", "pnl": 0.0,
                    "metadata": {"broker_id": "b1", "broker_symbol": "BTC/USDT"}})
-    # Fake adapter reports no live positions → the DB trade must be closed
+    # v3.1 P0-2: the fake adapter is NOT positions-authoritative (spot-like),
+    # so an empty get_positions() must NOT close the DB trade.
+    closed = await c.reconcile_positions()
+    assert closed == []
+    assert db.get_active_positions("REAL")[0]["id"] == "R1"
+
+
+async def test_broker_reconcile_closes_when_authoritative(connector):
+    c, db = connector
+    await c.add_broker("b1", "gate", "K", "S")
+    db.save_trade({"id": "R2", "mode": "REAL", "symbol": "btc_usdt",
+                   "display_symbol": "BTC/USDT",
+                   "direction": "BUY", "entry_price": 100.0, "quantity": 1.0,
+                   "sl": 99.0, "tp": 102.0, "status": "OPEN", "pnl": 0.0,
+                   "metadata": {"broker_id": "b1", "broker_symbol": "BTC/USDT"}})
+    # Authoritative adapter (derivatives with fetchPositions) reporting [] →
+    # the position really disappeared on the broker → CLOSE in DB.
+    c.active_adapters["b1"].positions_authoritative = True
     closed = await c.reconcile_positions()
     assert len(closed) == 1
     assert closed[0]["metadata"]["close_reason"] == "BROKER_RECONCILED_CLOSE"

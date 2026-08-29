@@ -2089,7 +2089,13 @@
 
         async function closeTerminalPosition(symbol) {
             const res = await fetchAPI(`/positions/${encodeURIComponent(symbol)}/close`, 'POST');
-            if (res && res.success) showToast(`${t('closePosition')} ✓ ${res.net_pnl != null ? res.net_pnl.toFixed(2) : ''}`);
+            // v3.1: Close works in DEMO and REAL (REAL is routed to the broker
+            // with a reduce-only order; the DB is only closed on confirmation).
+            if (res && res.success) {
+                const detail = res.net_pnl != null ? res.net_pnl.toFixed(2)
+                    : (res.exit_price != null ? `@${res.exit_price}` : '');
+                showToast(`${t('closePosition')} ✓ ${detail}`);
+            }
             else showToast((res && res.reason) || t('unknownError'));
             update();
         }
