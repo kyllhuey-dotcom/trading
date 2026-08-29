@@ -15,6 +15,9 @@ class NotificationEngine:
         self.telegram_chat_id = telegram_chat_id or os.getenv("TELEGRAM_CHAT_ID")
         self.discord_webhook = os.getenv("DISCORD_WEBHOOK_URL")
         self.enabled = bool(self.telegram_token and self.telegram_chat_id)
+        # v3.3: exposed so /api/metrics can report notification delivery
+        # failures (a dead channel must be observable).
+        self.failure_count = 0
 
     async def send_telegram(self, message: str):
         if not self.enabled:
@@ -32,8 +35,10 @@ class NotificationEngine:
                 res = await client.post(url, json=data, timeout=10.0)
                 if res.status_code != 200:
                     logger.error(f"Telegram API Error: {res.text}")
+                    self.failure_count += 1
         except Exception as e:
             logger.error(f"Failed to send Telegram notification: {e}")
+            self.failure_count += 1
 
     async def send_discord(self, message: str):
         if not self.discord_webhook:
@@ -44,6 +49,7 @@ class NotificationEngine:
                 await client.post(self.discord_webhook, json={"content": message}, timeout=10.0)
         except Exception as e:
             logger.error(f"Failed to send Discord notification: {e}")
+            self.failure_count += 1
 
     async def notify(self, event_type: str, data: Dict[str, Any]):
         """
@@ -85,6 +91,37 @@ class NotificationEngine:
         elif event_type == "ERROR":
             emoji = "⚠️"
             message = f"<b>{emoji} SYSTEM ALERT</b>\n{data.get('message')}"
+        # ---- v3.3: REAL execution safety events ----
+        elif event_type == "SL_TP_ATTACH_FAILED_NAKED":
+            emoji = "🚨"
+            message = (
+                f"<b>{emoji} NAKED POSITION (SL/TP ATTACH FAILED)</b>\n"
+                f"Market: {data.get('symbol')}\n{data.get('message', '')}\n"
+                f"Manual action required."
+            )
+        elif event_type == "PROTECTION_LOST":
+            emoji = "🚨"
+            message = f"<b>{emoji} PROTECTION LOST (NAKED)</b>\nMarket: {data.get('symbol')}\n{data.get('message', '')}"
+        elif event_type == "POSITION_UNKNOWN":
+            emoji = "❓"
+            message = f"<b>{emoji} POSITION STATE UNKNOWN</b>\nMarket: {data.get('symbol')}\n{data.get('message', '')}"
+        elif event_type == "HEDGE_FAILED_AFTER_CANCEL":
+            emoji = "🚨"
+            message = (
+                f"<b>{emoji} CRITICAL — HEDGE FAILED AFTER CANCELLING PROTECTIONS</b>\n"
+                f"Market: {data.get('symbol')}\n{data.get('message', '')}"
+            )
+        elif event_type == "ORDER_STATE_UNKNOWN":
+            emoji = "❓"
+            message = (
+                f"<b>{emoji} ORDER STATE UNKNOWN</b>\n"
+                f"Market: {data.get('symbol')}\n"
+                f"clientOrderId: {data.get('client_order_id')}\n"
+                f"{data.get('message', '')}\nNO automatic retry — reconcile manually."
+            )
+        elif event_type == "RECONCILE_FAILING":
+            emoji = "⚠️"
+            message = f"<b>{emoji} RECONCILIATION FAILING</b>\n{data.get('message', '')}"
 
         if message:
             # Run both in parallel

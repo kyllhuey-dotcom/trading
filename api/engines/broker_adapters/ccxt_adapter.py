@@ -150,6 +150,46 @@ class CCXTAdapter(BrokerAdapter):
     # ------------------------------------------------------------------ #
     # Order execution                                                     #
     # ------------------------------------------------------------------ #
+    def _result_from_found_order(self, found: Dict[str, Any], side: str, symbol: str,
+                                 client_order_id: str) -> Dict[str, Any]:
+        """Build the execute_order result from an order re-found on the
+        exchange after an ambiguous send failure (no second order is sent)."""
+        try:
+            filled = float(found.get("filled") or 0.0)
+        except (TypeError, ValueError):
+            filled = 0.0
+        status = str(found.get("status") or "").lower()
+        if filled <= 0:
+            if status in ("canceled", "cancelled", "rejected", "expired"):
+                # The order died on the exchange without filling: no position.
+                return {"success": False, "reason": "ORDER_NOT_FILLED",
+                        "client_order_id": client_order_id,
+                        "broker_order_id": found.get("id")}
+            # Still open with zero fill: the state cannot be determined
+            # honestly — never retry blindly.
+            return {"success": False, "reason": "ORDER_STATE_UNKNOWN",
+                    "client_order_id": client_order_id,
+                    "broker_order_id": found.get("id")}
+        average = found.get("average") or found.get("price")
+        fee = found.get("fee") or {}
+        try:
+            fees = float(fee.get("cost") or 0.0) if isinstance(fee, dict) else float(fee or 0.0)
+        except (TypeError, ValueError):
+            fees = 0.0
+        return {
+            "success": True,
+            "broker_order_id": found.get("id"),
+            "status": found.get("status"),
+            "filled": filled,
+            "average": average,
+            "fees": fees,
+            "side": side,
+            "symbol": symbol,
+            "client_order_id": client_order_id,
+            "recovered_after_error": True,
+            "timestamp": datetime.now().isoformat(),
+        }
+
     async def execute_order(self, symbol: str, side: str, quantity: float,
                             sl: Optional[float] = None, tp: Optional[float] = None,
                             client_order_id: Optional[str] = None) -> Dict[str, Any]:
@@ -174,14 +214,16 @@ class CCXTAdapter(BrokerAdapter):
         except Exception as e:
             logger.error(f"Broker execution error ({self.exchange_id}): {e}")
             if client_order_id:
-                try:
-                    orders = await self.client.fetch_open_orders(symbol)
-                    if any((o.get("clientOrderId") or (o.get("info") or {}).get("clientOrderId"))
-                           == client_order_id for o in (orders or [])):
-                        return {"success": False, "reason": "ORDER_STATE_UNKNOWN",
-                                "client_order_id": client_order_id}
-                except Exception as lookup_exc:
-                    logger.warning("clientOrderId lookup failed (%s): %s", self.exchange_id, lookup_exc)
+                # v3.3 idempotence: NEVER send a second order. Reconcile the
+                # order that may already exist on the exchange, or report an
+                # honest ORDER_STATE_UNKNOWN (no automatic retry).
+                found = await self.find_order_by_client_id(client_order_id, symbol)
+                if found is not None:
+                    return self._result_from_found_order(found, normalized_side, symbol,
+                                                         client_order_id)
+                return {"success": False, "reason": "ORDER_STATE_UNKNOWN",
+                        "client_order_id": client_order_id,
+                        "error": str(e)}
             return {"success": False, "reason": f"BROKER_EXECUTION_ERROR: {str(e)}"}
 
         # v3.1 P0-1: honest fill accounting — protection orders and DB
@@ -267,20 +309,128 @@ class CCXTAdapter(BrokerAdapter):
         return result
 
     async def fetch_order_status(self, order_id: str, symbol: str) -> Optional[Dict[str, Any]]:
-        if not self.client:
+        """Full normalized status of one order.
+
+        Returns at minimum: order_id, status, average, filled, fees,
+        client_order_id. On ANY error: log a WARNING and return None — the
+        caller must never fake-close on this.
+        """
+        if not self.client or not order_id:
             return None
         try:
             order = await self.client.fetch_order(order_id, symbol)
-            return {"status": order.get("status"), "average": order.get("average"),
-                    "filled": order.get("filled")}
+            fee = order.get("fee") or {}
+            try:
+                fees = float(fee.get("cost") or 0.0) if isinstance(fee, dict) else float(fee or 0.0)
+            except (TypeError, ValueError):
+                fees = 0.0
+            return {
+                "order_id": order.get("id") or order_id,
+                "status": order.get("status"),
+                "average": order.get("average"),
+                "filled": order.get("filled"),
+                "fees": fees,
+                "client_order_id": order.get("clientOrderId")
+                                   or (order.get("info") or {}).get("clientOrderId"),
+                "timestamp": order.get("timestamp"),
+            }
         except Exception as exc:
             logger.warning("Fetch order status failed (%s/%s): %s", symbol, order_id, exc)
             return None
 
-    async def cancel_order(self, order_id: str, symbol: str) -> Any:
-        if not self.client:
+    async def cancel_order(self, order_id: str, symbol: Optional[str] = None) -> bool:
+        """Cancel one order. Returns True only on confirmed cancellation.
+
+        A single definition on purpose (a second `cancel_order` in this class
+        used to shadow this one and mask failures): the connector relies on
+        both the return value and raised exceptions.
+        """
+        if not self.client or not order_id:
+            return False
+        try:
+            await self.client.cancel_order(order_id, symbol)
+            return True
+        except Exception as e:
+            logger.warning("Cancel order error (%s %s): %s", self.exchange_id, order_id, e)
+            return False
+
+    # ------------------------------------------------------------------ #
+    # v3.3: idempotence — find an order after an ambiguous send failure    #
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _match_client_id(order: Dict[str, Any], client_order_id: str) -> bool:
+        if not isinstance(order, dict):
+            return False
+        info = order.get("info") if isinstance(order.get("info"), dict) else {}
+        candidates = (
+            order.get("clientOrderId"), info.get("clientOrderId"),
+            order.get("client_order_id"), info.get("client_order_id"),
+        )
+        return any(c is not None and str(c) == str(client_order_id) for c in candidates)
+
+    async def find_order_by_client_id(self, client_order_id: str,
+                                      symbol: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Locate an order by its clientOrderId after a send exception.
+
+        Search order (per v3.3 spec):
+          1. fetch_order by client ID (when the exchange accepts it);
+          2. open orders;
+          3. closed orders;
+          4. recent trades;
+          5. exchange-specific APIs surfaced by CCXT (fetch_my_trades etc.
+             are covered by 4; nothing exchange-specific is hardcoded).
+        Returns the raw CCXT order dict (or a trade-shaped dict) or None.
+        Every step is best-effort: a failing step never hides the next one.
+        """
+        if not self.client or not client_order_id:
             return None
-        return await self.client.cancel_order(order_id, symbol)
+        # 1. fetch order by client id
+        try:
+            order = await self.client.fetch_order(client_order_id, symbol)
+            if order and (self._match_client_id(order, client_order_id)
+                          or order.get("id") == client_order_id):
+                return order
+        except Exception as exc:
+            logger.debug("fetch_order by clientOrderId failed (%s): %s",
+                         self.exchange_id, exc)
+        # 2. open orders
+        try:
+            orders = await self.client.fetch_open_orders(symbol)
+            for o in orders or []:
+                if self._match_client_id(o, client_order_id):
+                    return o
+        except Exception as exc:
+            logger.warning("Open-order lookup failed (%s): %s", self.exchange_id, exc)
+        # 3. closed orders
+        fetch_closed = getattr(self.client, "fetch_closed_orders", None)
+        if callable(fetch_closed):
+            try:
+                orders = await fetch_closed(symbol, limit=50)
+                for o in orders or []:
+                    if self._match_client_id(o, client_order_id):
+                        return o
+            except Exception as exc:
+                logger.warning("Closed-order lookup failed (%s): %s", self.exchange_id, exc)
+        # 4. recent trades
+        try:
+            trades = await self.client.fetch_trades(symbol, limit=50)
+            for t in trades or []:
+                info = t.get("info") if isinstance(t.get("info"), dict) else {}
+                if (t.get("order") == client_order_id
+                        or info.get("clientOrderId") == client_order_id
+                        or info.get("client_order_id") == client_order_id):
+                    return {
+                        "id": t.get("order") or t.get("id"),
+                        "clientOrderId": client_order_id,
+                        "status": "closed",
+                        "filled": t.get("amount"),
+                        "average": t.get("price"),
+                        "fee": t.get("fee") or {},
+                        "timestamp": t.get("timestamp"),
+                    }
+        except Exception as exc:
+            logger.warning("Trades lookup failed (%s): %s", self.exchange_id, exc)
+        return None
 
     async def close_position(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]:
         """Close ONE position with a market reduce-only hedge order.
@@ -374,16 +524,6 @@ class CCXTAdapter(BrokerAdapter):
             except Exception as exc:
                 result["errors"].append(f"cancel order {order.get('id', '?')}: {exc}")
         return result
-
-    async def cancel_order(self, order_id: str, symbol: Optional[str] = None) -> bool:
-        if not self.client:
-            return False
-        try:
-            await self.client.cancel_order(order_id, symbol)
-            return True
-        except Exception as e:
-            logger.warning(f"Cancel order error ({self.exchange_id}): {e}")
-            return False
 
     def get_status(self) -> Dict[str, Any]:
         return {

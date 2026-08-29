@@ -2,6 +2,27 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
+> **v3.3.0** — REAL is experimental. A successful testnet campaign is
+> required before any real ARM. No profitability guarantee. (Campagne
+> testnet réussie obligatoire avant tout ARM réel ; aucune garantie de
+> rentabilité.)
+>
+> **v3.3.0** — Démarrage FastAPI 0.141.x réparé (`require_admin_dependency`),
+> **toutes** les mutations protégées (test d'inspection des routes),
+> machine d'état des protections SL/TP (un ID seul ne prouve plus rien :
+> `OPEN/PARTIALLY_FILLED/FILLED/CANCELED/EXPIRED/REJECTED/UNKNOWN/NAKED`),
+> fenêtre **NAKED** après close échoué (protections annulées + hedge en échec
+> → trade OPEN, audit CRITICAL, notification), **idempotence durable**
+> (intentions d'ordres persistées, `clientOrderId`, ordre retrouvé via
+> fetch/open/closed/trades, `ORDER_STATE_UNKNOWN` sans retry automatique),
+> **fills partiels** (delta positif seul, réconciliation idempotente, jamais
+> de close complet si `filled < quantity`), PnL/frais sans double comptage
+> (`CLOSED_PRICE_PENDING` si pas de prix confirmé), emergency stop **par
+> position** (confirmé avant close DB), fail-fast `APP_ENV=production`
+> (ADMIN_API_KEY/FERNET_KEY), readiness `/readyz`, backup/restore, redaction
+> des secrets dans les logs, métriques REAL (`ORDER_STATE_UNKNOWN`, NAKED,
+> reconcile lag), matrice testnet multi-exchange (Binance/Bybit/OKX/Gate).
+>
 > **v3.2.0** — REAL reste expérimental ; campagne testnet obligatoire avant tout ARM réel.
 >
 > **v3.2.0** — P0 REAL : **fail-close SL/TP** (échec d'attache → flatten
@@ -74,7 +95,10 @@ python3 -m api.index
 ### Production (Railway)
 
 - Le volume `/app/data` (configuré dans `railway.json`) persiste la base SQLite entre les déploiements.
-- Variables à définir sur Railway : `ADMIN_API_KEY` (obligatoire), `FERNET_KEY` (obligatoire si vous connectez un broker). `TWELVEDATA_API_KEY` et `FINNHUB_API_KEY` sont optionnelles ; sans elles Yahoo reste le fallback tradfi.
+- Variables à définir sur Railway : `APP_ENV=production` (fail-fast), `ADMIN_API_KEY` (obligatoire, ≥ 16 caractères), `FERNET_KEY` (obligatoire, clé Fernet valide). `TWELVEDATA_API_KEY` et `FINNHUB_API_KEY` sont optionnelles ; sans elles Yahoo reste le fallback tradfi.
+- En `APP_ENV=production`, le démarrage est **refusé** si une clé manque ou est manifestement faible (avant la première requête).
+- Probes : `GET /healthz` (liveness) et `GET /readyz` (readiness — 503 si DB indisponible ou configuration production invalide).
+- Runbook complet : [`docs/RUNBOOK_PRODUCTION.md`](docs/RUNBOOK_PRODUCTION.md) (backup/restore via `scripts/backup_db.py`, incidents NAKED / ORDER_STATE_UNKNOWN, emergency stop).
 - Le calendrier persistant et la base de trades partagent le volume SQLite. La politique de panne se règle via `news_unavailable_policy=block_all|block_tradfi_only|allow_all` (`block_tradfi_only` par défaut : si le calendrier est HS, la crypto continue et le tradfi reste bloqué).
 - `auto_start_on_startup=true` démarre sans armer ; `auto_arm_on_startup=true` arme **et** démarre. Les deux restent `false` par défaut.
 - Healthcheck léger : `GET /healthz`. Détail providers/marchés/calendrier : `GET /api/health`.
@@ -147,6 +171,8 @@ Contrat complet : [`docs/api_contract.md`](docs/api_contract.md). Résumé :
 | GET | `/api/performance?mode=` | Stats, espérance, par stratégie |
 | GET | `/api/optimization?mode=` | Audit/optimisation live : tranche de capital, faisabilité des marchés au solde, tuning par marché, top/flop marchés |
 | GET | `/api/metrics` | Compteurs système + ordres récents |
+| GET | `/healthz` | Liveness (processus) |
+| GET | `/readyz` | Readiness v3.3 (503 si DB indisponible ou config production invalide) |
 | GET | `/api/health` | Santé providers + source active/âge/nombre de sources par marché + calendrier |
 | GET | `/api/news` | Actualités agrégées |
 | GET | `/api/brokers` / `/api/wallets` | Connexions |

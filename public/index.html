@@ -2447,10 +2447,11 @@
 
         document.getElementById('mode-live-btn').onclick = async () => {
             if (botIsMode === 'REAL') return;
-            if (!confirm('Warning: REAL FUNDS will be used. Proceed?')) return;
+            // v3.3: explicit, localized confirmation before entering REAL mode.
+            if (!confirm(t('realModeSwitchConfirm'))) return;
             const res = await fetchAPI('/mode', 'POST');
             if (res && res.success) update();
-            else alert(res && res.message ? res.message : 'Mode switch failed.');
+            else alert(res && res.message ? res.message : t('unknownError'));
         };
 
         document.getElementById('main-toggle-btn').onclick = async () => {
@@ -2467,9 +2468,13 @@
         };
 
         document.getElementById('arm-toggle-btn').onclick = async () => {
+            // v3.3: ARMing in REAL mode sends orders with real funds —
+            // require an explicit confirmation (DEMO arms without friction,
+            // and works without any broker connected).
+            if (botIsMode === 'REAL' && !botIsArmed && !confirm(t('realArmConfirm'))) return;
             const res = await fetchAPI('/arm', 'POST');
             if (res && res.armed !== undefined) { botIsArmed = res.armed; update(); }
-            else alert('Action failed (admin key required?).');
+            else alert(t('unknownError'));
         };
 
         document.getElementById('emergency-stop-btn').onclick = () => {

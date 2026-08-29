@@ -13,11 +13,14 @@ from api.security import (
     SESSION_TTL_S,
     SECURITY_HEADERS,
     AuthGuard,
+    ProductionConfigError,
     api_key_matches,
+    assert_production_ready,
     client_id_from_request,
     credential_is_valid,
     extract_credential,
     issue_session_token,
+    production_config_errors,
 )
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
@@ -62,6 +65,7 @@ from api.engines.settings_schema import validate_settings, ensure_defaults
 from api.engines.capital_profiles import resolve_bracket, profile_overrides
 from api.engines.institutional_executor import select_candidates, describe_intent
 from api.engines import market_tuning as market_tuning_engine
+from api.engines import protection_state
 from api.engines.constants import (
     AUTO_EXECUTION_SCORE_FLOOR,
     DEFAULT_MAX_NEW_POSITIONS_PER_SCAN,
@@ -103,6 +107,13 @@ logger = logging.getLogger("QuantumTradePro")
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
 TESTING = os.getenv("TESTING", "false").lower() == "true"
 PORT = int(os.getenv("PORT", 8000))
+APP_ENV = os.getenv("APP_ENV", "development").lower()
+
+# v3.3: production fail-fast at import time. A production deployment with a
+# missing/weak ADMIN_API_KEY or FERNET_KEY must die BEFORE serving a single
+# request. Development and test keep the open behaviour (ADMIN_API_KEY=""
+# stays open so the existing suite keeps working).
+assert_production_ready()
 # WebSocket heartbeat cadence (accelerated in tests so coverage stays fast)
 HEARTBEAT_INTERVAL_S = float(os.getenv("HEARTBEAT_INTERVAL_S", "2.0" if TESTING else "15.0"))
 
@@ -113,7 +124,7 @@ REAL_MODE_WARNING = "Live execution still experimental – use DEMO for strategi
 
 app = FastAPI(
     title="Quantum Trade Pro",
-    version="3.2.0",
+    version="3.3.0",
     lifespan=None,
     docs_url="/docs" if TESTING else None,
     redoc_url="/redoc" if TESTING else None,
@@ -213,9 +224,15 @@ metrics_state: Dict[str, Any] = {
     "start_time": _started_at.isoformat(),
 }
 
+# v3.3: consecutive REAL reconciliation failures (1s ticks) — a prolonged
+# outage must be notified, not silently swallowed.
+_reconcile_state: Dict[str, Any] = {"consecutive_errors": 0}
+
 # Advanced observability (LOT A): latency, data age, per-strategy outcome,
 # REAL vs DEMO orders. Additive — the legacy counters above are untouched.
 metrics_engine = MetricsEngine()
+# v3.3: REAL safety metrics (ORDER_STATE_UNKNOWN, NAKED, reconcile lag…)
+broker_connector.metrics = metrics_engine
 
 # --------------------------------------------------------------------------- #
 # 4. Live settings (reloaded from DB with TTL)                                 #
@@ -429,6 +446,21 @@ async def require_admin(
             raise HTTPException(
                 status_code=429, detail="Too many failed authentications")
     raise HTTPException(status_code=401, detail="Missing or invalid X-API-Key header")
+
+
+async def require_admin_dependency(
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None),
+) -> None:
+    """FastAPI 0.141.x-safe wrapper used by ``Depends`` on every mutation.
+
+    ``require_admin`` itself keeps an ``Optional[Request] = None`` signature
+    so unit tests can call it directly as
+    ``await require_admin(x_api_key="wrong")`` — but FastAPI cannot build a
+    field from ``Optional[Request]`` when analysing the dependency graph, so
+    routes wire this explicit ``Request``-typed function instead.
+    """
+    await require_admin(request=request, x_api_key=x_api_key)
 
 
 # --------------------------------------------------------------------------- #
@@ -1057,7 +1089,21 @@ async def tick_management():
         # REAL: never fake-close locally — a close always goes through a real
         # broker order (native SL/TP, reconciliation, or an explicit
         # reduce-only close below). The DB is only CLOSED after confirmation.
-        await broker_connector.reconcile_positions()
+        try:
+            await broker_connector.reconcile_positions()
+            _reconcile_state["consecutive_errors"] = 0
+        except Exception as exc:
+            _reconcile_state["consecutive_errors"] = \
+                int(_reconcile_state.get("consecutive_errors", 0)) + 1
+            structured_log(logger, logging.ERROR, "REAL_RECONCILE_FAILED",
+                           event="real_reconcile_failed", error=str(exc))
+            if _reconcile_state["consecutive_errors"] in (10, 60) \
+                    or (_reconcile_state["consecutive_errors"] > 60
+                        and _reconcile_state["consecutive_errors"] % 60 == 0):
+                await notification_engine.notify("RECONCILE_FAILING", {
+                    "message": f"REAL reconciliation failing since "
+                               f"{_reconcile_state['consecutive_errors']} consecutive "
+                               f"ticks — verify the broker connection."})
         for t in db_manager.get_active_positions("REAL"):
             ticker = tickers.get(t["display_symbol"]) or tickers.get(t["symbol"])
             if not ticker:
@@ -1070,9 +1116,15 @@ async def tick_management():
             else:
                 t["pnl"] = (t["entry_price"] - px) * t["quantity"]
             db_manager.save_trade(t)
-            # v3.1 P0-5: software SL/TP backstop — if the price touched the
-            # level, send a REAL reduce-only close through the broker. The
-            # trade only becomes CLOSED in DB when the broker confirms.
+            # v3.1 P0-5 / v3.3: software SL/TP backstop — if the price touched
+            # the level, send a REAL reduce-only close through the broker.
+            # The trade only becomes CLOSED in DB when the broker confirms.
+            #
+            # The v3.3 protection state machine decides liveness: an ID alone
+            # never blocks the backstop indefinitely; only an OPEN/PARTIALLY
+            # FILLED protection CONFIRMED recently does. The reduce-only
+            # close can never double-hedge: if the exchange protection fills
+            # first, the hedge order is rejected on a flat position.
             sl, tp = t.get("sl"), t.get("tp")
             hit = False
             if t["direction"] == "BUY":
@@ -1080,9 +1132,7 @@ async def tick_management():
             else:
                 hit = (sl is not None and px >= sl) or (tp is not None and px <= tp)
             meta = t.get("metadata") or {}
-            native_protection_alive = not meta.get("sl_tp_failed") and bool(
-                meta.get("sl_order_id") or meta.get("tp_order_id"))
-            if hit and not native_protection_alive:
+            if hit and protection_state.backstop_allowed(meta):
                 try:
                     await broker_connector.close_position(t["symbol"])
                 except Exception as exc:
@@ -1183,17 +1233,29 @@ async def tick_heartbeat():
 
 
 async def emergency_stop_logic(reason: str = "Manual trigger"):
+    """v3.3 honest emergency stop.
+
+    Every REAL OPEN trade in the DB receives a UNIT close through its broker
+    and the DB row is only CLOSED after confirmation (see
+    ``BrokerConnector.emergency_close_all``). Only THEN reconciliation runs —
+    a spot ``get_positions() == []`` never proves a close.
+    """
     async with state_lock:
         bot_state["is_running"] = False
         bot_state["armed"] = False
     refresh_execution_intent()
     state_machine.transition_to(BotState.EMERGENCY_STOP)
     demo_execution.clear_active_positions(bot_state["mode"])
-    real_close = await broker_connector.close_all_positions()
+    real_close = await broker_connector.emergency_close_all()
     broker_connector.trigger_emergency_stop()
     db_manager.log_audit("CRITICAL", "EMERGENCY_STOP", reason, {"real_close": real_close})
     await notification_engine.notify("EMERGENCY_STOP", {"reason": reason})
-    logger.critical(f"EMERGENCY STOP EXECUTED: {reason}")
+    try:
+        await broker_connector.reconcile_positions()
+    except Exception as exc:
+        structured_log(logger, logging.ERROR, "EMERGENCY_STOP_RECONCILE_FAILED",
+                       event="emergency_stop_reconcile_failed", error=str(exc))
+    logger.critical(f"EMERGENCY STOP EXECUTED: {reason} (real_close={real_close})")
 
 
 # --------------------------------------------------------------------------- #
@@ -1360,6 +1422,29 @@ async def healthz():
     }
 
 
+@app.get("/readyz")
+async def readyz():
+    """v3.3 readiness probe (Railway/K8s).
+
+    /healthz is LIVENESS (the process answers). /readyz is READINESS:
+    it fails (503) when the DB is unreachable or the production
+    configuration is invalid (missing/weak ADMIN_API_KEY or FERNET_KEY).
+    """
+    problems: List[str] = []
+    try:
+        with db_manager._get_connection() as conn:
+            conn.execute("SELECT 1")
+    except Exception as exc:
+        problems.append(f"db_unavailable: {exc}")
+    try:
+        problems.extend(production_config_errors())
+    except Exception as exc:  # defensive: config check must never 500
+        problems.append(f"config_check_error: {exc}")
+    if problems:
+        return JSONResponse(status_code=503, content={"ready": False, "problems": problems})
+    return {"ready": True, "state": state_machine.current_state.value}
+
+
 def _count_trades_today(mode: str) -> int:
     """v2.8: number of trades executed today (opened OR closed today)."""
     today = datetime.now().date().isoformat()
@@ -1473,7 +1558,7 @@ async def get_status(market_id: str = "btc_usdt"):
     }
 
 
-@app.get("/api/history", dependencies=[Depends(require_admin)])
+@app.get("/api/history", dependencies=[Depends(require_admin_dependency)])
 async def get_history(mode: str = "DEMO", limit: int = 100):
     return db_manager.get_history(mode=mode, limit=limit)
 
@@ -1484,7 +1569,7 @@ async def get_scanner(sort: str = "score", order: str = "desc", filter: str = "a
     return _scanner_payload(sort=sort, order=order, filter_mode=filter, live_only=live_only)
 
 
-@app.post("/api/scanner/trigger", dependencies=[Depends(require_admin)])
+@app.post("/api/scanner/trigger", dependencies=[Depends(require_admin_dependency)])
 async def trigger_scanner():
     """Protected on-demand scan. Refuses a second concurrent scan."""
     if bot_state.get("scanning") and not _scan_is_stuck():
@@ -1506,12 +1591,12 @@ async def get_markets(sort: str = "score", order: str = "desc"):
     return enrich_overview(overview, bot_state.get("latest_scan") or [], sort=sort, order=order)
 
 
-@app.get("/api/settings", dependencies=[Depends(require_admin)])
+@app.get("/api/settings", dependencies=[Depends(require_admin_dependency)])
 async def get_settings():
     return ensure_defaults(db_manager.get_settings())
 
 
-@app.post("/api/settings", dependencies=[Depends(require_admin)])
+@app.post("/api/settings", dependencies=[Depends(require_admin_dependency)])
 async def save_settings(new_settings: Dict[str, str] = Body(...)):
     cleaned, errors = validate_settings(new_settings)
     db_manager.save_settings(cleaned)
@@ -1549,7 +1634,7 @@ def persist_runtime_intent() -> None:
         logger.debug("Runtime intent persist failed: %s", exc)
 
 
-@app.post("/api/start", dependencies=[Depends(require_admin)])
+@app.post("/api/start", dependencies=[Depends(require_admin_dependency)])
 async def start_bot():
     settings = settings_provider.get()
     # P1 (2026-08-23): START means "scan" — arming stays a separate explicit
@@ -1576,7 +1661,7 @@ async def start_bot():
             "armed": bool(bot_state["armed"])}
 
 
-@app.post("/api/stop", dependencies=[Depends(require_admin)])
+@app.post("/api/stop", dependencies=[Depends(require_admin_dependency)])
 async def stop_bot():
     async with state_lock:
         bot_state["is_running"] = False
@@ -1587,7 +1672,7 @@ async def stop_bot():
     return {"success": True, "state": state_machine.current_state.value}
 
 
-@app.post("/api/arm", dependencies=[Depends(require_admin)])
+@app.post("/api/arm", dependencies=[Depends(require_admin_dependency)])
 async def arm_bot():
     async with state_lock:
         bot_state["armed"] = not bot_state["armed"]
@@ -1601,7 +1686,7 @@ async def arm_bot():
     return {"armed": armed}
 
 
-@app.post("/api/mode", dependencies=[Depends(require_admin)])
+@app.post("/api/mode", dependencies=[Depends(require_admin_dependency)])
 async def toggle_mode():
     target = "REAL" if bot_state["mode"] == "DEMO" else "DEMO"
     ok, msg = await broker_connector.set_mode(target)
@@ -1621,14 +1706,14 @@ async def toggle_mode():
     return {"success": True, "mode": target, "message": msg}
 
 
-@app.post("/api/emergency-stop", dependencies=[Depends(require_admin)])
+@app.post("/api/emergency-stop", dependencies=[Depends(require_admin_dependency)])
 async def emergency_stop_api():
     await emergency_stop_logic("Manual emergency stop from UI")
     persist_runtime_intent()
     return {"success": True, "state": state_machine.current_state.value}
 
 
-@app.post("/api/emergency-reset", dependencies=[Depends(require_admin)])
+@app.post("/api/emergency-reset", dependencies=[Depends(require_admin_dependency)])
 async def emergency_reset():
     broker_connector.reset_emergency_stop()
     async with state_lock:
@@ -1640,7 +1725,7 @@ async def emergency_reset():
     return {"success": True, "state": state_machine.current_state.value}
 
 
-@app.post("/api/order", dependencies=[Depends(require_admin)])
+@app.post("/api/order", dependencies=[Depends(require_admin_dependency)])
 async def manual_order(body: Dict[str, Any] = Body(...)):
     """Manual market order from the trading terminal."""
     market_id = body.get("market_id")
@@ -1778,7 +1863,7 @@ def pd_concat_tr(df):
     return pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).dropna()
 
 
-@app.post("/api/demo/reset", dependencies=[Depends(require_admin)])
+@app.post("/api/demo/reset", dependencies=[Depends(require_admin_dependency)])
 async def demo_reset():
     demo_execution.clear_active_positions("DEMO")
     portfolio_engine.reset_history("DEMO")
@@ -1791,7 +1876,7 @@ async def demo_reset():
     return {"success": True, "balance": portfolio_engine.get_balance("DEMO")}
 
 
-@app.post("/api/demo/balance", dependencies=[Depends(require_admin)])
+@app.post("/api/demo/balance", dependencies=[Depends(require_admin_dependency)])
 async def demo_balance(body: Dict[str, Any] = Body(...)):
     try:
         amount = float(body.get("balance", 0))
@@ -1806,7 +1891,7 @@ async def demo_balance(body: Dict[str, Any] = Body(...)):
 
 
 # ---- Brokers -------------------------------------------------------------- #
-@app.get("/api/brokers", dependencies=[Depends(require_admin)])
+@app.get("/api/brokers", dependencies=[Depends(require_admin_dependency)])
 async def get_brokers():
     # v2.8: enrich each broker row with its runtime snapshot (cached 30 s,
     # network calls only for active brokers, fail-safe to INACTIVE/ERROR).
@@ -1823,7 +1908,7 @@ async def get_brokers():
     }
 
 
-@app.post("/api/brokers/test", dependencies=[Depends(require_admin)])
+@app.post("/api/brokers/test", dependencies=[Depends(require_admin_dependency)])
 async def test_broker_connection_api(body: Dict[str, Any] = Body(...)):
     """v2.8: dry-run a broker connection WITHOUT persisting anything.
 
@@ -1865,7 +1950,7 @@ async def test_broker_connection_api(body: Dict[str, Any] = Body(...)):
             "message": "Connection OK" if connected else "Could not connect with these credentials"}
 
 
-@app.post("/api/brokers", dependencies=[Depends(require_admin)])
+@app.post("/api/brokers", dependencies=[Depends(require_admin_dependency)])
 async def add_broker_api(body: Dict[str, Any] = Body(...)):
     broker_id = str(body.get("broker_id", "")).strip()
     exchange_id = str(body.get("exchange_id", "")).strip()
@@ -1890,7 +1975,7 @@ async def add_broker_api(body: Dict[str, Any] = Body(...)):
             "message": "Could not connect with these credentials."}
 
 
-@app.post("/api/brokers/{broker_id}/toggle", dependencies=[Depends(require_admin)])
+@app.post("/api/brokers/{broker_id}/toggle", dependencies=[Depends(require_admin_dependency)])
 async def toggle_broker_api(broker_id: str, body: Dict[str, Any] = Body(...)):
     is_active = bool(body.get("is_active", True))
     db_manager.set_broker_active(broker_id, is_active)
@@ -1906,7 +1991,7 @@ async def toggle_broker_api(broker_id: str, body: Dict[str, Any] = Body(...)):
     return {"success": True, "broker_id": broker_id, "is_active": is_active}
 
 
-@app.delete("/api/brokers/{broker_id}", dependencies=[Depends(require_admin)])
+@app.delete("/api/brokers/{broker_id}", dependencies=[Depends(require_admin_dependency)])
 async def delete_broker_api(broker_id: str):
     await broker_connector.remove_broker(broker_id)
     broker_connector.invalidate_runtime_cache(broker_id)
@@ -1915,7 +2000,7 @@ async def delete_broker_api(broker_id: str):
 
 
 # ---- v2.8: per-position manual close (DEMO) ------------------------------- #
-@app.post("/api/positions/{market_id}/close", dependencies=[Depends(require_admin)])
+@app.post("/api/positions/{market_id}/close", dependencies=[Depends(require_admin_dependency)])
 async def close_position_api(market_id: str):
     """Close ONE open position at market (user-initiated).
 
@@ -1952,7 +2037,7 @@ async def close_position_api(market_id: str):
 
 
 # ---- Web3 wallets (watch-only) -------------------------------------------- #
-@app.get("/api/wallets", dependencies=[Depends(require_admin)])
+@app.get("/api/wallets", dependencies=[Depends(require_admin_dependency)])
 async def get_wallets():
     """v2.7 P1-10: Wallets are watch-only. Never presented as signing-capable."""
     wallets = db_manager.get_wallets()
@@ -1970,7 +2055,7 @@ async def get_wallets():
     return {"wallets": wallets, "note": "All wallets are watch-only. No signing or execution capability."}
 
 
-@app.post("/api/wallets", dependencies=[Depends(require_admin)])
+@app.post("/api/wallets", dependencies=[Depends(require_admin_dependency)])
 async def add_wallet_api(body: Dict[str, Any] = Body(...)):
     """v2.7 P1-10: Add a watch-only wallet address.
     
@@ -2008,7 +2093,7 @@ async def add_wallet_api(body: Dict[str, Any] = Body(...)):
     return {"success": True, "wallet_id": wallet_id, "type": "WATCH_ONLY"}
 
 
-@app.delete("/api/wallets/{wallet_id}", dependencies=[Depends(require_admin)])
+@app.delete("/api/wallets/{wallet_id}", dependencies=[Depends(require_admin_dependency)])
 async def delete_wallet_api(wallet_id: str):
     broker_connector.web3_wallets.pop(wallet_id, None)
     deleted = db_manager.delete_wallet(wallet_id)
@@ -2059,7 +2144,7 @@ async def get_performance(mode: str = "DEMO"):
     return portfolio_engine.get_performance_report(mode)
 
 
-@app.get("/api/optimization", dependencies=[Depends(require_admin)])
+@app.get("/api/optimization", dependencies=[Depends(require_admin_dependency)])
 async def get_optimization(mode: str = "DEMO"):
     """Audit & optimization dashboard data (LOT R).
 
@@ -2108,7 +2193,7 @@ async def get_optimization(mode: str = "DEMO"):
     }
 
 
-@app.get("/api/metrics", dependencies=[Depends(require_admin)])
+@app.get("/api/metrics", dependencies=[Depends(require_admin_dependency)])
 async def get_metrics():
     core = metrics_engine.snapshot()
     # Simulated winrate = win rate computed on CLOSED (paper/real) trades,
@@ -2134,9 +2219,14 @@ async def get_metrics():
         "winrate_simulated": winrate_simulated,
         "latency": core["latency"],
         "data_age": core["data_age"],
+        "real_safety": core.get("real_safety"),
         "heartbeat": manager.heartbeat_status(),
         "total_errors": core["total_errors"],
         "institutional": core.get("institutional"),
+        # v3.3: notification channel health
+        "notification_failures": notification_engine.failure_count,
+        "app_env": APP_ENV,
+        "version": app.version,
     }
 
 
@@ -2167,7 +2257,7 @@ async def get_health():
     }
 
 
-@app.post("/api/backtest", dependencies=[Depends(require_admin)])
+@app.post("/api/backtest", dependencies=[Depends(require_admin_dependency)])
 async def run_backtest(body: Dict[str, Any] = Body(...)):
     market_id = str(body.get("market_id", "btc_usdt"))
     timeframe = str(body.get("timeframe", "1h"))
@@ -2278,7 +2368,7 @@ async def _execute_signal_for_market(market_id: str) -> Dict[str, Any]:
     return await execution_router.execute(bot_state["mode"], sig, risk_data, ticker)
 
 
-@app.post("/api/execute-signal", dependencies=[Depends(require_admin)])
+@app.post("/api/execute-signal", dependencies=[Depends(require_admin_dependency)])
 async def execute_signal_api(body: Dict[str, Any] = Body(...)):
     market_id = body.get("market_id")
     if not market_id:
@@ -2512,6 +2602,14 @@ def apply_startup_automation(settings: Dict[str, str]) -> None:
 
 async def _lifespan_boot() -> None:
     logger.info("QUANTUM TRADE PRO STARTING...")
+    # v3.3: APP_ENV fail-fast. In production, refuse to start when
+    # ADMIN_API_KEY / FERNET_KEY are missing or manifestly weak. Dev/test
+    # keep the open behaviour (ADMIN_API_KEY="" stays open).
+    try:
+        assert_production_ready()
+    except ProductionConfigError as exc:
+        logger.critical("PRODUCTION CONFIG REJECTED: %s", exc)
+        raise
     if not ADMIN_API_KEY:
         logger.warning("ADMIN_API_KEY not set: mutating endpoints are UNPROTECTED. "
                        "Set ADMIN_API_KEY in production.")

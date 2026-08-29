@@ -1,15 +1,26 @@
-# API Contract — Quantum Trade Pro v2.0
+# API Contract — Quantum Trade Pro v3.3.0
 
 Ce document décrit l'API **réelle** (synchronisé avec `api/index.py`).
 Toutes les réponses sont en JSON. Les endpoints marqués 🔐 exigent l'en-tête
 `X-API-Key: <ADMIN_API_KEY>` lorsque la variable `ADMIN_API_KEY` est définie
-sur le serveur (sinon HTTP 401).
+sur le serveur (sinon HTTP 401). En v3.3, **toutes** les mutations
+(POST/PUT/PATCH/DELETE) sont protégées — seules exceptions assumées :
+`/api/login` et `/api/logout` (vérifié par inspection des routes en test).
 
 ## 1. Système
 
-### `GET /healthz`
+### `GET /healthz` (liveness)
 ```json
 { "status": "OK", "state": "STOPPED", "uptime_s": 1234 }
+```
+
+### `GET /readyz` (readiness, v3.3)
+200 si prêt ; 503 si la base est inaccessible ou si la configuration
+production est invalide (`APP_ENV=production` sans `ADMIN_API_KEY`/
+`FERNET_KEY` valide).
+```json
+{ "ready": true, "state": "STOPPED" }
+{ "ready": false, "problems": ["db_unavailable: ...", "FERNET_KEY is missing"] }
 ```
 
 ### `GET /api/status?market_id=btc_usdt`
@@ -120,8 +131,21 @@ Liste de trades fermés (plus récents d'abord).
 - `market_tuning` : seuil d'entrée / TP / stop appliqués par marché ;
 - `best_markets` / `worst_markets` : top/flop des marchés tradés (trades fermés).
 
-### `GET /api/metrics`
+### `GET /api/metrics` 🔐
 Compteurs + durée de scan + derniers ordres (`recent_orders`).
+
+v3.3 — bloc `real_safety` (sécurité exécution REAL) :
+```json
+{ "real_safety": {
+    "order_state_unknown": 0,        // ordres dont l'état est indéterminé (aucun retry auto)
+    "naked_positions": 0,            // positions ayant perdu leur protection SL/TP
+    "notification_failures": 0,      // échecs d'envoi de notifications
+    "order_intents_total": 0,        // intentions d'ordres persistées
+    "reconcile": { "runs": 0, "closed": 0, "last_ms": null, "avg_ms": null, "max_ms": null },
+    "broker_latency": { "last_ms": null, "avg_ms": null, "max_ms": null }
+  },
+  "notification_failures": 0, "app_env": "development", "version": "3.3.0" }
+```
 
 ### `POST /api/order` 🔐 — ordre manuel
 ```json

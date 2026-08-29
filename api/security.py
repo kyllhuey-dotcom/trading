@@ -8,10 +8,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import threading
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 SESSION_COOKIE = "qtp_session"
 SESSION_TTL_S = int(os.getenv("SESSION_TTL_S", "43200"))  # 12 hours
@@ -49,6 +50,84 @@ def api_key_matches(provided: Optional[str], expected: str) -> bool:
     if not got:
         return False
     return hmac.compare_digest(got.encode("utf-8"), expected.encode("utf-8"))
+
+
+# --------------------------------------------------------------------------- #
+# v3.3: APP_ENV fail-fast + weak-key detection                                 #
+# --------------------------------------------------------------------------- #
+APP_ENV = os.getenv("APP_ENV", "development").lower()
+
+# Placeholder / example values that must never reach production.
+_WEAK_KEY_PATTERNS = re.compile(
+    r"^(qtp[_-]?|quantum[_-]?|example|placeholder|change[_-]?me|"
+    r"your[_-]?|xxx+|abc+|123+|admin|password|secret|test)", re.IGNORECASE)
+
+
+def is_weak_key(key: Optional[str]) -> bool:
+    """Heuristic for a manifestly weak/placeholder secret."""
+    key = str(key or "").strip()
+    if len(key) < 16:
+        return True
+    if len(set(key)) <= 2:
+        return True  # "aaaa…", "abab…"
+    if _WEAK_KEY_PATTERNS.match(key):
+        return True
+    if key.isdigit():
+        return True
+    return False
+
+
+def validate_fernet_key(fernet_key: Optional[str]) -> bool:
+    """A Fernet key must be a valid 32-byte url-safe base64 value."""
+    if not fernet_key:
+        return False
+    try:
+        from cryptography.fernet import Fernet
+        Fernet(str(fernet_key).encode())
+        return True
+    except Exception:
+        return False
+
+
+def production_config_errors(app_env: Optional[str] = None,
+                             admin_api_key: Optional[str] = None,
+                             fernet_key: Optional[str] = None) -> List[str]:
+    """List the production configuration problems (empty list = healthy).
+
+    In development/test an empty ADMIN_API_KEY stays OPEN on purpose; only
+    APP_ENV=production turns missing/weak secrets into hard startup errors.
+    """
+    env = str(app_env or os.getenv("APP_ENV") or APP_ENV or "development").lower()
+    if env not in ("production", "prod"):
+        return []
+    admin_api_key = str(admin_api_key if admin_api_key is not None
+                        else os.getenv("ADMIN_API_KEY", ""))
+    fernet_key = str(fernet_key if fernet_key is not None
+                     else os.getenv("FERNET_KEY", ""))
+    errors: List[str] = []
+    if not admin_api_key:
+        errors.append("ADMIN_API_KEY is missing")
+    elif is_weak_key(admin_api_key):
+        errors.append("ADMIN_API_KEY is manifestly weak (>=16 non-placeholder chars required)")
+    if not fernet_key:
+        errors.append("FERNET_KEY is missing (broker secrets would be stored in plaintext)")
+    elif not validate_fernet_key(fernet_key):
+        errors.append("FERNET_KEY is not a valid Fernet key (32-byte url-safe base64)")
+    return errors
+
+
+class ProductionConfigError(RuntimeError):
+    """Raised when APP_ENV=production refuses to start."""
+
+
+def assert_production_ready(app_env: Optional[str] = None,
+                            admin_api_key: Optional[str] = None,
+                            fernet_key: Optional[str] = None) -> None:
+    """Refuse to start in production with an unsafe configuration."""
+    errors = production_config_errors(app_env, admin_api_key, fernet_key)
+    if errors:
+        raise ProductionConfigError(
+            "Refusing to start in production: " + "; ".join(errors))
 
 
 def _secret_bytes(admin_api_key: str) -> bytes:

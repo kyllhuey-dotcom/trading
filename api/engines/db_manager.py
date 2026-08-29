@@ -2,6 +2,7 @@ import sqlite3
 import os
 import json
 import logging
+import time
 from contextlib import contextmanager
 from typing import List, Dict, Any, Optional, Iterator
 from cryptography.fernet import Fernet
@@ -195,6 +196,24 @@ class DatabaseManager:
                     PRIMARY KEY (market_id, timeframe)
                 )
             """)
+            # v3.3: durable order intentions (idempotence). Backward-compatible
+            # migration: CREATE TABLE IF NOT EXISTS on old databases.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS order_intents (
+                    client_order_id TEXT PRIMARY KEY,
+                    broker_id TEXT,
+                    symbol TEXT,
+                    side TEXT,
+                    quantity REAL,
+                    created_at TEXT,
+                    status TEXT DEFAULT 'PENDING_SEND',
+                    updated_at TEXT,
+                    broker_order_id TEXT,
+                    error TEXT
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_order_intents_status ON order_intents (status)")
 
             # Seed default settings
             cursor = conn.execute("SELECT COUNT(*) FROM settings")
@@ -585,6 +604,72 @@ class DatabaseManager:
         except (TypeError, json.JSONDecodeError):
             return None
         return payload if isinstance(payload, list) else None
+
+    # ------------------------------------------------------------------ #
+    # v3.3: order intentions (durable idempotence)                         #
+    # ------------------------------------------------------------------ #
+    def save_order_intent(self, intent: Dict[str, Any]) -> None:
+        """Persist an order intention before sending (status PENDING_SEND)."""
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO order_intents
+                   (client_order_id, broker_id, symbol, side, quantity,
+                    created_at, status, updated_at, broker_order_id, error)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(intent.get("client_order_id")),
+                    intent.get("broker_id"), intent.get("symbol"), intent.get("side"),
+                    float(intent.get("quantity") or 0.0),
+                    intent.get("created_at") or time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    intent.get("status") or "PENDING_SEND",
+                    time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    intent.get("broker_order_id"), intent.get("error"),
+                ))
+
+    def get_order_intent(self, client_order_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM order_intents WHERE client_order_id = ?",
+                (str(client_order_id),)).fetchone()
+        return dict(row) if row else None
+
+    def update_order_intent(self, client_order_id: str,
+                            status: Optional[str] = None,
+                            broker_order_id: Optional[str] = None,
+                            error: Optional[str] = None) -> None:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM order_intents WHERE client_order_id = ?",
+                (str(client_order_id),)).fetchone()
+            if not row:
+                return
+            new_status = status if status is not None else row["status"]
+            new_order_id = broker_order_id if broker_order_id is not None else row["broker_order_id"]
+            new_error = error if error is not None else row["error"]
+            conn.execute(
+                """UPDATE order_intents
+                   SET status = ?, broker_order_id = ?, error = ?,
+                       updated_at = ?
+                   WHERE client_order_id = ?""",
+                (new_status, new_order_id, new_error,
+                 time.strftime("%Y-%m-%dT%H:%M:%S"), str(client_order_id)))
+
+    def get_order_intents(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM order_intents ORDER BY created_at DESC LIMIT ?",
+                (int(limit),)).fetchall()
+        return [dict(r) for r in rows]
+
+    def count_order_intents(self, status: Optional[str] = None) -> int:
+        with self._get_connection() as conn:
+            if status:
+                row = conn.execute(
+                    "SELECT COUNT(*) AS n FROM order_intents WHERE status = ?",
+                    (status,)).fetchone()
+            else:
+                row = conn.execute("SELECT COUNT(*) AS n FROM order_intents").fetchone()
+        return int(row["n"]) if row else 0
 
     # ------------------------------------------------------------------ #
     # Helpers                                                             #

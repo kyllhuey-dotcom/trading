@@ -7,8 +7,6 @@ from __future__ import annotations
 import os
 
 import pytest
-from unittest.mock import AsyncMock
-
 import api.index as idx
 from api.engines.broker_adapters.ccxt_adapter import CCXTAdapter
 from api.engines.broker_connector import BrokerConnector
@@ -295,8 +293,8 @@ async def test_execute_signal_requires_start_and_arm():
 # --------------------------------------------------------------------------- #
 # 9/10. Version + docs                                                         #
 # --------------------------------------------------------------------------- #
-def test_app_version_is_3_1_0():
-    assert idx.app.version == "3.2.0"
+def test_app_version_is_current():
+    assert idx.app.version == "3.3.0"
 
 
 def test_v31_docs_exist():

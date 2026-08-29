@@ -506,6 +506,14 @@ async def test_build_snapshot_timeout(monkeypatch):
     monkeypatch.setattr(idx.asyncio, "wait_for", AsyncMock(side_effect=asyncio.TimeoutError()))
     snap = await idx._build_snapshot("btc_usdt")
     assert snap["status_display"] == "DATA ERROR"
+    # Le mock ne cancel pas les tâches créées par asyncio.gather : on les
+    # nettoie ici, sinon les coroutines providers restent "never awaited"
+    # (un GC pendant une compilation ast.parse lève SystemError sur 3.11).
+    pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task() and not t.done()]
+    for t in pending:
+        t.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 async def test_test_broker_primexbt_mocked(monkeypatch):
