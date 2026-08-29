@@ -1,3 +1,12 @@
+# Changelog
+
+## [3.2.0] - 2026-08-29 — Durcissement REAL
+
+- Annulation des protections jumelles et détection des fills spot.
+- Stops spécifiques exchange, idempotence clientOrderId, PnL/frais au close.
+- Alerte NAKED, backstop conditionnel et catalogue broker honnête.
+- REAL reste expérimental : campagne testnet requise avant ARM réel.
+
 # Changelog - Quantum Trade Pro
 
 ## [3.1.0] - 2026-08-29 — P0 REAL : fail-close SL/TP, réconciliation honnête, sandbox réel

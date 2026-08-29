@@ -2,7 +2,9 @@
 
 Bot de trading multi-marchés : données réelles, exécution papier réaliste, exécution réelle via CCXT, gestion de risque institutionnelle, dashboard web temps réel.
 
-> **v3.1.0** — P0 REAL : **fail-close SL/TP** (échec d'attache → flatten
+> **v3.2.0** — REAL reste expérimental ; campagne testnet obligatoire avant tout ARM réel.
+>
+> **v3.2.0** — P0 REAL : **fail-close SL/TP** (échec d'attache → flatten
 > immédiat reduceOnly, jamais de position nue silencieuse), réconciliation
 > spot honnête (`get_positions()==[]` ne vaut close que si l'exchange sait
 > énumérer les positions), persistance du `filled` réel + frais broker,

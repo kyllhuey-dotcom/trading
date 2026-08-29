@@ -3,6 +3,7 @@ from datetime import datetime
 import logging
 import uuid
 import time
+import inspect
 
 from .broker_adapters.ccxt_adapter import CCXTAdapter
 from .broker_adapters.primexbt_adapter import PrimeXBTAdapter
@@ -25,6 +26,7 @@ class BrokerConnector:
         self.active_adapters: Dict[str, Any] = {}
         self.web3_wallets: Dict[str, Dict[str, str]] = {}
         self.emergency_stop_active = False
+        self.notifier = None
         # v2.8: per-broker runtime snapshot cache (balance/latency/status)
         self._runtime_cache: Dict[str, Dict[str, Any]] = {}
 
@@ -218,13 +220,15 @@ class BrokerConnector:
             return {"success": False, "reason": f"UNSUPPORTED_SYMBOL: {market_id}"}
 
         bid, adapter, broker_symbol = route
-        res = await adapter.execute_order(
-            symbol=broker_symbol,
-            side=signal["direction"].lower(),
-            quantity=risk["quantity"],
-            sl=signal.get("sl"),
-            tp=signal.get("tp"),
-        )
+        client_order_id = f"QTP-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
+        order_kwargs = dict(symbol=broker_symbol, side=signal["direction"].lower(),
+                            quantity=risk["quantity"], sl=signal.get("sl"), tp=signal.get("tp"))
+        try:
+            if "client_order_id" in inspect.signature(adapter.execute_order).parameters:
+                order_kwargs["client_order_id"] = client_order_id
+        except (TypeError, ValueError):
+            pass
+        res = await adapter.execute_order(**order_kwargs)
 
         # v3.1 P0-3: persist what actually happened on the broker —
         # the real filled quantity, average entry and fees.
@@ -244,6 +248,7 @@ class BrokerConnector:
                 "broker_id": bid,
                 "broker_symbol": broker_symbol,
                 "broker_order_id": res.get("broker_order_id"),
+                "client_order_id": client_order_id,
                 "requested_quantity": risk["quantity"],
                 "tp_order_id": res.get("tp_order_id"),
                 "sl_order_id": res.get("sl_order_id"),
@@ -282,6 +287,12 @@ class BrokerConnector:
                               f"REAL {signal['direction']} {broker_symbol}: SL/TP attach failed, "
                               f"position flattened immediately — nothing persisted OPEN",
                               {"broker_order_id": res.get("broker_order_id")})
+        if naked and self.notifier is not None:
+            try:
+                await self.notifier.notify("ERROR", {"message":
+                    f"NAKED position {broker_symbol}: SL/TP attach failed — manual action required"})
+            except Exception as exc:
+                logger.warning("NAKED notification failed: %s", exc)
         return res
 
     # ------------------------------------------------------------------ #
@@ -296,6 +307,19 @@ class BrokerConnector:
             except Exception as e:
                 results[bid] = {"success": False, "error": str(e)}
         return results
+
+    async def _cancel_protection_orders(self, adapter: Any, meta: Dict[str, Any],
+                                        broker_symbol: str) -> List[str]:
+        cancelled = []
+        for order_id in (meta.get("tp_order_id"), meta.get("sl_order_id")):
+            if not order_id:
+                continue
+            try:
+                await adapter.cancel_order(order_id, broker_symbol)
+                cancelled.append(order_id)
+            except Exception as exc:
+                logger.warning("Protection cancel failed (%s/%s): %s", broker_symbol, order_id, exc)
+        return cancelled
 
     async def reconcile_positions(self) -> List[Dict[str, Any]]:
         """
@@ -336,13 +360,45 @@ class BrokerConnector:
             meta = trade.get("metadata") or {}
             bid = meta.get("broker_id")
             broker_symbol = meta.get("broker_symbol")
+            adapter = self.active_adapters.get(bid) if bid else None
+            reason = None
+            protection_kind = None
+            exit_price = None
             if bid and bid in live_symbols and broker_symbol not in live_symbols[bid]:
+                reason = "BROKER_RECONCILED_CLOSE"
+            elif adapter is not None and not bool(getattr(adapter, "positions_authoritative", False)):
+                fetch_status = getattr(adapter, "fetch_order_status", None)
+                if callable(fetch_status):
+                    for kind in ("tp", "sl"):
+                        order_id = meta.get(f"{kind}_order_id")
+                        if not order_id:
+                            continue
+                        try:
+                            status = await fetch_status(order_id, broker_symbol)
+                        except Exception as exc:
+                            logger.warning("Protection status check failed (%s): %s", order_id, exc)
+                            status = None
+                        if status and str(status.get("status", "")).lower() in {"closed", "filled"}:
+                            reason, protection_kind = "PROTECTION_FILLED", kind
+                            exit_price = status.get("average")
+                            break
+            if reason:
+                cancelled = await self._cancel_protection_orders(adapter, meta, broker_symbol)
                 trade["status"] = "CLOSED"
                 trade["close_time"] = datetime.now().isoformat()
-                trade["metadata"] = {**meta, "close_reason": "BROKER_RECONCILED_CLOSE"}
+                if exit_price is not None:
+                    trade["exit_price"] = float(exit_price)
+                    entry, qty = float(trade.get("entry_price") or 0), float(trade.get("quantity") or 0)
+                    trade["pnl"] = ((float(exit_price) - entry) * qty
+                                    if str(trade.get("direction")).upper() == "BUY"
+                                    else (entry - float(exit_price)) * qty)
+                trade["metadata"] = {**meta, "close_reason": reason,
+                                     "cancelled_protection": cancelled}
+                if protection_kind:
+                    trade["metadata"]["filled_protection"] = protection_kind
                 self.db.save_trade(trade)
                 self.db.log_audit("WARNING", "REAL_RECONCILE",
-                                  f"Position {trade['symbol']} no longer on broker — closed in DB")
+                                  f"Position {trade['symbol']} closed by broker reconciliation")
                 closed.append(trade)
         return closed
 
@@ -371,6 +427,7 @@ class BrokerConnector:
                 return {"success": False, "reason": "NO_BROKER_ROUTE"}
             bid, adapter, broker_symbol = route
 
+        cancelled = await self._cancel_protection_orders(adapter, meta, broker_symbol)
         res = await adapter.close_position(
             broker_symbol, str(trade.get("direction", "BUY")).lower(),
             float(trade.get("quantity") or 0))
@@ -381,10 +438,15 @@ class BrokerConnector:
 
         trade["status"] = "CLOSED"
         trade["close_time"] = datetime.now().isoformat()
-        if res.get("average"):
-            trade["exit_price"] = float(res["average"])
+        exit_price = float(res.get("average") or trade.get("exit_price") or trade.get("entry_price") or 0)
+        trade["exit_price"] = exit_price
+        entry, qty = float(trade.get("entry_price") or 0), float(trade.get("quantity") or 0)
+        trade["pnl"] = ((exit_price - entry) * qty if str(trade.get("direction")).upper() == "BUY"
+                        else (entry - exit_price) * qty)
+        trade["fees"] = float(trade.get("fees") or 0) + float(res.get("fees") or 0)
         trade["metadata"] = {**meta, "close_reason": "MANUAL_CLOSE",
-                             "close_order_id": res.get("broker_order_id")}
+                             "close_order_id": res.get("broker_order_id"),
+                             "cancelled_protection": cancelled}
         self.db.save_trade(trade)
         self.db.log_audit("INFO", "REAL_MANUAL_CLOSE",
                           f"REAL position {trade['symbol']} closed on broker '{bid}'",

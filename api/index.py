@@ -113,7 +113,7 @@ REAL_MODE_WARNING = "Live execution still experimental – use DEMO for strategi
 
 app = FastAPI(
     title="Quantum Trade Pro",
-    version="3.1.0",
+    version="3.2.0",
     lifespan=None,
     docs_url="/docs" if TESTING else None,
     redoc_url="/redoc" if TESTING else None,
@@ -177,6 +177,7 @@ demo_execution = ExecutionEngine(portfolio=portfolio_engine, db_manager=db_manag
                                  risk_engine=risk_engine, universe=data_engine.universe,
                                  notification_engine=notification_engine)
 broker_connector = BrokerConnector(db_manager=db_manager)
+broker_connector.notifier = notification_engine
 broker_connector.universe = data_engine.universe
 execution_router = ExecutionRouter(demo_adapter=demo_execution, broker_connector=broker_connector)
 state_machine = StateMachine()
@@ -399,7 +400,7 @@ data_engine.set_ws_manager(manager)  # wire the market-data bus to the WS layer
 # 6. Authentication                                                            #
 # --------------------------------------------------------------------------- #
 async def require_admin(
-    request: Request = None,  # default None: tests call require_admin(x_api_key=...)
+    request: Optional[Request] = None,  # default None: tests call require_admin(x_api_key=...)
     x_api_key: Optional[str] = Header(default=None),
 ) -> None:
     """Protect mutating endpoints with a timing-safe key or signed session cookie.
@@ -1078,7 +1079,10 @@ async def tick_management():
                 hit = (sl is not None and px <= sl) or (tp is not None and px >= tp)
             else:
                 hit = (sl is not None and px >= sl) or (tp is not None and px <= tp)
-            if hit:
+            meta = t.get("metadata") or {}
+            native_protection_alive = not meta.get("sl_tp_failed") and bool(
+                meta.get("sl_order_id") or meta.get("tp_order_id"))
+            if hit and not native_protection_alive:
                 try:
                     await broker_connector.close_position(t["symbol"])
                 except Exception as exc:

@@ -11,6 +11,20 @@ from ..exchange_constraints import parse_ccxt_market_constraints
 logger = logging.getLogger("CCXTAdapter")
 
 
+def _stop_order_args(exchange_id: str, sl: float, hedge_side: str):
+    """Return the exchange-specific CCXT stop order type and parameters."""
+    sl = float(sl)
+    exchange_id = str(exchange_id).lower()
+    if exchange_id == "binance":
+        return "STOP_MARKET", {"stopPrice": sl, "reduceOnly": True}
+    if exchange_id == "bybit":
+        return "market", {"triggerPrice": sl, "reduceOnly": True,
+                          "triggerDirection": 2 if hedge_side == "sell" else 1}
+    if exchange_id == "okx":
+        return "market", {"stopLossPrice": sl, "reduceOnly": True}
+    return "stop_loss", {"stopPrice": sl, "triggerPrice": sl, "reduceOnly": True}
+
+
 class CCXTAdapter(BrokerAdapter):
     """
     Real broker implementation via CCXT (Gate.io, Binance, Bybit, OKX, Kraken, ...).
@@ -137,7 +151,8 @@ class CCXTAdapter(BrokerAdapter):
     # Order execution                                                     #
     # ------------------------------------------------------------------ #
     async def execute_order(self, symbol: str, side: str, quantity: float,
-                            sl: Optional[float] = None, tp: Optional[float] = None) -> Dict[str, Any]:
+                            sl: Optional[float] = None, tp: Optional[float] = None,
+                            client_order_id: Optional[str] = None) -> Dict[str, Any]:
         if not self.client:
             return {"success": False, "reason": "BROKER_DISCONNECTED"}
         normalized_side = str(side).lower()
@@ -150,9 +165,23 @@ class CCXTAdapter(BrokerAdapter):
         if not math.isfinite(quantity) or quantity <= 0:
             return {"success": False, "reason": "INVALID_QUANTITY"}
         try:
-            order = await self.client.create_order(symbol, 'market', normalized_side, quantity)
+            if client_order_id:
+                order = await self.client.create_order(
+                    symbol, 'market', normalized_side, quantity, None,
+                    {'clientOrderId': client_order_id})
+            else:
+                order = await self.client.create_order(symbol, 'market', normalized_side, quantity)
         except Exception as e:
             logger.error(f"Broker execution error ({self.exchange_id}): {e}")
+            if client_order_id:
+                try:
+                    orders = await self.client.fetch_open_orders(symbol)
+                    if any((o.get("clientOrderId") or (o.get("info") or {}).get("clientOrderId"))
+                           == client_order_id for o in (orders or [])):
+                        return {"success": False, "reason": "ORDER_STATE_UNKNOWN",
+                                "client_order_id": client_order_id}
+                except Exception as lookup_exc:
+                    logger.warning("clientOrderId lookup failed (%s): %s", self.exchange_id, lookup_exc)
             return {"success": False, "reason": f"BROKER_EXECUTION_ERROR: {str(e)}"}
 
         # v3.1 P0-1: honest fill accounting — protection orders and DB
@@ -198,14 +227,22 @@ class CCXTAdapter(BrokerAdapter):
                 )
                 result["tp_order_id"] = tp_order.get("id")
             if sl is not None:
+                stop_type, stop_params = _stop_order_args(self.exchange_id, float(sl), hedge_side)
                 sl_order = await self.client.create_order(
-                    symbol, 'stop_loss', hedge_side, filled, None,
-                    {'stopPrice': float(sl), 'triggerPrice': float(sl), 'reduceOnly': True},
+                    symbol, stop_type, hedge_side, filled, None, stop_params,
                 )
                 result["sl_order_id"] = sl_order.get("id")
         except Exception as exc:
             logger.error("SL/TP attachment failed (%s): %s — flattening position",
                          self.exchange_id, exc)
+            cancelled_protection = []
+            tp_order_id = result.get("tp_order_id")
+            if tp_order_id:
+                try:
+                    await self.client.cancel_order(tp_order_id, symbol)
+                    cancelled_protection.append(tp_order_id)
+                except Exception as cancel_exc:
+                    logger.warning("Could not cancel TP before flatten (%s): %s", tp_order_id, cancel_exc)
             try:
                 await self.client.create_order(
                     symbol, 'market', hedge_side, filled, None,
@@ -224,9 +261,26 @@ class CCXTAdapter(BrokerAdapter):
             return {**result, "success": False,
                     "reason": "SL_TP_ATTACH_FAILED_FLATTENED",
                     "flattened": True,
+                    "cancelled_protection": cancelled_protection,
                     "sl_tp_warning": str(exc)}
 
         return result
+
+    async def fetch_order_status(self, order_id: str, symbol: str) -> Optional[Dict[str, Any]]:
+        if not self.client:
+            return None
+        try:
+            order = await self.client.fetch_order(order_id, symbol)
+            return {"status": order.get("status"), "average": order.get("average"),
+                    "filled": order.get("filled")}
+        except Exception as exc:
+            logger.warning("Fetch order status failed (%s/%s): %s", symbol, order_id, exc)
+            return None
+
+    async def cancel_order(self, order_id: str, symbol: str) -> Any:
+        if not self.client:
+            return None
+        return await self.client.cancel_order(order_id, symbol)
 
     async def close_position(self, symbol: str, side: str, quantity: float) -> Dict[str, Any]:
         """Close ONE position with a market reduce-only hedge order.
@@ -258,6 +312,7 @@ class CCXTAdapter(BrokerAdapter):
             )
             return {"success": True, "broker_order_id": order.get("id"),
                     "filled": order.get("filled"), "average": order.get("average"),
+                    "fees": float((order.get("fee") or {}).get("cost") or 0),
                     "symbol": symbol, "timestamp": datetime.now().isoformat()}
         except Exception as e:
             logger.error(f"Broker close error ({self.exchange_id}): {e}")
